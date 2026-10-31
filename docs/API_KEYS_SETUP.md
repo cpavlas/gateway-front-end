@@ -44,11 +44,13 @@ Never use the `root` API key. Instead, create a dedicated non-login service user
 1. **Create Group (`System → Access → Groups`):**
    - Click **+** (Add), set **Group name** to `gateway_controller`, and click **Save**.
    - Click the **Edit (pencil)** icon on `gateway_controller`, then click **Edit** next to **Assigned Privileges** (or select directly in the **Assigned Privileges** multi-select modal).
-   - In **OPNsense 26.7.7-amd64**, search for and check **only** these 4 privileges:
-     1. **`Firewall: Aliases`** *(filter by `Aliases` — internal key `page-firewall-aliases`; unlocks `api/firewall/alias/*` and `api/firewall/alias_util/*`)*
-     2. **`Diagnostics: ARP Table`** *(filter by `ARP` — internal key `page-diagnostics-arptable`; unlocks snake_case `api/diagnostics/interface/get_arp*` and `api/diagnostics/interface/search_arp*`)*
-     3. **`Diagnostics: Show States`** *(filter by `States` — internal key `page-diagnostics-showstates`; unlocks `api/diagnostics/firewall/query_states*` and `api/diagnostics/firewall/kill_states*`)*
-     4. **`Services: Dnsmasq DNS/DHCP: Settings`** *(filter by `Dnsmasq` — internal key `page-services-dnsmasq`; unlocks `api/dnsmasq/*` including `/api/dnsmasq/leases/search`. Note: in OPNsense 26.7.7-amd64 there is no separate `Leases` privilege, and `Services: Dnsmasq DNS/DHCP: Logfile` is **not** needed)*
+   - In **OPNsense 26.7.7-amd64**, search for and check **only** these 6 privileges:
+     1. **`Firewall: Aliases`** *(filter by `Aliases` — internal key `page-firewall-aliases`; unlocks read-only `api/firewall/alias/get*`, `list*`, `search*`, `export`)*
+     2. **`Firewall: Alias: Edit`** *(filter by `Alias: Edit` — internal key `page-firewall-alias-edit`; unlocks `api/firewall/alias/*` including `set_item` and `reconfigure`)*
+     3. **`Diagnostics: PF Table IP addresses`** *(filter by `PF Table` — internal key `page-diagnostics-tables`; unlocks runtime `api/firewall/alias_util/*` for instant `list`, `add`, and `delete`)*
+     4. **`Diagnostics: ARP Table`** *(filter by `ARP` — internal key `page-diagnostics-arptable`; unlocks snake_case `api/diagnostics/interface/get_arp*` and `api/diagnostics/interface/search_arp*`)*
+     5. **`Diagnostics: Show States`** *(filter by `States` — internal key `page-diagnostics-showstates`; unlocks `api/diagnostics/firewall/query_states*` and `api/diagnostics/firewall/kill_states*`)*
+     6. **`Services: Dnsmasq DNS/DHCP: Settings`** *(filter by `Dnsmasq` — internal key `page-services-dnsmasq`; unlocks `api/dnsmasq/*` including `/api/dnsmasq/leases/search`. Note: in OPNsense 26.7.7-amd64 there is no separate `Leases` privilege, and `Services: Dnsmasq DNS/DHCP: Logfile` is **not** needed)*
    - Click **Save** twice. *(Ensure `GUI - All pages` is **NOT** checked.)*
 
 2. **Create User (`System → Access → Users`):**

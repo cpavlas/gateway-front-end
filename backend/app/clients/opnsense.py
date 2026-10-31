@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import ssl
 import time
 from typing import Any, Literal
@@ -10,6 +11,34 @@ import httpx
 from pydantic import BaseModel, Field
 
 from app.config import Settings
+
+
+def validate_ipv4_address(ip: str) -> str:
+    """Validate that `ip` is a single canonical IPv4 address (no CIDR, wildcards, or IPv6)."""
+    if not isinstance(ip, str):
+        raise ValueError("IPv4 address must be a string.")
+    cleaned = ip.strip()
+    try:
+        addr = ipaddress.IPv4Address(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"Invalid IPv4 address: '{ip}'") from exc
+    if addr.is_unspecified or str(addr) == "255.255.255.255":
+        raise ValueError(f"Refusing wildcard/broadcast IPv4 address: '{ip}'")
+    return str(addr)
+
+
+def _extract_selected_option(field_val: Any, default: str = "") -> str:
+    """Extract the selected key(s) from an OPNsense MVC option dictionary."""
+    if isinstance(field_val, str):
+        return field_val
+    if isinstance(field_val, dict):
+        selected = [
+            str(key)
+            for key, meta in field_val.items()
+            if key and isinstance(meta, dict) and int(meta.get("selected", 0)) == 1
+        ]
+        return ",".join(selected) if selected else default
+    return default
 
 
 class ServiceHealthStatus(BaseModel):
@@ -119,10 +148,10 @@ class OPNsenseClient:
                 ]
             return []
 
-    async def _list_alias_ips_via_config_api(
+    async def _get_alias_uuid_and_item(
         self, client: httpx.AsyncClient, target_alias: str
-    ) -> list[str]:
-        """Fallback reader using `/api/firewall/alias/get_alias_uuid` and `get_item`."""
+    ) -> tuple[str, dict[str, Any], list[str]]:
+        """Fetch `(uuid, alias_dict, current_ips)` via `/api/firewall/alias/*` config endpoints."""
         uuid_resp = await client.get(f"/api/firewall/alias/get_alias_uuid/{target_alias}")
         self._raise_for_status(uuid_resp, f"alias/get_alias_uuid/{target_alias}")
         uuid_payload = uuid_resp.json()
@@ -136,20 +165,130 @@ class OPNsenseClient:
         item_resp = await client.get(f"/api/firewall/alias/get_item/{uuid}")
         self._raise_for_status(item_resp, f"alias/get_item/{uuid}")
         item_payload = item_resp.json()
-        content = (
-            item_payload.get("alias", {}).get("content", {})
-            if isinstance(item_payload, dict)
-            else {}
+        alias_dict = (
+            item_payload.get("alias", {}) if isinstance(item_payload, dict) else {}
         )
+        content = alias_dict.get("content", {})
+        current_ips: list[str] = []
         if isinstance(content, dict):
-            selected_ips: list[str] = []
             for key, meta in content.items():
                 if key and isinstance(meta, dict) and int(meta.get("selected", 0)) == 1:
-                    selected_ips.append(str(key))
-            return selected_ips
-        if isinstance(content, str):
-            return [line.strip() for line in content.splitlines() if line.strip()]
-        return []
+                    current_ips.append(str(key))
+        elif isinstance(content, str):
+            current_ips = [line.strip() for line in content.splitlines() if line.strip()]
+
+        return str(uuid), alias_dict, current_ips
+
+    async def _list_alias_ips_via_config_api(
+        self, client: httpx.AsyncClient, target_alias: str
+    ) -> list[str]:
+        """Fallback reader using `/api/firewall/alias/get_alias_uuid` and `get_item`."""
+        _uuid, _alias_dict, current_ips = await self._get_alias_uuid_and_item(
+            client, target_alias
+        )
+        return current_ips
+
+    async def _mutate_alias_ips_via_config_api(
+        self,
+        client: httpx.AsyncClient,
+        target_alias: str,
+        *,
+        add_ip: str | None = None,
+        remove_ip: str | None = None,
+    ) -> list[str]:
+        """Update an OPNsense alias via `get_item` -> `set_item` -> `reconfigure` (Update 2B)."""
+        uuid, alias_dict, current_ips = await self._get_alias_uuid_and_item(
+            client, target_alias
+        )
+        updated_ips = list(dict.fromkeys(current_ips))
+        if add_ip and add_ip not in updated_ips:
+            updated_ips.append(add_ip)
+        if remove_ip and remove_ip in updated_ips:
+            updated_ips = [item for item in updated_ips if item != remove_ip]
+
+        set_payload = {
+            "alias": {
+                "enabled": str(alias_dict.get("enabled", "1")),
+                "name": str(alias_dict.get("name", target_alias)),
+                "type": _extract_selected_option(alias_dict.get("type"), default="host"),
+                "proto": _extract_selected_option(alias_dict.get("proto"), default=""),
+                "interface": _extract_selected_option(
+                    alias_dict.get("interface"), default=""
+                ),
+                "counters": str(alias_dict.get("counters", "1")),
+                "updatefreq": str(alias_dict.get("updatefreq", "")),
+                "content": "\n".join(updated_ips),
+                "description": str(
+                    alias_dict.get("description", "Managed by Gateway Front-End Container")
+                ),
+            }
+        }
+        set_resp = await client.post(
+            f"/api/firewall/alias/set_item/{uuid}", json=set_payload
+        )
+        self._raise_for_status(set_resp, f"alias/set_item/{uuid}")
+        set_data = set_resp.json()
+        if isinstance(set_data, dict) and set_data.get("result") not in (
+            None,
+            "saved",
+            "ok",
+        ):
+            raise OPNsenseClientError(
+                f"OPNsense alias set_item rejected update: {set_data}",
+                status_code=400,
+            )
+
+        reconf_resp = await client.post("/api/firewall/alias/reconfigure", json={})
+        self._raise_for_status(reconf_resp, "alias/reconfigure")
+        return updated_ips
+
+    async def add_ip_to_block_alias(
+        self, ip: str, alias_name: str | None = None
+    ) -> list[str]:
+        """Add an IPv4 address to the OPNsense block alias (with 403 config API fallback)."""
+        valid_ip = validate_ipv4_address(ip)
+        target_alias = alias_name or self._alias_name
+        async with self._create_http_client() as client:
+            resp = await client.post(
+                f"/api/firewall/alias_util/add/{target_alias}",
+                json={"address": valid_ip},
+            )
+            if resp.status_code == 403:
+                return await self._mutate_alias_ips_via_config_api(
+                    client, target_alias, add_ip=valid_ip
+                )
+            self._raise_for_status(resp, f"alias_util/add/{target_alias}")
+        return await self.list_blocked_alias_ips(target_alias)
+
+    async def remove_ip_from_block_alias(
+        self, ip: str, alias_name: str | None = None
+    ) -> list[str]:
+        """Remove an IPv4 address from the OPNsense block alias (with 403 config API fallback)."""
+        valid_ip = validate_ipv4_address(ip)
+        target_alias = alias_name or self._alias_name
+        async with self._create_http_client() as client:
+            resp = await client.post(
+                f"/api/firewall/alias_util/delete/{target_alias}",
+                json={"address": valid_ip},
+            )
+            if resp.status_code == 403:
+                return await self._mutate_alias_ips_via_config_api(
+                    client, target_alias, remove_ip=valid_ip
+                )
+            self._raise_for_status(resp, f"alias_util/delete/{target_alias}")
+        return await self.list_blocked_alias_ips(target_alias)
+
+    async def kill_states_for_ip(self, ip: str) -> dict[str, Any]:
+        """Sever active firewall states for a single validated IPv4 address."""
+        valid_ip = validate_ipv4_address(ip)
+        async with self._create_http_client() as client:
+            resp = await client.post(
+                "/api/diagnostics/firewall/kill_states",
+                json={"filter": valid_ip},
+            )
+            self._raise_for_status(resp, "diagnostics/firewall/kill_states")
+            data = resp.json()
+            return data if isinstance(data, dict) else {"result": "ok"}
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response, endpoint_label: str) -> None:

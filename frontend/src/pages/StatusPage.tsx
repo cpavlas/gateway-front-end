@@ -10,7 +10,12 @@ import {
   XCircle,
 } from 'lucide-react'
 import { apiClient, type HealthLevel, type ServiceHealthStatus } from '../api/client'
-import { AppLayout } from '../components/AppLayout'
+import { AppLayout, type AppTab } from '../components/AppLayout'
+
+interface StatusPageProps {
+  activeTab?: AppTab
+  onSelectTab?: (tab: AppTab) => void
+}
 
 const CARD_BADGE_STYLES: Record<HealthLevel, string> = {
   healthy: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
@@ -101,7 +106,10 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   )
 }
 
-export const StatusPage: React.FC = () => {
+export const StatusPage: React.FC<StatusPageProps> = ({
+  activeTab = 'status',
+  onSelectTab,
+}) => {
   const {
     data: healthReport,
     isLoading,
@@ -119,6 +127,8 @@ export const StatusPage: React.FC = () => {
     <AppLayout
       overallStatus={healthReport?.overall_status}
       version={healthReport?.version}
+      activeTab={activeTab}
+      onSelectTab={onSelectTab}
     >
       <div className="space-y-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

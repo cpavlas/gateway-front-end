@@ -8,6 +8,7 @@ Create Date: 2026-10-31 12:40:00.000000
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0001_initial_foundation"

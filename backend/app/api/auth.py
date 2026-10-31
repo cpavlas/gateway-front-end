@@ -61,13 +61,17 @@ async def login(
     login_rate_limiter.reset_ip(client_ip)
     token, expires_at = create_session_token(settings.admin_username, settings)
 
+    is_https = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto", "").lower() == "https"
+    )
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
         max_age=settings.session_expire_minutes * 60,
         httponly=True,
         samesite="lax",
-        secure=(settings.app_env == "production"),
+        secure=is_https,
         path="/",
     )
 

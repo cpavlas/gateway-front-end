@@ -161,8 +161,10 @@ Follow the principle of least privilege by creating a dedicated non-interactive 
    - **Group name:** `gateway_controller`
    - **Description:** `Least-privilege API access for Gateway Front-End container`
    - Click **Save**, then click the **Edit (pencil)** icon on `gateway_controller` and click **Edit** next to **Assigned Privileges**.
-   - In **OPNsense 26.7.7-amd64**, enable **only** the following 4 privileges (search using the filter box):
-     - **`Firewall: Aliases`** *(internal key `page-firewall-aliases`; grants access to `/api/firewall/alias/*` and `/api/firewall/alias_util/*`)*
+   - In **OPNsense 26.7.7-amd64**, enable **only** the following 6 privileges (search using the filter box):
+     - **`Firewall: Aliases`** *(internal key `page-firewall-aliases`; grants read-only access to `/api/firewall/alias/get*`, `list*`, `search*`, `export`)*
+     - **`Firewall: Alias: Edit`** *(internal key `page-firewall-alias-edit`; grants write access to `/api/firewall/alias/*` including `set_item` and `reconfigure`)*
+     - **`Diagnostics: PF Table IP addresses`** *(internal key `page-diagnostics-tables`; grants runtime table access to `/api/firewall/alias_util/*` for fast `list`, `add`, and `delete`)*
      - **`Diagnostics: ARP Table`** *(internal key `page-diagnostics-arptable`; grants access to `/api/diagnostics/interface/get_arp*` and `/api/diagnostics/interface/search_arp*`)*
      - **`Diagnostics: Show States`** *(internal key `page-diagnostics-showstates`; grants access to `/api/diagnostics/firewall/kill_states*` and state inspection)*
      - **`Services: Dnsmasq DNS/DHCP: Settings`** *(internal key `page-services-dnsmasq`; maps to `api/dnsmasq/*` which covers `/api/dnsmasq/leases/search`. Note: in OPNsense 26.7.7-amd64 there is no separate `Leases` privilege, and `Services: Dnsmasq DNS/DHCP: Logfile` is not needed)*
@@ -345,6 +347,7 @@ flowchart TD
 - **Deliverables:**
   1. **Elasticsearch `9.4.3` Analytics Service (`logs-pfsense.log*`)**:
      - **Phase 1 Waterfall Update 3A (Verified Provider & ECS Field Filters):** Queries `event.provider: "filterlog"` (`3.63M+` docs) for bandwidth (`network.bytes`), packet actions (`event.action: pass | block`), and destination ASN organization (`destination.as.organization.name`), and queries `event.provider: "unbound"` (`3.02M+` docs) for DNS domain resolution (`dns.question.name`, `dns.question.registered_domain`, `dns.question.subdomain` correlated by `source.ip` / `client.ip`).
+     - **Phase 2 Waterfall Update 3B (SQLite Device Metadata Enrichment):** Enriches top-device IP buckets from `logs-pfsense.log*` (`source.ip` / `client.ip`) with local SQLite `Device` records (`id`, `effective_name`, `mac_address`, `vendor`, `is_blocked`, `is_online`) and returns a clean zero-state payload when a device has no `ipv4_address`.
      - **Network Overview (`/api/v1/analytics/overview`)**: Total traffic volume (`network.bytes`) / connection activity (`event.action: pass | block`) histogram (`1h`, `24h`, `7d`, `30d`), Top Devices by `source.ip` / `destination.ip`, and Top Domains (`dns.question.name` & `dns.question.registered_domain`) network-wide.
      - **Per-Device Analytics (`/api/v1/devices/{device_id}/analytics`)**:
        - **Usage Statistics:** Bytes transferred (`network.bytes` from `filterlog`) and allowed vs. blocked packet counts over time.

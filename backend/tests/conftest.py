@@ -52,6 +52,15 @@ def test_settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture()
+async def initialized_db(test_settings: Settings) -> AsyncGenerator[Settings, None]:
+    """Initialize an isolated SQLite database for model and service unit tests."""
+    await dispose_db()
+    await init_db(test_settings)
+    yield test_settings
+    await dispose_db()
+
+
+@pytest.fixture()
 async def async_client(test_settings: Settings) -> AsyncGenerator[AsyncClient, None]:
     """Provide an httpx AsyncClient wired to a test FastAPI app and ephemeral SQLite DB."""
     await dispose_db()
