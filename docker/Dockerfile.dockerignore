@@ -1,0 +1,30 @@
+# Exclude secrets and VCS metadata from Docker build context
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*_apikey.txt
+
+# Exclude local dev artifacts and caches
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.uv
+**/.coverage
+**/htmlcov
+**/.venv
+**/venv
+**/node_modules
+frontend/dist
+frontend/coverage
+
+# Exclude local SQLite database files and documentation
+data/
+*.db
+*.db-*
+docs/
+PLAN.md
+PHASE_*_TRACKING.md
+

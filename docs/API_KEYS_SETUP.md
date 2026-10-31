@@ -1,0 +1,114 @@
+# API Key Generation & Least-Privilege Scoping Guide
+
+This guide walks through setting up the required firewall alias, service accounts, and least-privilege API keys for:
+1. **OPNsense (`https://gateway.sparkle-pony.com` / `192.168.50.1` — Validated for `OPNsense 26.7.7-amd64`)**
+2. **Elasticsearch (`https://es1.sparkle-pony.com` — Validated for `Elasticsearch 9.4.3` & `pfSense` Integration `1.25.4` / `logs-pfsense.log*`)**
+
+All generated secrets belong exclusively in the root `.env` file (which is ignored by Git and excluded from Docker build layers).
+
+---
+
+## 1. OPNsense Setup (`https://gateway.sparkle-pony.com` — `OPNsense 26.7.7-amd64`)
+
+### Step 1A: Create the `gateway_blocked_devices` Firewall Alias
+1. Log into OPNsense at `https://gateway.sparkle-pony.com`.
+2. Navigate to **Firewall → Aliases** and click **+** (Add).
+3. Configure the alias:
+   - **Enabled:** Checked
+   - **Name:** `gateway_blocked_devices` *(must match `OPNSENSE_BLOCK_ALIAS` in `.env`)*
+   - **Type:** `Host(s)`
+   - **Content:** Leave empty initially
+   - **Description:** `Managed by Gateway Front-End Container`
+4. Click **Save**, then click **Apply** at the bottom of the Aliases page so the underlying `pf` table is initialized.
+
+### Step 1B: Create the LAN Firewall Rule for Blocked Devices
+1. *(If you don't already have a Private Networks alias)* In **Firewall → Aliases**, create an alias named `RFC1918_Private_Networks` of type `Network(s)` containing `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
+2. Navigate to **Firewall → Rules → LAN** (and any other client VLANs you want controlled) and click **+** (Add):
+   - **Action:** `Reject` *(recommended over `Block` so browsers/apps fail immediately instead of hanging)*
+   - **Interface:** `LAN`
+   - **Direction:** `in`
+   - **TCP/IP Version:** `IPv4+IPv6` (or `IPv4`)
+   - **Protocol:** `any`
+   - **Source:** `gateway_blocked_devices`
+   - **Destination / Invert:** Checked (**Invert**)
+   - **Destination:** `RFC1918_Private_Networks`
+   - **Description:** `Reject WAN/Internet traffic for devices in gateway_blocked_devices`
+3. Place this rule **near the top of your LAN rule list** (above your default `LAN net -> any` allow rule, and below any anti-lockout or local DHCP/DNS rules).
+4. Click **Save** and **Apply Changes**.
+
+---
+
+### Step 1C: Create the Least-Privilege API Group & Service User (`OPNsense 26.7.7-amd64`)
+Never use the `root` API key. Instead, create a dedicated non-login service user restricted to the exact 4 MVC controllers needed by this application:
+
+1. **Create Group (`System → Access → Groups`):**
+   - Click **+** (Add), set **Group name** to `gateway_controller`, and click **Save**.
+   - Click the **Edit (pencil)** icon on `gateway_controller`, then click **Edit** next to **Assigned Privileges** (or select directly in the **Assigned Privileges** multi-select modal).
+   - In **OPNsense 26.7.7-amd64**, search for and check **only** these 4 privileges:
+     1. **`Firewall: Aliases`** *(filter by `Aliases` — internal key `page-firewall-aliases`; unlocks `api/firewall/alias/*` and `api/firewall/alias_util/*`)*
+     2. **`Diagnostics: ARP Table`** *(filter by `ARP` — internal key `page-diagnostics-arptable`; unlocks snake_case `api/diagnostics/interface/get_arp*` and `api/diagnostics/interface/search_arp*`)*
+     3. **`Diagnostics: Show States`** *(filter by `States` — internal key `page-diagnostics-showstates`; unlocks `api/diagnostics/firewall/query_states*` and `api/diagnostics/firewall/kill_states*`)*
+     4. **`Services: Dnsmasq DNS/DHCP: Settings`** *(filter by `Dnsmasq` — internal key `page-services-dnsmasq`; unlocks `api/dnsmasq/*` including `/api/dnsmasq/leases/search`. Note: in OPNsense 26.7.7-amd64 there is no separate `Leases` privilege, and `Services: Dnsmasq DNS/DHCP: Logfile` is **not** needed)*
+   - Click **Save** twice. *(Ensure `GUI - All pages` is **NOT** checked.)*
+
+2. **Create User (`System → Access → Users`):**
+   - Click **+** (Add) to open the **Edit User** modal dialog.
+   - **Username:** `svc_gateway_ui`
+   - **Scrambled Password:** Check the box (*"Generate a scrambled password to prevent local database logins for this user."*).
+   - **Login shell:** Leave set to **`Default (none for all but root)`** *(OPNsense automatically disables shell access / maps this to `/sbin/nologin` for all non-root accounts)*.
+   - **Group membership:** Select `gateway_controller`.
+   - Click **Save** at the bottom-right of the modal.
+
+3. **Generate API Key & Secret (`System → Access → Users` Grid):**
+   - In `OPNsense 26.7.7-amd64`, API keys are generated from the main **Users** table (outside the `Edit User` modal):
+     - Locate the `svc_gateway_ui` row in the **Users** table and click the **ticket (`+` API key) icon** in the right-hand commands column *(or switch to the **API Keys** tab at the top of the Users page and click **+** for `svc_gateway_ui`)*.
+   - A text file (`*_svc_gateway_ui_apikey.txt`) downloads automatically containing:
+     ```ini
+     key=YOUR_OPNSENSE_KEY
+     secret=YOUR_OPNSENSE_SECRET
+     ```
+   - Copy `key` into `OPNSENSE_API_KEY` and `secret` into `OPNSENSE_API_SECRET` in `.env`, then delete the downloaded `.txt` file.
+
+> **OPNsense 26.7.7-amd64 Endpoint Note:** Beginning in OPNsense 25.7/26.x, MVC ACL patterns enforce `snake_case` endpoint paths for non-root API keys (for example, `/api/diagnostics/interface/get_arp` or `/api/diagnostics/interface/search_arp` instead of legacy camelCase `getArp`). Our `OPNsenseClient` and discovery script use the 26.7 `snake_case` endpoints natively.
+
+---
+
+## 2. Elasticsearch Setup (`https://es1.sparkle-pony.com` — `Elasticsearch 9.4.3`)
+
+Because your OPNsense logs are shipped via the **Elastic `pfSense` Integration (`v1.25.4`)** into the **`logs-pfsense.log*`** data stream (`logs-pfsense.log-default`), we can scope your read-only API key directly to `logs-pfsense.log*` right away.
+
+### Step 2A — Create the Scoped Read-Only API Key for `logs-pfsense.log*`
+In **Kibana (`v9.4.3`) → Management → Dev Tools → Console** (or via **Stack Management → Security → API Keys**), run:
+
+```json
+POST /_security/api_key
+{
+  "name": "gateway-frontend-pfsense-logs-readonly",
+  "role_descriptors": {
+    "gateway_pfsense_logs_readonly": {
+      "cluster": [ "monitor" ],
+      "indices": [
+        {
+          "names": [ "logs-pfsense.log*" ],
+          "privileges": [ "read", "view_index_metadata" ]
+        }
+      ]
+    }
+  }
+}
+```
+
+- **Why `"cluster": ["monitor"]`?** Allows `/api/v1/system/health` (`client.info()` / `client.ping()`) to verify cluster reachability and report Elasticsearch `9.4.3` health without granting any write or administrative permissions.
+- **Why `"names": ["logs-pfsense.log*"]`?** Restricts document searches (`read`) and field mapping checks (`view_index_metadata`) strictly to your `logs-pfsense.log` data stream and its backing `.ds-logs-pfsense.log-*` indices.
+- Copy the **`encoded`** value from the JSON response (Base64-encoded `id:api_key`) and set it in `.env`:
+  ```dotenv
+  ELASTICSEARCH_API_KEY=PASTE_ENCODED_STRING_HERE
+  ELASTICSEARCH_INDEX_PATTERNS=logs-pfsense.log*
+  ```
+
+### Step 2B — Optional Discovery Note for Step 1.4 (`scripts/discover_environment.py`)
+In **Step 1.4**, our read-only discovery script will query `logs-pfsense.log*` using this exact key to verify:
+1. **Active `event.provider` / `process.name` values** ingested by `pfSense` integration `1.25.4` (e.g., `filterlog` for firewall traffic/bytes, `unbound` or `dnsmasq` for DNS domain lookups).
+2. **Populated ECS fields** (`@timestamp`, `source.ip`, `destination.ip`, `network.bytes`, `event.action`, `dns.question.name`, `destination.as.organization.name`, etc.) so Phase 3's analytics queries are 100% tailored to your live `logs-pfsense.log` data.
+   - *(Note: By default, the Elastic `pfSense 1.25.4` ingest pipeline parses `filterlog` and `unbound`, and drops unrecognized `event.provider` names such as `dnsmasq` unless added to the pipeline's whitelist or `logs-pfsense.log@custom` pipeline. Step 1.4 will automatically check whether DNS domain queries are present in `logs-pfsense.log*` and provide exact instructions if a `logs-pfsense.log@custom` rule is needed for Dnsmasq/Unbound domain logging.)*
+

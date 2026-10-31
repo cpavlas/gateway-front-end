@@ -1,0 +1,29 @@
+services:
+  gateway-front-end:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: gateway-front-end:latest
+    container_name: gateway-front-end
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - SQLITE_DB_PATH=/app/data/gateway.db
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ../data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/ping', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+

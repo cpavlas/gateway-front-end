@@ -1,0 +1,86 @@
+import React from 'react'
+import { Activity, LogOut, Shield, UserCheck } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import type { HealthLevel } from '../api/client'
+
+interface AppLayoutProps {
+  overallStatus?: HealthLevel
+  version?: string
+  children: React.ReactNode
+}
+
+const STATUS_BADGE_STYLES: Record<HealthLevel, string> = {
+  healthy: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+  degraded: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+  unhealthy: 'border-rose-500/40 bg-rose-500/10 text-rose-300',
+}
+
+export const AppLayout: React.FC<AppLayoutProps> = ({
+  overallStatus,
+  version,
+  children,
+}) => {
+  const { user, logout } = useAuth()
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
+              <Shield className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold tracking-tight text-slate-100">
+                  Sparkle-Pony Gateway Control
+                </span>
+                {version && (
+                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-400">
+                    v{version}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400">
+                OPNsense 26.7.7 &amp; Elasticsearch 9.4.3 Access &amp; Telemetry Portal
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {overallStatus && (
+              <div
+                data-testid="overall-health-badge"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${STATUS_BADGE_STYLES[overallStatus]}`}
+              >
+                <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>System: {overallStatus}</span>
+              </div>
+            )}
+
+            {user && (
+              <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300">
+                <UserCheck className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
+                <span>{user.username}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+        {children}
+      </main>
+    </div>
+  )
+}
+

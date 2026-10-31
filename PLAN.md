@@ -1,0 +1,500 @@
+# Gateway Network Access Controller & Analytics — Master Project Plan
+
+> **Status:** Living Plan v1.2 (Baseline Ready — Updated with OPNsense `26.7.7-amd64` & Elasticsearch `9.4.3` / `pfSense 1.25.4`)  
+> **Target Deployment:** Self-hosted Docker Container  
+> **Firewall Integration:** OPNsense `26.7.7-amd64` (`https://gateway.sparkle-pony.com` / `192.168.50.1`) — Dnsmasq DHCP, ARP Table, Firewall Aliases, State Table  
+> **Analytics Integration:** Elasticsearch `9.4.3` (`https://es1.sparkle-pony.com`) — Elastic `pfSense` Integration `1.25.4` (`logs-pfsense.log*`)
+
+---
+
+## 1. Executive Summary & System Architecture
+
+This project builds a self-hosted, single-container web application that provides a unified dashboard to:
+1. **Control Internet Access** for network devices through OPNsense (`https://gateway.sparkle-pony.com` at `192.168.50.1`), progressing from instant single-device toggles to device groups, temporary countdown timers, and recurring weekly schedules.
+2. **Visualize Network Activity** by querying Elasticsearch (`https://es1.sparkle-pony.com`) to display per-device and per-group bandwidth/usage statistics, active hours/access timelines, and web domains visited.
+
+```mermaid
+flowchart LR
+    subgraph LAN["Local Network (192.168.50.0/24)"]
+        Admin["Admin Browser"]
+        subgraph Docker["Docker Container (Gateway Front-End)"]
+            UI["React + TypeScript SPA<br/>(Vite + Tailwind + Recharts)"]
+            API["FastAPI Backend<br/>(Python 3.12 + Uvicorn)"]
+            Sched["APScheduler Engine<br/>(Timers & Bedtime Rules)"]
+            DB[("SQLite Volume<br/>(/app/data/gateway.db)")]
+            Env[/"Hidden .env<br/>(Runtime Secrets)"/]
+        end
+        OPN["OPNsense Firewall<br/>https://gateway.sparkle-pony.com<br/>(192.168.50.1)"]
+    end
+
+    ES["Elasticsearch Cluster<br/>https://es1.sparkle-pony.com"]
+
+    Admin -->|"HTTPS / Signed Auth Cookie"| UI
+    UI -->|"/api/v1/*"| API
+    Env -.->|"Injected via docker-compose"| API
+    API <--> DB
+    Sched <--> DB
+    Sched -->|"Enforce Timers & Schedules"| API
+    API -->|"REST API (Basic Auth Key/Secret)<br/>Dnsmasq Leases, ARP, Alias Util, Kill States"| OPN
+    API -->|"REST API (Scoped Read-Only ApiKey)<br/>Aggregations & Domain Logs"| ES
+```
+
+---
+
+## 2. Agreed Software Stack
+
+| Layer | Technology | Rationale |
+| :--- | :--- | :--- |
+| **Backend API** | **Python 3.12 + FastAPI** (`uvicorn`) | First-class async ecosystem, automatic OpenAPI schema validation, clean dependency injection for unit testing. |
+| **Configuration** | **`pydantic-settings`** | Strictly validates all required `.env` variables at startup and prevents secret leakage in logs/tracebacks. |
+| **OPNsense Client** | **`httpx` (AsyncClient)** | Async HTTP with connection pooling, configurable TLS verification (self-signed certs or local CA), and deterministic mocking via `respx`. |
+| **Elasticsearch Client** | **`elasticsearch[async]>=9.0.0,<10.0.0`** | Official v9 async Python client matching Elasticsearch `9.4.3` (`compatible-with=9`), native `api_key` auth, and ECS query DSL support against `logs-pfsense.log*`. |
+| **Persistence** | **SQLite + SQLAlchemy 2.0 (Async) + Alembic** | Zero external DB container needed; stores device nicknames, MAC mappings, groups, active timers, schedules, and audit logs on a mounted Docker volume. |
+| **Scheduler** | **`APScheduler`** | Runs inside the backend process with SQLite persistence so temporary countdowns and bedtime schedules survive container restarts. |
+| **Authentication** | **Built-in Admin Auth (`argon2-cffi` + `PyJWT`)** | Admin credentials configured via `.env`; issues `HttpOnly`, `SameSite=Lax` signed session cookies with login rate-limiting. |
+| **Frontend UI** | **React 19 + TypeScript + Vite + Tailwind CSS** | Responsive desktop/mobile UI, `TanStack Query` for live polling & optimistic toggles, `Recharts` for usage timelines, `Lucide` icons. |
+| **Testing & QA** | **`pytest` + `respx` + `freezegun` / `Vitest` + `RTL`** | Deterministic backend and frontend unit test suites + `ruff`, `mypy`, `eslint`, and `tsc` static checks. |
+| **Packaging** | **Multi-Stage `Dockerfile` + `docker-compose.yml`** | Stage 1 (`node:22-alpine`) compiles the React SPA; Stage 2 (`python:3.12-slim`) serves both `/api/v1/*` and static SPA assets as a non-root user. |
+
+---
+
+## 3. OPNsense Internet Blocking Design (`https://gateway.sparkle-pony.com` / `192.168.50.1`)
+
+To block and unblock devices instantaneously without full firewall filter reloads—and without breaking DHCP lease renewals on the LAN—we use OPNsense's live `pf` table alias API paired with targeted state termination.
+
+### 3.1 One-Time OPNsense Firewall Rule Setup
+1. **Create Host Alias (`Firewall → Aliases`)**:
+   - **Name:** `gateway_blocked_devices` (matches `OPNSENSE_BLOCK_ALIAS` in `.env`)
+   - **Type:** `Host(s)`
+   - **Description:** `Managed by Gateway Front-End Container`
+2. **Create LAN Firewall Rule (`Firewall → Rules → LAN`)** placed **above** the general LAN-to-any allow rule (and **below** anti-lockout / local DHCP & DNS rules if desired):
+   - **Action:** `Block` (or `Reject` so client browsers fail fast instead of hanging on TCP timeouts)
+   - **Interface:** `LAN` (and any additional internal VLAN interfaces if applicable)
+   - **Direction:** `in`
+   - **TCP/IP Version:** `IPv4+IPv6` (or `IPv4`)
+   - **Source:** `gateway_blocked_devices`
+   - **Destination / Invert:** Check **Destination / Invert** and target `Private_Networks` (RFC1918 alias: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) so blocked devices **lose all WAN/Internet access** while still maintaining local DHCP lease renewals and visibility in OPNsense ARP/Dnsmasq tables. *(Note: Add a rule right above or include WAN DNS blocking so external DNS queries to `8.8.8.8`/`1.1.1.1` are also rejected.)*
+
+### 3.2 OPNsense API Endpoints Used by the Container (`OPNsense 26.7.7-amd64`)
+| Operation | Method & Endpoint | Purpose |
+| :--- | :--- | :--- |
+| **Fetch DHCP Leases** | `GET` / `POST /api/dnsmasq/leases/search` | Maps IP addresses to MAC addresses, hostnames, and lease expirations from Dnsmasq. |
+| **Fetch Live ARP Cache** | `GET /api/diagnostics/interface/get_arp` *(or `POST .../search_arp`)* | Discovers static-IP devices, online presence, and NIC manufacturer (OUI). Uses 26.7 `snake_case` to match `page-diagnostics-arptable` ACL. |
+| **List Blocked IPs** | `GET /api/firewall/alias_util/list/{alias}` | Reads live `pf` table entries in `gateway_blocked_devices` (ground truth). |
+| **Block Device IP** | `POST /api/firewall/alias_util/add/{alias}` | Payload `{"address": "<ip>"}` — adds IP immediately with zero config reload delay. |
+| **Kill Active Connections** | `POST /api/diagnostics/firewall/kill_states` | Payload `{"filter": "<ip>"}` — drops established TCP/UDP/QUIC streams immediately on block. |
+| **Unblock Device IP** | `POST /api/firewall/alias_util/delete/{alias}` | Payload `{"address": "<ip>"}` — restores internet access immediately. |
+
+> **Safety Guardrail:** The backend enforces a mandatory `OPNSENSE_PROTECTED_IPS` allowlist (always automatically including `192.168.50.1` and the admin's current session IP unless overridden) that cannot be added to `gateway_blocked_devices` or passed to `kill_states`.
+
+---
+
+## 4. Hidden `.env` Specification & Least-Privilege API Key Guide
+
+### 4.1 Secret Hygiene Rules
+- `.env` is listed in `.gitignore` and `.dockerignore` **before the first commit** so secrets are never committed to Git or baked into Docker image layers.
+- `.env.example` (containing empty placeholders and comments) **is** committed to Git for documentation.
+- At runtime, `docker-compose.yml` mounts variables via `env_file: - .env`. Recommended host permissions: `chmod 600 .env` (Linux) or restricted NTFS ACLs (Windows).
+
+### 4.2 Planned `.env` Structure
+```dotenv
+# ==============================================================================
+# 1. APPLICATION & ADMIN AUTHENTICATION
+# ==============================================================================
+APP_ENV=production
+APP_PORT=8080
+TZ=America/Los_Angeles
+
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+APP_SECRET_KEY=REPLACE_WITH_64_CHAR_RANDOM_HEX
+
+# Built-in Web UI Admin Login
+ADMIN_USERNAME=admin
+# Plaintext password hashed in-memory or pre-hashed Argon2id string via helper script
+ADMIN_PASSWORD=REPLACE_WITH_STRONG_ADMIN_PASSWORD
+SESSION_EXPIRE_MINUTES=720
+
+# SQLite database path inside container (persisted via Docker volume)
+DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db
+
+# ==============================================================================
+# 2. OPNSENSE INTEGRATION (https://gateway.sparkle-pony.com / 192.168.50.1)
+# ==============================================================================
+OPNSENSE_BASE_URL=https://gateway.sparkle-pony.com
+OPNSENSE_API_KEY=REPLACE_WITH_OPNSENSE_API_KEY
+OPNSENSE_API_SECRET=REPLACE_WITH_OPNSENSE_API_SECRET
+
+# Set true when using a valid TLS certificate for gateway.sparkle-pony.com
+# (or set false / provide OPNSENSE_CA_CERT_PATH if using an internal/self-signed CA)
+OPNSENSE_VERIFY_SSL=true
+OPNSENSE_CA_CERT_PATH=
+OPNSENSE_TIMEOUT_SECONDS=10
+
+# Exact name of the Host(s) Firewall Alias in OPNsense
+OPNSENSE_BLOCK_ALIAS=gateway_blocked_devices
+
+# Comma-separated IPs that the backend MUST NEVER block (Gateway IP, Docker Host, NAS, etc.)
+OPNSENSE_PROTECTED_IPS=192.168.50.1
+
+# ==============================================================================
+# 3. ELASTICSEARCH INTEGRATION (https://es1.sparkle-pony.com — ES 9.4.3)
+# ==============================================================================
+ELASTICSEARCH_URL=https://es1.sparkle-pony.com
+# Base64-encoded API key ("encoded" field from POST /_security/api_key)
+ELASTICSEARCH_API_KEY=REPLACE_WITH_BASE64_ELASTICSEARCH_API_KEY
+ELASTICSEARCH_VERIFY_SSL=true
+ELASTICSEARCH_CA_CERT_PATH=
+ELASTICSEARCH_TIMEOUT_SECONDS=15
+
+# Elastic pfSense Integration (v1.25.4) data stream pattern
+ELASTICSEARCH_INDEX_PATTERNS=logs-pfsense.log*
+```
+
+---
+
+### 4.3 How to Generate & Scope the OPNsense API Key (`https://gateway.sparkle-pony.com` — `OPNsense 26.7.7-amd64`)
+
+Follow the principle of least privilege by creating a dedicated non-interactive service account and group rather than using `root`:
+
+1. **Create a Scoped Privilege Group**:
+   - In OPNsense, navigate to **System → Access → Groups** and click **+** (Add).
+   - **Group name:** `gateway_controller`
+   - **Description:** `Least-privilege API access for Gateway Front-End container`
+   - Click **Save**, then click the **Edit (pencil)** icon on `gateway_controller` and click **Edit** next to **Assigned Privileges**.
+   - In **OPNsense 26.7.7-amd64**, enable **only** the following 4 privileges (search using the filter box):
+     - **`Firewall: Aliases`** *(internal key `page-firewall-aliases`; grants access to `/api/firewall/alias/*` and `/api/firewall/alias_util/*`)*
+     - **`Diagnostics: ARP Table`** *(internal key `page-diagnostics-arptable`; grants access to `/api/diagnostics/interface/get_arp*` and `/api/diagnostics/interface/search_arp*`)*
+     - **`Diagnostics: Show States`** *(internal key `page-diagnostics-showstates`; grants access to `/api/diagnostics/firewall/kill_states*` and state inspection)*
+     - **`Services: Dnsmasq DNS/DHCP: Settings`** *(internal key `page-services-dnsmasq`; maps to `api/dnsmasq/*` which covers `/api/dnsmasq/leases/search`. Note: in OPNsense 26.7.7-amd64 there is no separate `Leases` privilege, and `Services: Dnsmasq DNS/DHCP: Logfile` is not needed)*
+   - Click **Save** twice. *(Ensure `GUI - All pages` is **NOT** checked.)*
+
+2. **Create the Dedicated API Service User**:
+   - Navigate to **System → Access → Users** and click **+** (Add).
+   - **Username:** `svc_gateway_ui`
+   - **Scrambled Password:** Check the box (*"Generate a scrambled password to prevent local database logins for this user."*).
+   - **Login shell:** Leave set to **`Default (none for all but root)`**.
+   - **Group membership:** Add `gateway_controller`.
+   - Click **Save**.
+
+3. **Generate the API Key & Secret**:
+   - In the **System → Access → Users** table, click the **ticket (`+` API key) icon** in the right-hand actions column on the `svc_gateway_ui` row *(or use the **API Keys** tab at the top of the Users page)*.
+   - A text file (`*_svc_gateway_ui_apikey.txt`) downloads automatically containing:
+     ```ini
+     key=...
+     secret=...
+     ```
+   - Paste those values into `OPNSENSE_API_KEY` and `OPNSENSE_API_SECRET` in `.env`, then securely delete the downloaded `.txt` file.
+
+4. **Quick Verification (Optional Pre-Check)**:
+   - Confirm the key can read ARP and Dnsmasq leases (`HTTP 200`) and is **denied** (`HTTP 403`) on unrelated admin endpoints like `/api/core/firmware/status`.
+
+---
+
+### 4.4 How to Generate & Scope the Elasticsearch `9.4.3` API Key (`https://es1.sparkle-pony.com`)
+
+Because OPNsense logs are ingested via the **Elastic `pfSense` Integration (`v1.25.4`)** into the **`logs-pfsense.log*`** data stream (`logs-pfsense.log-default`), we can create a **single, permanent, least-privilege read-only API key** scoped directly to `logs-pfsense.log*` from the start:
+
+In **Kibana (`v9.4.3`) → Management → Dev Tools → Console**, run:
+
+```json
+POST /_security/api_key
+{
+  "name": "gateway-frontend-pfsense-logs-readonly",
+  "role_descriptors": {
+    "gateway_pfsense_logs_readonly": {
+      "cluster": [ "monitor" ],
+      "indices": [
+        {
+          "names": [ "logs-pfsense.log*" ],
+          "privileges": [ "read", "view_index_metadata" ]
+        }
+      ]
+    }
+  }
+}
+```
+- Copy the **`encoded`** string from the JSON response (Base64-encoded `id:api_key`) and paste it into `ELASTICSEARCH_API_KEY` in `.env`.
+- **ECS Schema & `pfSense 1.25.4` Ingest Pipeline Note:**
+  - The `pfSense 1.25.4` integration maps packet filter events (`process.name: "filterlog"`) to ECS fields: `@timestamp`, `source.ip`, `destination.ip`, `source.port`, `destination.port`, `network.transport`, `network.direction`, `event.action`, and `network.bytes`.
+  - For DNS domain resolution (`dns.question.name`), the `pfSense 1.25.4` pipeline natively parses `unbound` logs and by default drops unrecognized `event.provider` values (such as `dnsmasq`) unless added to the pipeline whitelist or `logs-pfsense.log@custom`.
+  - In **Phase 1 (Step 1.4)**, `scripts/discover_environment.py` will inspect `logs-pfsense.log*` to verify active `process.name` / `event.provider` buckets and populated ECS fields (`network.bytes`, `dns.question.name`, etc.) so we can confirm whether any `logs-pfsense.log@custom` pipeline tweak or DNS logging toggle is needed prior to Phase 3.
+
+---
+
+## 5. Quality Assurance, Bug Tracking & End-of-Phase Exit / Checkpoint Protocol
+
+Every phase below operates as a self-contained **Test Cycle** followed by a formal **Exit Analysis & Interactive Learnings Checkpoint**. No phase is checked into the repository or closed—and no subsequent phase begins—until all quality gates and the phase-end checkpoint are completed.
+
+```mermaid
+flowchart LR
+    Build["1. Phase Build"] --> Test["2. Unit & Smoke Testing<br/>(pytest + Vitest + Docker)"]
+    Test --> BugLog["3. Update Bug Ledger<br/>(Fixed Now vs Deferred/Waterfalled)"]
+    BugLog --> Exit["4. Exit Analysis<br/>(Waterfall Scope & Complexity Updates)"]
+    Exit --> Check["5. Interactive Checkpoint<br/>(Discuss Unplanned Info & Learnings)"]
+    Check --> Commit["6. Update PLAN.md & Git Check-in<br/>(Unlock Next Phase)"]
+```
+
+### 5.1 Unit & Component Testing Standards
+- **Backend (`pytest` + `pytest-asyncio` + `pytest-cov`)**:
+  - Minimum **85% code coverage** per phase module.
+  - All external calls to `https://gateway.sparkle-pony.com` (`192.168.50.1`) mocked via `respx` (testing `200 OK`, `401/403 Auth Error`, `500`, connection timeout, and malformed payloads).
+  - All calls to `https://es1.sparkle-pony.com` tested against realistic fixture payloads captured (and redacted) from Phase 1 discovery.
+  - All SQLite tests run against isolated ephemeral databases (`:memory:` or `tmp_path`).
+  - Time-dependent logic (Phase 5 timers & Phase 6 schedules) tested deterministically with `freezegun`.
+- **Frontend (`Vitest` + `React Testing Library`)**:
+  - Component rendering, user click/toggle workflows, loading/error states, and protected-device disabled states tested per phase.
+- **Container & Live Integration Verification**:
+  - Build the multi-stage Docker container and run smoke verification against OPNsense and Elasticsearch at the end of each phase (including verifying container DNS resolution for `gateway.sparkle-pony.com` and `es1.sparkle-pony.com`).
+
+### 5.2 Bug Documentation & Resolution Ledger (`docs/TEST_AND_BUG_LOG.md`)
+A dedicated tracking document, `docs/TEST_AND_BUG_LOG.md`, will be maintained in the repository and updated **with every Git check-in**. Every defect found during unit testing, static type checking, container build, or live API validation will be recorded—including bugs intentionally deferred to a future phase:
+
+| Field | Description |
+| :--- | :--- |
+| **Bug ID** | Sequential phase identifier (e.g., `BUG-P2-001`) |
+| **Phase / Test Cycle** | Phase number and feature area where discovered |
+| **Found During** | `Unit Test` / `Static Analysis` / `Docker Build` / `Live Smoke Test` |
+| **Severity** | `Low` / `Medium` / `High` / `Critical` |
+| **Disposition / Status** | `Resolved in Phase` **or** `Deferred (Waterfalled to Phase X)` |
+| **Symptom & Root Cause** | Exact failure observed and why it occurred (e.g., OPNsense `dnsmasq` returning array vs dict when empty) |
+| **Resolution / Interim Mitigation** | Code fix applied now, **or** temporary workaround & rationale for deferring to Phase `X` |
+| **Regression Test** | Exact unit test added (`tests/...::test_...`), or planned test target if deferred |
+| **Commit Reference** | Git commit hash where logged and/or resolved |
+
+### 5.3 End-of-Phase Exit Analysis & Waterfall Re-Baselining
+Because real-world network data and API behaviors evolve as we build, **`PLAN.md` is treated as a living document**. At the conclusion of each phase (before check-in), we perform a structured **Exit Analysis** recorded in `docs/PHASE_EXIT_REPORTS.md`:
+1. **Waterfall Item Migration:** Any non-blocking bugs (`Deferred` in `docs/TEST_AND_BUG_LOG.md`), newly uncovered edge cases, or architectural refinements are explicitly added to the **Deliverables** and **Unit Testing Scope** of their target future phase (`Phase N+1..7`) inside `PLAN.md`.
+2. **Complexity & Scope Re-Assessment:** Re-evaluate the complexity ratings (`1–5`) and dependencies of upcoming phases based on waterfalled items so scope creep stays visible and controlled.
+3. **Carry-Over Verification:** At the start of Phase `N+1`, any bugs waterfalled into Phase `N+1` become priority acceptance criteria for that cycle.
+
+### 5.4 Phase-End Interactive Checkpoint & "Unplanned Information" Retrospective
+At the end of every phase, development pauses for a **mandatory discussion checkpoint** with you before moving forward. Together we review:
+1. **Phase Exit Summary:** Test pass/coverage metrics, bugs fixed in-cycle, and proposed waterfall deferrals.
+2. **Unplanned Information Audit (*"What did we need that we didn't plan for?"*):**
+   - Document every unexpected requirement encountered during the phase—such as undocumented OPNsense ACL quirks, TLS/DNS nuances inside Docker, missing or differently structured Elasticsearch fields, rate/timeout behavior, or missing `.env` knobs.
+3. **Feed-Forward Learnings Applied to Next Phase:**
+   - Decide concretely how those discoveries change how we prepare for the next phase (e.g., running an upfront API payload probe before writing mocks, adding a new `.env` setting, or expanding test fixtures).
+4. **Next-Phase Sign-Off:** Once we agree on the Exit Report and any `PLAN.md` adjustments, we check in the completed phase and unlock the next phase.
+
+---
+
+## 6. Phased Development & Test Cycles
+
+```mermaid
+flowchart TD
+    P1["Phase 1: Foundation, Docker, Admin Auth & Live ES/OPNsense Discovery<br/>(Complexity: 2/5 — Low-Medium)"]
+    P2["Phase 2: Device Discovery & Control #1 — Instant Device Block/Unblock<br/>(Complexity: 3/5 — Medium)"]
+    P3["Phase 3: Elasticsearch Analytics — Usage Stats, Access Time & Visited Domains<br/>(Complexity: 4/5 — Medium-High)"]
+    P4["Phase 4: Control #2 — Device Groups / Profiles & Bulk Toggles<br/>(Complexity: 3/5 — Medium)"]
+    P5["Phase 5: Control #3 — Timed Temporary Controls (Pause & Bonus Timers)<br/>(Complexity: 3.5/5 — Medium-High)"]
+    P6["Phase 6: Control #4 — Recurring Schedules & Bedtime Rules<br/>(Complexity: 4.5/5 — High)"]
+    P7["Phase 7: Audit Log UI, Config Backup & Production Hardening<br/>(Complexity: 3/5 — Medium)"]
+
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+```
+
+---
+
+### Phase 1 (Test Cycle 1): Foundation, Docker Packaging, Admin Auth & Environment Discovery
+- **Complexity:** **2 / 5 (Low–Medium)** — Straightforward project setup, auth boilerplate, multi-stage Docker build, and read-only API probing.
+- **Deliverables:**
+  1. Repository initialization: `.gitignore` (protecting `.env`), `.dockerignore`, `.env.example`, hidden `.env`, `docs/API_KEYS_SETUP.md`, `docs/TEST_AND_BUG_LOG.md`, and `docs/PHASE_EXIT_REPORTS.md`.
+  2. Backend core (`FastAPI`, `pydantic-settings`, SQLite + Alembic initial migration) with Built-in Admin Login (`/api/v1/auth/login`, `/logout`, `/me`) using signed `HttpOnly` cookies and login rate-limiting.
+  3. Connectivity Health API (`/api/v1/system/health`) checking live reachability & credential validity for OPNsense (`https://gateway.sparkle-pony.com`) and Elasticsearch (`https://es1.sparkle-pony.com`).
+  4. **Environment Discovery Tool (`scripts/discover_environment.py`)**:
+     - Probes OPNsense ARP (`/api/diagnostics/interface/get_arp`), Dnsmasq leases (`/api/dnsmasq/leases/search`), and verifies `gateway_blocked_devices` alias existence.
+     - Queries Elasticsearch `9.4.3` against `logs-pfsense.log*` (`pfSense 1.25.4` integration) to inspect `_mapping`, active `process.name`/`event.provider` buckets (`filterlog`, `unbound`, `dnsmasq`), and redacted sample docs, writing `docs/ES_SCHEMA_DISCOVERY.md` with exact ECS field paths (`@timestamp`, `source.ip`, `destination.ip`, `network.bytes`, `event.action`, `dns.question.name`).
+  5. React SPA shell: Login page, authenticated layout, dark/light responsive navigation, and System Connection Status banner.
+  6. Multi-stage `Dockerfile` + `docker-compose.yml` running end-to-end.
+- **Unit Testing Scope:**
+  - `.env` parsing & missing-secret startup rejection tests.
+  - Password verification, JWT cookie issuance/expiration, unauthorized route rejection (`401`), and rate-limit tests.
+  - Mocked OPNsense & ES health check tests (healthy, auth failure, SSL error, unreachable).
+  - Frontend Login form & protected route unit tests.
+- **Phase Exit & Check-in Gate:**
+  - Update Cycle 1 entries in `docs/TEST_AND_BUG_LOG.md` + `docs/ES_SCHEMA_DISCOVERY.md`.
+  - Complete **Phase 1 Exit Analysis & Interactive Checkpoint** in `docs/PHASE_EXIT_REPORTS.md` (waterfall any discovered OPNsense/ES quirks or deferred bugs into Phases 2–3 in `PLAN.md`, and review unplanned info needed during live discovery) → Git check-in.
+
+---
+
+### Phase 2 (Test Cycle 2): Device Inventory & Control Feature #1 — Instant Single-Device Block / Unblock
+- **Complexity:** **3 / 5 (Medium)** — Merging multiple OPNsense data sources (Dnsmasq leases + ARP + live `pf` alias) cleanly and enforcing self-lockout safety guardrails.
+- **Deliverables:**
+  1. **Device Discovery & Reconciliation Service**:
+     - Combines OPNsense `/api/dnsmasq/leases/search` + `/api/diagnostics/interface/get_arp` + `/api/firewall/alias_util/list/{alias}` (with automatic fallback to `/api/firewall/alias/get_alias_uuid` + `/api/firewall/alias/get_item/{uuid}`).
+     - **Phase 1 Waterfall Update 2A (Dnsmasq Schema Normalization):** Maps Dnsmasq lease fields (`address` → IPv4, `hwaddr` → MAC, `mac_info` → vendor, `if_descr` → interface) alongside ARP fields (`ip`, `mac`, `manufacturer`, `intf_description`), and strips Dnsmasq's literal `"*"` placeholder when `hostname` or `client_id` is unknown.
+     - Persists discovered devices by MAC address in SQLite so custom friendly names (e.g., *"Living Room Apple TV"*), custom icons, notes, and `is_protected` flags persist even if DHCP IPs change.
+  2. **Control Feature #1 — Instant Block / Unblock API**:
+     - `POST /api/v1/devices/{device_id}/block`: Validates target is not in `OPNSENSE_PROTECTED_IPS` or marked `is_protected`, adds the IP to `gateway_blocked_devices`, calls `/api/diagnostics/firewall/kill_states` (`{"filter": "<ip>"}`) for immediate traffic cutoff, and records an audit event.
+     - `POST /api/v1/devices/{device_id}/unblock`: Removes the IP from `gateway_blocked_devices` and records an audit event.
+     - **Phase 1 Waterfall Update 2B (Dual-Path Alias Mutation):** Supports `/api/firewall/alias_util/add` & `delete` with automatic fallback to `/api/firewall/alias/get_item/{uuid}` → `set_item/{uuid}` → `/api/firewall/alias/reconfigure` when `alias_util` returns `HTTP 403`.
+  3. **React Device Dashboard (v1)**:
+     - Summary KPI bar (Total Devices, Online Now, Currently Blocked, Protected).
+     - Searchable, sortable device table/cards (Filter by: All / Online / Blocked / Unassigned) with inline nickname editor and instant **Internet Access Toggle** with optimistic feedback.
+- **Unit Testing Scope:**
+  - Merge logic edge cases: static-IP device in ARP only, offline device in SQLite/Dnsmasq but absent from ARP, MAC address with changed DHCP IP, IPv4 validation preventing command/filter injection into `kill_states`.
+  - Protected-IP safety tests verifying `403 Forbidden` if attempting to block `192.168.50.1` or admin's IP.
+  - Partial failure handling (e.g., `alias_util/add` succeeds, `kill_states` times out — surfaces warning without corrupting state).
+  - Frontend Device table filtering, inline rename, and toggle switch tests.
+- **Phase Exit & Check-in Gate:** Update Cycle 2 `docs/TEST_AND_BUG_LOG.md` → **Phase 2 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+
+---
+
+### Phase 3 (Test Cycle 3): Elasticsearch `9.4.3` Analytics (`logs-pfsense.log*` — `pfSense 1.25.4`)
+- **Complexity:** **3.5 / 5 (Medium–High)** *(Reduced from `4/5` because `logs-pfsense.log*` uses standardized Elastic Common Schema `ECS` fields via the `pfSense 1.25.4` integration, and Phase 1 live discovery confirmed `unbound` DNS and `filterlog` fields are already populated across 6.67M+ docs)*
+- **Deliverables:**
+  1. **Elasticsearch `9.4.3` Analytics Service (`logs-pfsense.log*`)**:
+     - **Phase 1 Waterfall Update 3A (Verified Provider & ECS Field Filters):** Queries `event.provider: "filterlog"` (`3.63M+` docs) for bandwidth (`network.bytes`), packet actions (`event.action: pass | block`), and destination ASN organization (`destination.as.organization.name`), and queries `event.provider: "unbound"` (`3.02M+` docs) for DNS domain resolution (`dns.question.name`, `dns.question.registered_domain`, `dns.question.subdomain` correlated by `source.ip` / `client.ip`).
+     - **Network Overview (`/api/v1/analytics/overview`)**: Total traffic volume (`network.bytes`) / connection activity (`event.action: pass | block`) histogram (`1h`, `24h`, `7d`, `30d`), Top Devices by `source.ip` / `destination.ip`, and Top Domains (`dns.question.name` & `dns.question.registered_domain`) network-wide.
+     - **Per-Device Analytics (`/api/v1/devices/{device_id}/analytics`)**:
+       - **Usage Statistics:** Bytes transferred (`network.bytes` from `filterlog`) and allowed vs. blocked packet counts over time.
+       - **Access Time:** Hourly activity timeline & 24-hour distribution chart (`date_histogram` with `TZ` offset) showing exact windows when the device is active online.
+       - **Web Pages / Domains Visited:** Top domains table (`dns.question.name` / destination ASN/org enrichment) + searchable chronological recent domain feed.
+     - Short-TTL in-memory cache (`15–30s`) and graceful fallback so OPNsense blocking controls continue working normally even if Elasticsearch is temporarily unreachable.
+  2. **React Analytics Views**:
+     - Network Overview charts panel + time-range selector (`Last 1h`, `24h`, `7d`, `30d`).
+     - Interactive **Device Detail Drawer / Page** triggered by clicking any device: displays Usage chart, Access Time hourly chart, Top Visited Domains, and Recent Domain Log search—right alongside the device's Block/Unblock toggle.
+- **Unit Testing Scope:**
+  - ES aggregation query builder tests verifying IP filters, time-range bounds, timezone bucketing (`TZ`), and pagination/size caps.
+  - Response normalization tests with real-shaped fixture data (missing fields, null bytes, IPv4-mapped formats, empty buckets).
+  - Graceful degradation tests when ES returns `503` or times out.
+  - Frontend Device Detail Drawer chart/table rendering & time-window switching tests.
+- **Phase Exit & Check-in Gate:** Update Cycle 3 `docs/TEST_AND_BUG_LOG.md` → **Phase 3 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+
+---
+
+### Phase 4 (Test Cycle 4): Control Feature #2 — Device Groups / Profiles & Bulk Access Control
+- **Complexity:** **3 / 5 (Medium)** — Coordinating multi-device batch operations against OPNsense and aggregating multi-IP Elasticsearch queries cleanly.
+- **Deliverables:**
+  1. **Groups / Profiles Data Model & API (`/api/v1/groups`)**:
+     - Create, edit, delete groups (e.g., *Kids Devices*, *Living Room Media*, *IoT*, *Guests*) with color badge, icon, and assigned member devices.
+  2. **Bulk Group Block / Unblock (`/api/v1/groups/{group_id}/block` & `/unblock`)**:
+     - Batch-updates OPNsense `gateway_blocked_devices` for all non-protected member devices, kills active states for newly blocked members, and computes real-time group state (`Allowed`, `Partially Blocked`, `Blocked`).
+  3. **Group-Level Analytics (`/api/v1/groups/{group_id}/analytics`)**:
+     - Queries Elasticsearch across all member IPs combined (`terms` filter) so you can view combined usage, access hours, and visited domains across an entire profile (e.g., a child's phone + tablet + laptop together).
+  4. **React Groups UI**:
+     - Group summary cards at the top of the dashboard with one-click Group Block/Unblock toggle, member count, and Group Management modal + Group Analytics filter.
+- **Unit Testing Scope:**
+  - Group state calculation (`Allowed` vs `Partially Blocked` vs `Blocked` vs empty group).
+  - Batch toggle behavior when a group contains a protected device or an offline device without a current IP.
+  - Multi-IP Elasticsearch `terms` query construction tests.
+  - Frontend GroupCard toggle & member assignment modal tests.
+- **Phase Exit & Check-in Gate:** Update Cycle 4 `docs/TEST_AND_BUG_LOG.md` → **Phase 4 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+
+---
+
+### Phase 5 (Test Cycle 5): Control Feature #3 — Timed Temporary Controls (Pause & Bonus Access Timers)
+- **Complexity:** **3.5 / 5 (Medium–High)** — Asynchronous background timer execution, container-restart persistence, and periodic state reconciliation with OPNsense.
+- **Deliverables:**
+  1. **Persistent Temporary Override Engine (`APScheduler` + SQLite `temporary_overrides`)**:
+     - **Temporary Pause (Block for Duration):** Block a device or group for `15m`, `30m`, `1h`, `2h`, `Until Tomorrow (07:00)`, or custom minutes — automatically restores access at expiration.
+     - **Temporary Bonus Access (Allow for Duration):** Unblock a currently blocked device or group for `15m`, `30m`, `1h`, or custom minutes — automatically re-blocks and kills active firewall states the moment bonus time runs out.
+  2. **Startup & 60-Second Reconciliation Job**:
+     - On container boot (and every minute), checks for any overrides that expired while the container was down and synchronizes OPNsense's `gateway_blocked_devices` alias to match expected state.
+  3. **React Timer Controls**:
+     - Quick-timer popover menu on every Device row and Group card (*"Pause 30m"*, *"Pause 1h"*, *"Pause 2h"*, *"Grant 30m Bonus"*, *"Custom..."*).
+     - Live countdown pill (`Paused — 28m left` / `Bonus Time — 14m left`) with one-click **Cancel Timer**.
+- **Unit Testing Scope:**
+  - Deterministic time-travel tests (`freezegun`) verifying exact block/unblock + `kill_states` calls upon timer expiry.
+  - Simulated container restart tests (override expires while scheduler is stopped -> startup reconciliation fixes OPNsense alias).
+  - Conflict resolution tests (manual permanent toggle cancels an active timer cleanly).
+  - Frontend countdown badge and timer action menu tests.
+- **Phase Exit & Check-in Gate:** Update Cycle 5 `docs/TEST_AND_BUG_LOG.md` → **Phase 5 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+
+---
+
+### Phase 6 (Test Cycle 6): Control Feature #4 — Recurring Schedules & Bedtime Rules
+- **Complexity:** **4.5 / 5 (High)** — Highest logic complexity: overnight time windows crossing midnight, timezone/DST transitions, DHCP IP drift handling, and strict precedence between Schedules, Bonus Timers, and Manual Locks.
+- **Deliverables:**
+  1. **Recurring Schedule Engine (`schedules` table + Policy Evaluator)**:
+     - Weekly schedule rules assignable to individual Devices or Groups (e.g., *"School Night Bedtime: Sun–Thu 21:00–07:00"*, *"Weekend Bedtime: Fri–Sat 23:00–08:00"*).
+     - **Deterministic Policy Precedence Order** (evaluated every 60s and immediately on any rule/override change):
+       1. **Protected Device / Protected IP** → Always Allowed
+       2. **Active Temporary Override (Phase 5)** → Enforces Pause or Bonus Time until timer expires *(allows granting "30m Bonus Time" during bedtime without editing the schedule!)*
+       3. **Manual Permanent Block** → Blocked until manually cleared
+       4. **Active Recurring Schedule Block Window** → Blocked during scheduled off-hours; automatically unblocked when window ends
+       5. **Default Policy** → Allowed
+     - **DHCP IP Drift Sync:** If a blocked MAC address receives a new IP from OPNsense Dnsmasq, the reconciliation loop swaps the old IP out and adds the new IP into `gateway_blocked_devices` + kills states.
+  2. **React Schedule Manager UI**:
+     - Dedicated **Schedules** tab with visual day-of-week & time-window rule builder, enable/disable rule switch, target Device/Group selector, and clear status badges on devices (*"Blocked by Schedule: School Night Bedtime until 07:00"*).
+- **Unit Testing Scope:**
+  - Midnight-spanning window evaluation (`21:00` Monday → `07:00` Tuesday) across all 7 days of the week.
+  - Daylight Saving Time (spring-forward / fall-back) boundary tests in configured `TZ`.
+  - Complete **Precedence Matrix Test Suite** covering every combination of Schedule + Bonus Timer + Pause Timer + Manual Block + Protected Flag.
+  - DHCP IP change mid-schedule reconciliation tests.
+  - Frontend Schedule Builder validation and status badge tests.
+- **Phase Exit & Check-in Gate:** Update Cycle 6 `docs/TEST_AND_BUG_LOG.md` → **Phase 6 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+
+---
+
+### Phase 7 (Test Cycle 7): Audit Log UI, Settings Backup & Production Hardening
+- **Complexity:** **3 / 5 (Medium)** — Final observability polish, configuration portability, security audit, and end-to-end acceptance testing.
+- **Deliverables:**
+  1. **Audit & Event History Tab (`/api/v1/audit-logs`)**:
+     - Filterable timeline of every block, unblock, state kill, timer expiration, schedule transition, and IP-drift swap (recording actor: `admin`, `timer`, `schedule`, `system_reconcile`, timestamp, target device, and OPNsense result).
+  2. **Configuration Export / Import**:
+     - One-click JSON backup & restore of local metadata (device nicknames, groups, schedules) without exposing `.env` secrets.
+  3. **Container & Security Hardening**:
+     - Non-root container execution, Docker `HEALTHCHECK`, structured JSON logging, CSP/security headers, automatic SQLite audit-log retention pruning (e.g., 90 days), and comprehensive `README.md` self-hosting runbook.
+- **Unit & Integration Testing Scope:**
+  - Audit log filtering, pagination, and retention pruning unit tests.
+  - Config JSON export/import schema validation & duplicate-handling tests.
+  - Full end-to-end API lifecycle test (Login → Discover Device → Group → Pause → Schedule → ES Analytics → Audit Log).
+- **Phase Exit & Check-in Gate:** Verify zero unresolved/un-dispositioned items in `docs/TEST_AND_BUG_LOG.md` → **Final Phase 7 Exit Analysis & Project Retrospective Checkpoint** (`docs/PHASE_EXIT_REPORTS.md`) → Git check-in & v1.0 release tag.
+
+---
+
+## 7. Planned Repository Directory Layout
+
+```text
+gateway-front-end/
+├── .env                        # Hidden runtime secrets (GIT-IGNORED — never committed)
+├── .env.example                # Safe template with placeholder keys (committed)
+├── .gitignore
+├── PLAN.md                     # Living master plan (updated at each Phase Exit Analysis)
+├── README.md                   # Deployment & operations guide
+├── docker/
+│   ├── Dockerfile              # Multi-stage build (Node 22 Alpine -> Python 3.12 Slim)
+│   ├── Dockerfile.dockerignore # BuildKit context exclusion rules
+│   ├── .dockerignore           # Docker context exclusion rules
+│   ├── docker-compose.yml      # Self-hosted container deployment definition
+│   └── README.md               # Comprehensive Docker build, volume, TLS & operations guide
+├── docs/
+│   ├── API_KEYS_SETUP.md       # Detailed OPNsense & Elasticsearch key generation guide
+│   ├── ES_SCHEMA_DISCOVERY.md  # Generated in Phase 1 from live ES mapping inspection
+│   ├── TEST_AND_BUG_LOG.md     # Per-phase bug, fix & deferred-waterfall ledger
+│   └── PHASE_EXIT_REPORTS.md   # Phase-end exit analyses, waterfall deltas & unplanned-info learnings
+├── scripts/
+│   └── discover_environment.py # Phase 1 read-only OPNsense & ES index/mapping inspector
+├── backend/
+│   ├── pyproject.toml
+│   ├── alembic/                # SQLite schema migrations
+│   ├── app/
+│   │   ├── main.py             # FastAPI app & SPA static serving
+│   │   ├── config.py           # pydantic-settings .env loader
+│   │   ├── auth/               # Admin login, JWT cookies, rate limiting
+│   │   ├── clients/            # OPNsenseClient (httpx) & ElasticsearchClient
+│   │   ├── models/             # SQLAlchemy models (Device, Group, Override, Schedule, AuditLog)
+│   │   ├── services/           # Discovery, AccessControl, PolicyEngine, Analytics, Scheduler
+│   │   └── api/                # /api/v1/* routers
+│   └── tests/                  # pytest unit & integration suites (>= 85% coverage)
+└── frontend/
+    ├── package.json
+    ├── vite.config.ts
+    ├── src/
+    │   ├── api/                # Typed API client & TanStack Query hooks
+    │   ├── components/         # DeviceTable, GroupCards, AnalyticsDrawer, TimerMenu, ScheduleEditor
+    │   ├── pages/              # Login, Dashboard, DeviceDetail, Schedules, AuditLog, Settings
+    │   └── __tests__/          # Vitest + React Testing Library suites
+```
+
+---
+
+## 8. Pre-Development Sign-Off Checklist
+
+Before writing application code in **Phase 1**, let's confirm agreement on:
+- [x] **Software Stack:** Python 3.12 (`FastAPI`) + React (`TypeScript`, `Vite`, `Tailwind`, `Recharts`) + `SQLite` in a single multi-stage Docker container.
+- [x] **OPNsense Blocking Rule Approach:** Using `https://gateway.sparkle-pony.com` (`192.168.50.1`) with a `Host(s)` alias (`gateway_blocked_devices`) blocking WAN/non-RFC1918 traffic + `kill_states` for instant cutoff while preserving local Dnsmasq DHCP renewals.
+- [x] **`.env` & Least-Privilege Scoping:** Scoped `svc_gateway_ui` OPNsense user + two-stage read-only Elasticsearch API key (7-day Phase 1 discovery key → index-locked Phase 3 production key).
+- [x] **7-Phase Living Plan, Exit Analyses & Learnings Checkpoints:** Moving sequentially through Phases 1 → 7 with `pytest` + `Vitest` unit tests, `docs/TEST_AND_BUG_LOG.md` (including deferred/waterfalled bug tracking), and an interactive **Phase-End Exit Analysis & Unplanned-Information Checkpoint** (`docs/PHASE_EXIT_REPORTS.md`) before each check-in and phase transition.
+
