@@ -60,7 +60,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     )
 
     const user = userEvent.setup()
-    render(<App queryClient={createTestQueryClient()} />)
+    render(<App queryClient={createTestQueryClient()} initialTab="status" />)
 
     expect(await screen.findByRole('heading', { name: /Sparkle-Pony Gateway Control/i })).toBeInTheDocument()
 
@@ -94,7 +94,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     )
 
     const user = userEvent.setup()
-    render(<App queryClient={createTestQueryClient()} />)
+    render(<App queryClient={createTestQueryClient()} initialTab="status" />)
 
     const passwordInput = await screen.findByLabelText(/Administrator Password/i)
     await user.type(passwordInput, 'wrong-password')
@@ -151,7 +151,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     )
 
     const user = userEvent.setup()
-    render(<App queryClient={createTestQueryClient()} />)
+    render(<App queryClient={createTestQueryClient()} initialTab="status" />)
 
     const passwordInput = await screen.findByLabelText(/Administrator Password/i)
     await user.type(passwordInput, 'correct-horse-battery-staple')
@@ -205,7 +205,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
       new Response('Internal Server Error', { status: 500 }),
     )
 
-    render(<App queryClient={createTestQueryClient()} />)
+    render(<App queryClient={createTestQueryClient()} initialTab="status" />)
 
     expect(
       await screen.findByRole('heading', { name: /System Connectivity & Telemetry Status/i }),

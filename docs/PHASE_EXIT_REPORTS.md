@@ -49,3 +49,41 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **How we will apply these learnings to Phase 2:**
   1. Use the real (redacted) ARP and Dnsmasq lease JSON structures from [docs/ES_SCHEMA_DISCOVERY.md](ES_SCHEMA_DISCOVERY.md) directly in Phase 2 `respx` test fixtures.
   2. Implement both `alias_util` (`add`/`delete`) and `/api/firewall/alias/*` (`set_item` + `reconfigure`) fallback in `OPNsenseClient` so device blocking works reliably under your current `svc_gateway_ui` privileges.
+
+---
+
+## Phase 2 Exit Report (`2026-10-31`)
+
+### 1. Quality Gate Summary
+- **Backend Unit Tests (`pytest`):** `72 / 72 passed` in `1.72s` — **89.0% total statement coverage** (exceeds `>= 85%` gate; `100%` on `models`, `95%` on `clients/opnsense.py`, `86%` on `services/device_service.py`).
+- **Backend Static Analysis (`ruff` + `mypy`):** `0 errors` across all 16 source files and 8 test suites.
+- **Frontend Unit Tests (`Vitest`):** `7 / 7 passed` in `3.56s` — **96.59% line/statement coverage**, **87.15% branch coverage**, **90.16% function coverage**.
+- **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.57s` with `0 errors`.
+- **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
+  - Reconciled **`69` total network devices** (`57` online in ARP, `0` literal `"*"` hostnames remaining, `192.168.50.1` automatically locked as Protected).
+  - Verified live single-click **Block** and **Allow (Unblock)** end-to-end against `https://gateway.sparkle-pony.com` (`OPNsense 26.7.7-amd64`).
+- **Bugs Resolved in Phase 2:** `4` (`BUG-P2-001` through `BUG-P2-004` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `1` enrichment update waterfalled into Phase 3 of [PLAN.md](../PLAN.md).
+
+---
+
+### 2. Waterfall Adjustments to Future Phases (`PLAN.md`)
+1. **Waterfalled into Phase 3 (Elasticsearch `9.4.3` Analytics):**
+   - **Update 3B — SQLite `Device` Metadata Enrichment for Elasticsearch IP Buckets:** Since Phase 2 stores `69` discovered devices in SQLite with `effective_name` (`display_name` → `hostname` → `ipv4_address` → `mac_address`), `vendor`, `is_online`, and `is_blocked`, Phase 3's Network Overview (`/api/v1/analytics/overview`) will join Elasticsearch `source.ip`/`client.ip` aggregations with the SQLite `devices` table so charts and tables display user-friendly device names alongside IPs.
+   - **Phase 3 Complexity Impact:** Remains **3.5 / 5 (Medium–High)**.
+
+---
+
+### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 3
+- **What information or configuration was needed that we did not originally plan for?**
+  - *Finding 1 (OPNsense `26.7.7-amd64` `Core/ACL/ACL.xml` Granular Privilege Split — `BUG-P2-004`):*
+    - In OPNsense `26.7`, the **`Firewall: Aliases`** (`page-firewall-aliases`) privilege only unlocks **read-only** API routes (`api/firewall/alias/get*`, `list*`, `search*`, `export`) and returns `HTTP 403` on `api/firewall/alias/set_item/*` and `api/firewall/alias/reconfigure`.
+    - Mutating aliases requires enabling **`Firewall: Alias: Edit`** (`page-firewall-alias-edit` → `api/firewall/alias/*`) and **`Diagnostics: PF Table IP addresses`** (`page-diagnostics-tables` → `api/firewall/alias_util/*`). Both were added to the OPNsense service user/group and documented in [docs/API_KEYS_SETUP.md](API_KEYS_SETUP.md) and [PLAN.md](../PLAN.md).
+  - *Finding 2 (OPNsense `alias/get_item` Option-Dict Structure vs. `alias/set_item` Flat Strings):*
+    - `GET /api/firewall/alias/get_item/{uuid}` returns option fields (`type`, `proto`, `interface`, `authtype`, `content`) as dictionaries of `{key: {"value": ..., "selected": 0|1}}`, whereas `POST /api/firewall/alias/set_item/{uuid}` requires flattened strings (`"type": "host"`, `"content": "ip1\nip2"`). `_mutate_alias_ips_via_config_api()` in `OPNsenseClient` flattens those fields automatically.
+  - *Finding 3 (Python 3.12 `sys.monitoring` + SQLAlchemy `greenlet` Tracing — `BUG-P2-002`):*
+    - When `coverage.py` uses `core = "sysmon"` on Python 3.12, `greenlet` C-stack switches inside `await db.execute(...)` cause `sys.monitoring` to stop emitting `LINE` events for the remainder of that coroutine frame. Placing post-query synchronous business logic in dedicated helper functions ensures fresh stack frames that `sys.monitoring` traces at 100%.
+- **How we will apply these learnings to Phase 3:**
+  1. Structure Phase 3's `backend/app/services/analytics_service.py` with clean synchronous query-builder and response-normalizer helper functions around async Elasticsearch calls so unit tests stay fast, deterministic, and 100% traced by `sys.monitoring`.
+  2. Use the verified `filterlog` (`3.63M+` docs) and `unbound` (`3.02M+` docs) ECS field paths (`network.bytes`, `event.action`, `dns.question.name`, `dns.question.registered_domain`, `destination.as.organization.name`) from [docs/ES_SCHEMA_DISCOVERY.md](ES_SCHEMA_DISCOVERY.md).
+
