@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  BarChart3,
   Check,
   Edit2,
   Globe,
@@ -20,6 +21,7 @@ import {
   type DeviceStatusFilter,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 
 interface DevicesPageProps {
   activeTab?: AppTab
@@ -40,6 +42,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     text: string
   } | null>(null)
   const [pendingActionId, setPendingActionId] = useState<number | null>(null)
+  const [selectedAnalyticsDeviceId, setSelectedAnalyticsDeviceId] = useState<number | null>(null)
 
   const {
     data: deviceList,
@@ -205,7 +208,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
               Network Device Inventory &amp; Access Control
             </h1>
             <p className="text-sm text-slate-400">
-              Manage internet access via OPNsense (`gateway_blocked_devices`) and assign friendly device nicknames
+              Manage internet access via OPNsense (`gateway_blocked_devices`), assign friendly nicknames, and inspect per-device usage &amp; DNS domains
             </p>
           </div>
 
@@ -377,6 +380,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                   <th scope="col" className="px-4 py-3.5">IPv4 &amp; MAC</th>
                   <th scope="col" className="px-4 py-3.5">Vendor &amp; Interface</th>
                   <th scope="col" className="px-4 py-3.5">Guardrail</th>
+                  <th scope="col" className="px-4 py-3.5">Telemetry</th>
                   <th scope="col" className="px-4 py-3.5 text-right">Internet Access</th>
                 </tr>
               </thead>
@@ -438,9 +442,13 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-100 truncate">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAnalyticsDeviceId(dev.id)}
+                                  className="font-semibold text-slate-100 hover:text-indigo-300 truncate text-left cursor-pointer"
+                                >
                                   {dev.effective_name}
-                                </span>
+                                </button>
                                 <button
                                   type="button"
                                   aria-label={`Edit name for ${dev.effective_name}`}
@@ -515,7 +523,20 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                         </button>
                       </td>
 
-                      {/* Column 5: Instant Internet Access Toggle */}
+                      {/* Column 5: Per-Device Usage & Domains Drawer Trigger */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <button
+                          type="button"
+                          data-testid={`view-analytics-btn-${dev.id}`}
+                          onClick={() => setSelectedAnalyticsDeviceId(dev.id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                        >
+                          <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Usage &amp; Domains</span>
+                        </button>
+                      </td>
+
+                      {/* Column 6: Instant Internet Access Toggle */}
                       <td className="px-4 py-3.5 align-middle text-right">
                         {dev.is_protected ? (
                           <button
@@ -563,8 +584,13 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
             </table>
           </div>
         )}
+
+        {/* Per-Device Analytics Slide-Over Drawer */}
+        <DeviceAnalyticsDrawer
+          deviceId={selectedAnalyticsDeviceId}
+          onClose={() => setSelectedAnalyticsDeviceId(null)}
+        />
       </div>
     </AppLayout>
   )
 }
-

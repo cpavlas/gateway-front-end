@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { type AppTab } from './components/AppLayout'
+import { AnalyticsPage } from './pages/AnalyticsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { LoginPage } from './pages/LoginPage'
 import { StatusPage } from './pages/StatusPage'
@@ -34,6 +35,10 @@ export const AuthenticatedRouter: React.FC<{ initialTab?: AppTab }> = ({
 
   if (!user?.authenticated) {
     return <LoginPage />
+  }
+
+  if (activeTab === 'analytics') {
+    return <AnalyticsPage activeTab={activeTab} onSelectTab={setActiveTab} />
   }
 
   if (activeTab === 'status') {

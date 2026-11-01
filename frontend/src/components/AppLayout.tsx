@@ -1,9 +1,9 @@
 import React from 'react'
-import { Activity, Laptop, LogOut, Server, Shield, UserCheck } from 'lucide-react'
+import { Activity, BarChart3, Laptop, LogOut, Server, Shield, UserCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import type { HealthLevel } from '../api/client'
 
-export type AppTab = 'devices' | 'status'
+export type AppTab = 'devices' | 'analytics' | 'status'
 
 interface AppLayoutProps {
   overallStatus?: HealthLevel
@@ -71,6 +71,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </button>
                 <button
                   type="button"
+                  data-testid="nav-tab-analytics"
+                  onClick={() => onSelectTab('analytics')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                    activeTab === 'analytics'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                  }`}
+                >
+                  <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Traffic &amp; DNS Analytics</span>
+                </button>
+                <button
+                  type="button"
                   data-testid="nav-tab-status"
                   onClick={() => onSelectTab('status')}
                   className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
@@ -99,6 +112,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   }`}
                 >
                   Devices
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('analytics')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                    activeTab === 'analytics'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  Analytics
                 </button>
                 <button
                   type="button"

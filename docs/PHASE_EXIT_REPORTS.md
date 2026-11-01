@@ -87,3 +87,42 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   1. Structure Phase 3's `backend/app/services/analytics_service.py` with clean synchronous query-builder and response-normalizer helper functions around async Elasticsearch calls so unit tests stay fast, deterministic, and 100% traced by `sys.monitoring`.
   2. Use the verified `filterlog` (`3.63M+` docs) and `unbound` (`3.02M+` docs) ECS field paths (`network.bytes`, `event.action`, `dns.question.name`, `dns.question.registered_domain`, `destination.as.organization.name`) from [docs/ES_SCHEMA_DISCOVERY.md](ES_SCHEMA_DISCOVERY.md).
 
+---
+
+## Phase 3 Exit Report (`2026-10-31`)
+
+### 1. Quality Gate Summary
+- **Backend Unit Tests (`pytest`):** `79 / 79 passed` in `2.17s` — **95.0% total statement coverage** (exceeds `>= 85%` gate; `100%` on `services/analytics_service.py` and `api/analytics.py`, `97%` on `clients/elasticsearch.py`).
+- **Backend Static Analysis (`ruff` + `mypy`):** `0 errors` across all 18 source files and 10 test suites.
+- **Frontend Unit Tests (`Vitest`):** `10 / 10 passed` in `3.79s` — **95.71% line/statement coverage**, **85.94% branch coverage**, **91.91% function coverage**.
+- **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.54s` with `0 errors`.
+- **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
+  - Network Overview (`/api/v1/analytics/overview?window=24h`) aggregated **`967,295` total events**, **`65.3 MB` firewall traffic**, and **`428,506` Unbound DNS queries**, automatically enriching top RFC1918 LAN IPs with SQLite `Device` metadata (`Chrispy`, `ProxmoxVM`, `elastic-node-02`, `elastic-node-03`).
+  - Per-Device Analytics (`/api/v1/devices/{id}/analytics`) verified live with Usage Timeline, 24-Hour Access Time Profile (`00:00`–`23:00` local timezone), Top Visited Domains, Top Destination ASN Organizations, and Chronological Recent DNS Query search.
+- **Bugs Resolved in Phase 3:** `1` (`BUG-P3-001` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `1` multi-IP group aggregation enhancement waterfalled into Phase 4 of [PLAN.md](../PLAN.md).
+
+---
+
+### 2. Waterfall Adjustments to Future Phases (`PLAN.md`)
+1. **Waterfalled into Phase 4 (Device Groups / Profiles & Bulk Access Control):**
+   - **Update 4A — Multi-IP Group Analytics & Per-Member Contribution Breakdown:** Phase 4's Group Analytics (`/api/v1/groups/{group_id}/analytics`) will reuse Phase 3's `filterlog` + `unbound` aggregation pipeline using multi-IP `terms` filters (`source.ip`, `destination.ip`, `client.ip`) and add a `by_member_ip` `terms` sub-aggregation so Group Analytics displays both combined profile telemetry and each member device's individual share of bytes and DNS queries.
+   - **Phase 4 Complexity Impact:** Remains **3 / 5 (Medium)**.
+
+---
+
+### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 4
+- **What information or configuration was needed that we did not originally plan for?**
+  - *Finding 1 (OPNsense `filterlog` WAN SNAT & IPv6 Link-Local Source IPs in `logs-pfsense.log*`):*
+    - In OPNsense `filterlog`, outbound WAN packets logged after SNAT carry the router's public WAN IP (`50.39.173.134`) as `source.ip`, and IPv6 neighbor discovery events carry `fe80::*` / `fd8a::*`.
+    - Because `source.ip` is mapped as a native Elasticsearch `ip` field type, filtering the `top_devices` aggregation with `{"terms": {"source.ip": ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]}}` cleanly isolates RFC1918 LAN devices in a single query clause without post-filtering noise.
+  - *Finding 2 (Combining `filterlog` + `unbound` for Complete Per-Device Activity Timelines):*
+    - Because OPNsense's default LAN allow rule does not log every permitted TCP packet unless explicitly enabled, some LAN clients generate far more `unbound` DNS query events than `filterlog` packet logs. Aggregating both `filterlog` (`source.ip` / `destination.ip`) and `unbound` (`source.ip` / `client.ip`) per device ensures the Usage Timeline and 24-Hour Access Profile accurately reflect online hours for all devices.
+  - *Finding 3 (Script-Free 24-Hour Access Time Profile via Hourly `date_histogram` + Python Bucketing):*
+    - Instead of running an Elasticsearch Painless script (`doc['@timestamp'].value.hour`) across millions of documents, requesting a `1h` `date_histogram` with `time_zone` set to the configured `TZ` and folding `key_as_string` into 24 hour-of-day buckets (`00:00`..`23:00`) in Python (`_compute_24h_access_profile()`) is faster, avoids cluster script execution limits, and respects DST/timezone offsets automatically.
+  - *Finding 4 (TanStack Query Input Focus Preservation on Key Changes — `BUG-P3-001`):*
+    - When a search input or window selector updates a `useQuery` key, setting `placeholderData: (previousData) => previousData` prevents the component tree from unmounting into a skeleton loader while the new query resolves.
+- **How we will apply these learnings to Phase 4:**
+  1. Reuse `_compute_24h_access_profile()` and the combined `filterlog` + `unbound` query structure for Group-Level Analytics (`/api/v1/groups/{group_id}/analytics`).
+  2. Use `placeholderData: (previousData) => previousData` in all Phase 4 Group Analytics and Group filter hooks in React.
+

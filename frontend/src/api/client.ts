@@ -1,5 +1,6 @@
 export type HealthLevel = 'healthy' | 'degraded' | 'unhealthy'
 export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected'
+export type TimeWindow = '1h' | '24h' | '7d' | '30d'
 
 export interface AuthUserResponse {
   username: string
@@ -75,6 +76,116 @@ export interface DeviceActionResponse {
   action: 'block' | 'unblock'
   states_killed: boolean
   warning: string | null
+}
+
+export interface TimelineBucketItem {
+  timestamp: string
+  total_events: number
+  bytes: number
+  dns_queries: number
+  allowed_packets: number
+  blocked_packets: number
+}
+
+export interface TopDomainItem {
+  domain: string
+  query_count: number
+}
+
+export interface TopOrganizationItem {
+  organization: string
+  packet_count: number
+  bytes: number
+}
+
+export interface TopDeviceTrafficItem {
+  device_id: number | null
+  ipv4_address: string
+  effective_name: string
+  mac_address: string | null
+  vendor: string | null
+  is_online: boolean
+  is_blocked: boolean
+  is_protected: boolean
+  total_events: number
+  bytes: number
+  dns_queries: number
+  allowed_packets: number
+  blocked_packets: number
+  last_seen_at: string | null
+}
+
+export interface NetworkOverviewSummary {
+  total_events: number
+  total_bytes: number
+  dns_query_count: number
+  firewall_event_count: number
+  allowed_packet_count: number
+  blocked_packet_count: number
+}
+
+export interface NetworkOverviewResponse {
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  summary: NetworkOverviewSummary
+  timeline: TimelineBucketItem[]
+  top_devices: TopDeviceTrafficItem[]
+  top_domains: TopDomainItem[]
+  top_registered_domains: TopDomainItem[]
+  top_organizations: TopOrganizationItem[]
+}
+
+export interface HourlyAccessPoint {
+  hour: number
+  label: string
+  total_events: number
+  dns_queries: number
+  bytes: number
+  active_hours_count: number
+}
+
+export interface RecentDomainQueryItem {
+  timestamp: string
+  domain: string
+  registered_domain: string | null
+  record_type: string
+}
+
+export interface DeviceAnalyticsSummary {
+  total_events: number
+  total_bytes: number
+  dns_query_count: number
+  firewall_event_count: number
+  allowed_packet_count: number
+  blocked_packet_count: number
+  active_hours_in_day: number
+  first_active_at: string | null
+  last_active_at: string | null
+}
+
+export interface DeviceAnalyticsResponse {
+  device: DeviceItem
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  summary: DeviceAnalyticsSummary
+  timeline: TimelineBucketItem[]
+  hourly_access_profile: HourlyAccessPoint[]
+  top_domains: TopDomainItem[]
+  top_registered_domains: TopDomainItem[]
+  top_organizations: TopOrganizationItem[]
+  recent_queries: RecentDomainQueryItem[]
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** exp
+  return `${exp === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exp]}`
 }
 
 export class ApiError extends Error {
@@ -183,5 +294,42 @@ export const apiClient = {
     return requestJson<DeviceActionResponse>(`/api/v1/devices/${deviceId}/unblock`, {
       method: 'POST',
     })
+  },
+
+  getNetworkOverview(params?: {
+    window?: TimeWindow
+    refresh?: boolean
+  }): Promise<NetworkOverviewResponse> {
+    const query = new URLSearchParams()
+    query.set('window', params?.window ?? '24h')
+    if (params?.refresh) {
+      query.set('refresh', 'true')
+    }
+    return requestJson<NetworkOverviewResponse>(
+      `/api/v1/analytics/overview?${query.toString()}`,
+      { method: 'GET' },
+    )
+  },
+
+  getDeviceAnalytics(
+    deviceId: number,
+    params?: {
+      window?: TimeWindow
+      domain_search?: string
+      refresh?: boolean
+    },
+  ): Promise<DeviceAnalyticsResponse> {
+    const query = new URLSearchParams()
+    query.set('window', params?.window ?? '24h')
+    if (params?.domain_search && params.domain_search.trim()) {
+      query.set('domain_search', params.domain_search.trim())
+    }
+    if (params?.refresh) {
+      query.set('refresh', 'true')
+    }
+    return requestJson<DeviceAnalyticsResponse>(
+      `/api/v1/devices/${deviceId}/analytics?${query.toString()}`,
+      { method: 'GET' },
+    )
   },
 }
