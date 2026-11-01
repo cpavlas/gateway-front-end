@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.system import router as system_router
@@ -62,6 +63,7 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(system_router)
     app.include_router(devices_router)
+    app.include_router(analytics_router)
 
     dist_path = frontend_dist_dir if frontend_dist_dir is not None else DEFAULT_FRONTEND_DIST
     configure_spa_serving(app, dist_path)

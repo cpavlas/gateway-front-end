@@ -375,6 +375,7 @@ flowchart TD
      - Batch-updates OPNsense `gateway_blocked_devices` for all non-protected member devices, kills active states for newly blocked members, and computes real-time group state (`Allowed`, `Partially Blocked`, `Blocked`).
   3. **Group-Level Analytics (`/api/v1/groups/{group_id}/analytics`)**:
      - Queries Elasticsearch across all member IPs combined (`terms` filter) so you can view combined usage, access hours, and visited domains across an entire profile (e.g., a child's phone + tablet + laptop together).
+     - **Phase 3 Waterfall Update 4A (Multi-IP Group Analytics & Member Breakdown):** Reuses Phase 3's `filterlog` + `unbound` aggregation structure with multi-IP `terms` filters (`source.ip`, `destination.ip`, `client.ip`) and adds a `by_member_ip` `terms` sub-aggregation so Group Analytics displays per-member traffic & DNS contribution across the group alongside the Python-side 24-hour access profile (`_compute_24h_access_profile()`).
   4. **React Groups UI**:
      - Group summary cards at the top of the dashboard with one-click Group Block/Unblock toggle, member count, and Group Management modal + Group Analytics filter.
 - **Unit Testing Scope:**
