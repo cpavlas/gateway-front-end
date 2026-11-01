@@ -27,6 +27,9 @@ OverrideTargetLiteral = Literal["device", "group"]
 
 PRESET_MINUTES_MAP: dict[str, int] = {
     "15m": 15,
+    "20m": 20,
+    "40m": 40,
+    "60m": 60,
     "30m": 30,
     "1h": 60,
     "2h": 120,
@@ -507,7 +510,7 @@ async def start_device_override(
             opnsense,
             settings,
             device_id,
-            actor=actor,
+            actor=f"timer ({actor})",
             client_ip=client_ip,
         )
     else:
@@ -516,7 +519,7 @@ async def start_device_override(
             opnsense,
             settings,
             device_id,
-            actor=actor,
+            actor=f"timer ({actor})",
             client_ip=client_ip,
         )
 
@@ -573,7 +576,7 @@ async def start_group_override(
             opnsense,
             settings,
             group_id,
-            actor=actor,
+            actor=f"timer ({actor})",
             client_ip=client_ip,
         )
     else:
@@ -582,7 +585,7 @@ async def start_group_override(
             opnsense,
             settings,
             group_id,
-            actor=actor,
+            actor=f"timer ({actor})",
             client_ip=client_ip,
         )
 
@@ -657,7 +660,7 @@ async def cancel_override(
                     opnsense,
                     settings,
                     override.device_id,
-                    actor=actor,
+                    actor=f"timer ({actor})",
                     client_ip=client_ip,
                 )
                 if res.warning:
@@ -669,7 +672,7 @@ async def cancel_override(
                     opnsense,
                     settings,
                     override.device_id,
-                    actor=actor,
+                    actor=f"timer ({actor})",
                     client_ip=client_ip,
                 )
                 if res.warning:
@@ -682,7 +685,7 @@ async def cancel_override(
                     opnsense,
                     settings,
                     override.group_id,
-                    actor=actor,
+                    actor=f"timer ({actor})",
                     client_ip=client_ip,
                 )
                 warnings.extend(grp_res.warnings)
@@ -693,7 +696,7 @@ async def cancel_override(
                     opnsense,
                     settings,
                     override.group_id,
-                    actor=actor,
+                    actor=f"timer ({actor})",
                     client_ip=client_ip,
                 )
                 warnings.extend(grp_res.warnings)
@@ -794,5 +797,12 @@ async def reconcile_expired_overrides(
             await db.rollback()
             err_msg = f"Failed to reconcile expired override #{ov_id}: {exc}"
             summary.errors.append(err_msg)
+
+    if summary.expired_processed_count > 0:
+        from app.services.schedule_service import reconcile_schedules_and_policies
+
+        await reconcile_schedules_and_policies(
+            db, opnsense, settings, now_utc=now_aware
+        )
 
     return summary

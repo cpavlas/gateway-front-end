@@ -220,3 +220,43 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   1. Fix `Settings.database_url` in Phase 6 Step 6.1 to honor `SQLITE_DB_PATH=/app/data/gateway.db` so all groups, nicknames, active timers, and recurring schedules persist across container rebuilds and restarts (`FB-P5-010`).
   2. Capture primitive IDs prior to `try / except` blocks in `ScheduleService`'s background reconciliation loop.
   3. Implement all 10 Phase 5 UI & Persistence feedback items (`FB-P5-001` through `FB-P5-010`) alongside Phase 6's Recurring Schedules & Bedtime Rules engine.
+
+---
+
+## Phase 6 (Test Cycle 6) Exit Analysis: Control Feature #4 — Recurring Schedules & Bedtime Rules + Phase 5 UI Backlog Batch
+
+### 1. Phase 6 Execution Summary & Verification Metrics
+- **Branch:** `phase6` (merged to `main` as `v0.6.0`)
+- **Automated Test Gate Results:**
+  - **Backend (`pytest` + `coverage` + `ruff` + `mypy`):** **107 passed** in `10.89s`, **88% total coverage** (`97%` on `api/schedules.py`, `88%` on `services/schedule_service.py`, `99%` on `models/__init__.py` and `config.py`), `0` `ruff` warnings, `0` `mypy` type errors across 24 source files.
+  - **Frontend (`vitest --coverage` + `tsc -b && vite build`):** **17 passed** across 6 test files (`App.test.tsx`, `DevicesPage.test.tsx`, `Analytics.test.tsx`, `Groups.test.tsx`, `Timers.test.tsx`, `Schedules.test.tsx`), **92.03% statement/line coverage** (`98.75%` on `AppLayout.tsx`, `94.77%` on `TimerPopoverMenu.tsx`, `94.01%` on `DevicesPage.tsx`, `89.66%` on `ScheduleFormModal.tsx`), `0` TypeScript/Vite build errors.
+  - **Live Container & User UI Verification (`http://localhost:8080`):**
+    - Confirmed header displays `v0.6.0`, `Logout` (`FB-P5-006`), and the new **`Schedules & Bedtime`** navigation tab.
+    - Confirmed `Devices & Access Control` header description cleanup (`FB-P5-008`), 24-hour `Synced: HH:MM:SS` clock beneath `Sync from OPNsense` (`FB-P5-009`), aligned `Timer` button height (`FB-P5-005`), and fixed-width Group `Filter` button (`FB-P5-007`).
+    - Confirmed centered screen modal for Timer controls (`FB-P5-001`), unified active countdown & color inside the `Timer` button (`FB-P5-002`), duration-only preset labels (`FB-P5-003`), and `20m`/`40m`/`60m` Bonus Access presets (`FB-P5-004`).
+    - Confirmed `Schedules & Bedtime` tab (`SchedulesPage.tsx` & `ScheduleFormModal.tsx`) and host SQLite persistence at `d:\source\gateway-front-end\data\gateway.db` (`FB-P5-010`).
+
+---
+
+### 2. Waterfall Impact & Plan Adjustments for Phase 7 (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
+1. **Zero Deferred Bugs from Phase 6:**
+   - Both defects discovered during Phase 6 (`BUG-P6-001` and `BUG-P6-002`) were resolved and verified with regression tests before Phase 6 check-in.
+2. **User Phase 6 Feedback & Feature Requests Logged in `docs/FEATURE_BACKLOG.md` & Scheduled for Phase 7 (`FB-P6-001` – `FB-P6-005`):**
+   - **`FB-P6-001` (Schedule Modal Single-Device Search Field):** Add a search input above the Target Device selector when creating a single-device schedule in `ScheduleFormModal.tsx`.
+   - **`FB-P6-002` (Per-Second System Clock Below `Logout` Button):** Display a live 1-second updating system clock directly below the `Logout` button in `AppLayout.tsx`.
+   - **`FB-P6-003` (`Local SQLite Store` Storage Size & Record Count Stats):** Add on-disk storage size (`KB`/`MB`) and total/per-table record count metrics to `/api/v1/system/health` (`sqlite.details`) and `StatusPage.tsx`.
+   - **`FB-P6-004` (Application Usage Stats — Active Usage Time Tracking for YouTube & Plex):** Aggregate 5-minute active session intervals, query/packet counts, and bandwidth for **YouTube** (`youtube.com`, `googlevideo.com`, `ytimg.com`, `youtu.be`) and **Plex** (`plex.tv`, `plex.direct`, `:32400`) from `logs-pfsense.log*`, and display active usage duration in `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, and `AnalyticsPage.tsx`.
+   - **`FB-P6-005` (Selective Application Blocking — Block YouTube While Allowing Plex & Everything Else):** Implement per-device and per-group YouTube blocking (`is_youtube_blocked` on `Device` + OPNsense `gateway_youtube_blocked_devices` / `gateway_youtube_domains` aliases) with one-click UI toggles so YouTube can be blocked while Plex and general internet access remain allowed.
+
+---
+
+### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 7
+- **What information or configuration was needed that we did not originally plan for?**
+  - *Finding 1 (Distinguishing Manual Permanent Blocks from Temporary Timer / Schedule Blocks — `BUG-P6-001`):*
+    - When `TimerService.start_device_override` delegated a `pause` timer to `block_device_internet(..., actor="admin")`, `block_device_internet` treated any `actor` not starting with `"timer"` or `"schedule"` as a manual permanent block (`dev.is_manually_blocked = True`). Consequently, when the pause timer expired and `reconcile_schedules_and_policies()` evaluated the 5-tier policy, Tier 3 (`Manual Permanent Block`) re-blocked the device! Prefixing `actor=f"timer ({actor})"` inside `timer_service.py` cleanly separates temporary timer blocks from permanent manual blocks.
+  - *Finding 2 (Selective Application Blocking for YouTube vs. Plex on OPNsense `26.7.7` — `FB-P6-005`):*
+    - Blocking YouTube without impacting Plex or general Google services cannot rely on blocking all of Google's ASN (`AS15169`). Instead, maintaining a dedicated source IP alias (`gateway_youtube_blocked_devices`) paired with a YouTube FQDN/host alias (`gateway_youtube_domains`) on OPNsense allows selective per-device/per-group YouTube blocking while leaving Plex (`plex.tv`, `plex.direct`, `:32400`) and all other traffic untouched.
+- **How we will apply these learnings to Phase 7:**
+  1. Keep `is_youtube_blocked` independent of `is_blocked` and `is_manually_blocked` so full-internet schedules/timers and selective YouTube app blocks never overwrite each other.
+  2. Deliver all 5 Phase 6 feedback items (`FB-P6-001` through `FB-P6-005`) alongside Phase 7's Audit Log & Settings Backup (`v1.0.0`).
+

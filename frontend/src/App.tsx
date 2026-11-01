@@ -5,6 +5,7 @@ import { type AppTab } from './components/AppLayout'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { LoginPage } from './pages/LoginPage'
+import { SchedulesPage } from './pages/SchedulesPage'
 import { StatusPage } from './pages/StatusPage'
 
 const defaultQueryClient = new QueryClient({
@@ -35,6 +36,10 @@ export const AuthenticatedRouter: React.FC<{ initialTab?: AppTab }> = ({
 
   if (!user?.authenticated) {
     return <LoginPage />
+  }
+
+  if (activeTab === 'schedules') {
+    return <SchedulesPage activeTab={activeTab} onSelectTab={setActiveTab} />
   }
 
   if (activeTab === 'analytics') {

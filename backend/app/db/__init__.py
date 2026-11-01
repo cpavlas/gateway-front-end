@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -73,6 +73,18 @@ async def init_db(settings: Settings | None = None) -> None:
     engine = get_engine(settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        res = await conn.execute(text("PRAGMA table_info(devices)"))
+        existing_cols = {str(row[1]) for row in res.fetchall()}
+        if existing_cols and "is_manually_blocked" not in existing_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE devices ADD COLUMN is_manually_blocked "
+                    "BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+            await conn.execute(
+                text("UPDATE devices SET is_manually_blocked = is_blocked")
+            )
 
 
 async def dispose_db() -> None:

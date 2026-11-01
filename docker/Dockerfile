@@ -20,6 +20,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     SQLITE_DB_PATH=/app/data/gateway.db \
+    DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db \
     PYTHONPATH=/app/backend
 
 RUN groupadd --gid 10001 gateway \

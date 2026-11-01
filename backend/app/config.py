@@ -7,10 +7,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_GATEWAY_IP = "192.168.50.1"
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/gateway.db"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 
@@ -37,7 +38,8 @@ class Settings(BaseSettings):
     auth_rate_limit_attempts: int = Field(default=5, ge=1, le=100)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=5, le=3600)
 
-    database_url: str = "sqlite+aiosqlite:///./data/gateway.db"
+    database_url: str = DEFAULT_DATABASE_URL
+    sqlite_db_path: str = ""
 
     # 2. OPNsense Integration (https://gateway.sparkle-pony.com / 192.168.50.1)
     opnsense_base_url: str = "https://gateway.sparkle-pony.com"
@@ -99,6 +101,15 @@ class Settings(BaseSettings):
         if DEFAULT_GATEWAY_IP not in validated:
             validated.insert(0, DEFAULT_GATEWAY_IP)
         return ",".join(dict.fromkeys(validated))
+
+    @model_validator(mode="after")
+    def resolve_sqlite_db_path(self) -> Settings:
+        """If SQLITE_DB_PATH is set and database_url uses the default, bind to SQLITE_DB_PATH."""
+        cleaned_path = self.sqlite_db_path.strip()
+        if cleaned_path and self.database_url == DEFAULT_DATABASE_URL:
+            posix_path = Path(cleaned_path).as_posix()
+            self.database_url = f"sqlite+aiosqlite:///{posix_path}"
+        return self
 
     @property
     def protected_ip_set(self) -> frozenset[str]:

@@ -10,6 +10,7 @@ services:
       - ../.env
     environment:
       - SQLITE_DB_PATH=/app/data/gateway.db
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
