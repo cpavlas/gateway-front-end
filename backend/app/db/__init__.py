@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -30,6 +32,13 @@ def _ensure_sqlite_parent_dir(database_url: str) -> None:
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection: Any, _connection_record: Any) -> None:
+    """Enable SQLite foreign key enforcement (ON DELETE CASCADE) on every new connection."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 def get_engine(settings: Settings | None = None) -> AsyncEngine:
     """Return or initialize the async SQLAlchemy engine."""
     global _engine
@@ -41,6 +50,8 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
             echo=False,
             future=True,
         )
+        if cfg.database_url.startswith("sqlite"):
+            event.listen(_engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
     return _engine
 
 

@@ -230,10 +230,10 @@ Every phase below operates as a self-contained **Test Cycle** followed by a form
 ```mermaid
 flowchart LR
     Build["1. Phase Build"] --> Test["2. Unit & Smoke Testing<br/>(pytest + Vitest + Docker)"]
-    Test --> BugLog["3. Update Bug Ledger<br/>(Fixed Now vs Deferred/Waterfalled)"]
+    Test --> BugLog["3. Update Bug & Feature Ledgers<br/>(TEST_AND_BUG_LOG + FEATURE_BACKLOG)"]
     BugLog --> Exit["4. Exit Analysis<br/>(Waterfall Scope & Complexity Updates)"]
-    Exit --> Check["5. Interactive Checkpoint<br/>(Discuss Unplanned Info & Learnings)"]
-    Check --> Commit["6. Update PLAN.md & Git Check-in<br/>(Unlock Next Phase)"]
+    Exit --> Check["5. Interactive Checkpoint<br/>(Review Backlog & Unplanned Info)"]
+    Check --> Commit["6. Bump Version, Update PLAN.md & Git Push<br/>(Unlock Next Phase)"]
 ```
 
 ### 5.1 Unit & Component Testing Standards
@@ -263,11 +263,11 @@ A dedicated tracking document, `docs/TEST_AND_BUG_LOG.md`, will be maintained in
 | **Regression Test** | Exact unit test added (`tests/...::test_...`), or planned test target if deferred |
 | **Commit Reference** | Git commit hash where logged and/or resolved |
 
-### 5.3 End-of-Phase Exit Analysis & Waterfall Re-Baselining
-Because real-world network data and API behaviors evolve as we build, **`PLAN.md` is treated as a living document**. At the conclusion of each phase (before check-in), we perform a structured **Exit Analysis** recorded in `docs/PHASE_EXIT_REPORTS.md`:
-1. **Waterfall Item Migration:** Any non-blocking bugs (`Deferred` in `docs/TEST_AND_BUG_LOG.md`), newly uncovered edge cases, or architectural refinements are explicitly added to the **Deliverables** and **Unit Testing Scope** of their target future phase (`Phase N+1..7`) inside `PLAN.md`.
+### 5.3 End-of-Phase Exit Analysis, Feature Backlog Review & Waterfall Re-Baselining
+Because real-world network data, user UI feedback, and API behaviors evolve as we build, **`PLAN.md` and `docs/FEATURE_BACKLOG.md` are treated as living documents**. At the conclusion of each phase (before check-in), we perform a structured **Exit Analysis** recorded in `docs/PHASE_EXIT_REPORTS.md`:
+1. **Waterfall Item & Feature Backlog Migration (`docs/FEATURE_BACKLOG.md`):** Any non-blocking bugs (`Deferred` in `docs/TEST_AND_BUG_LOG.md`), user UI/feature requests logged in `docs/FEATURE_BACKLOG.md`, newly uncovered edge cases, or architectural refinements are explicitly evaluated at each phase boundary and scheduled into the **Deliverables** and **Unit Testing Scope** of their target future phase (`Phase N+1..7`) inside `PLAN.md`.
 2. **Complexity & Scope Re-Assessment:** Re-evaluate the complexity ratings (`1–5`) and dependencies of upcoming phases based on waterfalled items so scope creep stays visible and controlled.
-3. **Carry-Over Verification:** At the start of Phase `N+1`, any bugs waterfalled into Phase `N+1` become priority acceptance criteria for that cycle.
+3. **Carry-Over Verification & Version Increment (`FB-P4-002`):** At the start of Phase `N+1`, any bugs or backlog items waterfalled into Phase `N+1` become priority acceptance criteria for that cycle. Prior to each phase Git check-in/push, increment the application version (`backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json`) so the UI header always matches the current release pushed to GitHub.
 
 ### 5.4 Phase-End Interactive Checkpoint & "Unplanned Information" Retrospective
 At the end of every phase, development pauses for a **mandatory discussion checkpoint** with you before moving forward. Together we review:
@@ -398,6 +398,8 @@ flowchart TD
   3. **React Timer Controls**:
      - Quick-timer popover menu on every Device row and Group card (*"Pause 30m"*, *"Pause 1h"*, *"Pause 2h"*, *"Grant 30m Bonus"*, *"Custom..."*).
      - Live countdown pill (`Paused — 28m left` / `Bonus Time — 14m left`) with one-click **Cancel Timer**.
+  4. **Phase 4 Waterfall Update 5A — UI Polish, Stacked Activity Chart & System Connectivity Cleanup (`docs/FEATURE_BACKLOG.md`)**:
+     - Integrate scheduled Phase 4 UI backlog items (`FB-P4-001` through `FB-P4-006`, `FB-P4-010`, and `FB-P4-011`): header health status badge (`HEALTHY`/`DOWN`), semantic version increment (`v0.4.0` -> `v0.5.0`), Telemetry button label (`Analytics`), Internet Access button state label (`Blocked`/`Allowed`), `Top Visited Domains` label cleanup, stacked `Usage & Activity Timeline` bar chart (DNS Queries vs. Firewall Events with color key legend and hover breakdown), Analytics title/button copy cleanup, and replacing/removing the stale Phase 1 placeholder card on `StatusPage.tsx`.
 - **Unit Testing Scope:**
   - Deterministic time-travel tests (`freezegun`) verifying exact block/unblock + `kill_states` calls upon timer expiry.
   - Simulated container restart tests (override expires while scheduler is stopped -> startup reconciliation fixes OPNsense alias).
@@ -466,6 +468,7 @@ gateway-front-end/
 ├── docs/
 │   ├── API_KEYS_SETUP.md       # Detailed OPNsense & Elasticsearch key generation guide
 │   ├── ES_SCHEMA_DISCOVERY.md  # Generated in Phase 1 from live ES mapping inspection
+│   ├── FEATURE_BACKLOG.md      # User UI feedback & feature evaluation backlog reviewed at each phase
 │   ├── TEST_AND_BUG_LOG.md     # Per-phase bug, fix & deferred-waterfall ledger
 │   └── PHASE_EXIT_REPORTS.md   # Phase-end exit analyses, waterfall deltas & unplanned-info learnings
 ├── scripts/

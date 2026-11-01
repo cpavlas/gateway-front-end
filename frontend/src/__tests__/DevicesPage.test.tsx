@@ -94,7 +94,7 @@ const MOCK_DEVICE_LIST_RESPONSE: DeviceListResponse = {
 
 const MOCK_HEALTHY_REPORT: SystemHealthResponse = {
   overall_status: 'healthy',
-  version: '0.1.0',
+  version: '0.4.0',
   services: {
     sqlite: {
       service: 'sqlite',

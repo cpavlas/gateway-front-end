@@ -54,6 +54,22 @@ def sanitize_domain_search(raw_search: str | None) -> str | None:
     return cleaned[:120]
 
 
+def validate_ipv4_list(ipv4_addresses: list[str]) -> list[str]:
+    """Validate and deduplicate a list of IPv4 strings while preserving order."""
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw_ip in ipv4_addresses:
+        if not raw_ip or not str(raw_ip).strip():
+            continue
+        valid_ip = validate_ipv4_address(raw_ip)
+        if valid_ip not in seen:
+            seen.add(valid_ip)
+            cleaned.append(valid_ip)
+    if not cleaned:
+        raise ValueError("At least one valid IPv4 address is required for group analytics.")
+    return cleaned
+
+
 def build_network_overview_query(
     window: str = "24h",
     tz_name: str = "UTC",
@@ -503,12 +519,18 @@ def normalize_device_analytics_response(
         domain_name = str(dns_q.get("name") or "").strip()
         if not domain_name:
             continue
+        source_ip_raw = (
+            (src.get("source") or {}).get("ip")
+            or (src.get("client") or {}).get("ip")
+            or ""
+        )
         recent_queries.append(
             {
                 "timestamp": str(src.get("@timestamp") or ""),
                 "domain": domain_name,
                 "registered_domain": dns_q.get("registered_domain"),
                 "record_type": str(dns_q.get("type") or "A"),
+                "source_ip": str(source_ip_raw).strip() or None,
             }
         )
 
@@ -532,6 +554,239 @@ def normalize_device_analytics_response(
         "top_organizations": top_organizations,
         "recent_queries": recent_queries,
     }
+
+
+def build_group_analytics_query(
+    ipv4_addresses: list[str],
+    window: str = "24h",
+    tz_name: str = "UTC",
+    top_n: int = 15,
+) -> dict[str, Any]:
+    """Construct the multi-IP Elasticsearch aggregation DSL for a device group/profile."""
+    clean_ips = validate_ipv4_list(ipv4_addresses)
+    _, es_gte, interval = resolve_time_window(window)
+    safe_tz = (tz_name or "UTC").strip() or "UTC"
+    capped_top_n = max(1, min(int(top_n), 50))
+    member_bucket_size = max(25, len(clean_ips) * 2)
+
+    return {
+        "size": 0,
+        "track_total_hits": True,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {"@timestamp": {"gte": es_gte}}},
+                    {
+                        "bool": {
+                            "should": [
+                                {"terms": {"source.ip": clean_ips}},
+                                {"terms": {"destination.ip": clean_ips}},
+                                {"terms": {"client.ip": clean_ips}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    },
+                ]
+            }
+        },
+        "aggs": {
+            "total_bytes": {"sum": {"field": "network.bytes"}},
+            "by_provider": {"terms": {"field": "event.provider", "size": 10}},
+            "by_action": {"terms": {"field": "event.action", "size": 10}},
+            "first_activity": {"min": {"field": "@timestamp"}},
+            "last_activity": {"max": {"field": "@timestamp"}},
+            "timeline": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": interval,
+                    "time_zone": safe_tz,
+                    "min_doc_count": 0,
+                },
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
+                    "allowed_packets": {"filter": {"term": {"event.action": "pass"}}},
+                    "blocked_packets": {"filter": {"term": {"event.action": "block"}}},
+                },
+            },
+            "hourly_profile": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": "1h",
+                    "time_zone": safe_tz,
+                    "min_doc_count": 1,
+                },
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
+                },
+            },
+            "by_source_ip": {
+                "terms": {"field": "source.ip", "size": member_bucket_size},
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
+                    "allowed_packets": {"filter": {"term": {"event.action": "pass"}}},
+                    "blocked_packets": {"filter": {"term": {"event.action": "block"}}},
+                },
+            },
+            "by_destination_ip": {
+                "terms": {"field": "destination.ip", "size": member_bucket_size},
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "allowed_packets": {"filter": {"term": {"event.action": "pass"}}},
+                    "blocked_packets": {"filter": {"term": {"event.action": "block"}}},
+                },
+            },
+            "unbound_dns": {
+                "filter": {"term": {"event.provider": "unbound"}},
+                "aggs": {
+                    "top_domains": {
+                        "terms": {"field": "dns.question.name", "size": capped_top_n}
+                    },
+                    "top_registered_domains": {
+                        "terms": {"field": "dns.question.registered_domain", "size": capped_top_n}
+                    },
+                },
+            },
+            "filterlog_orgs": {
+                "filter": {"term": {"event.provider": "filterlog"}},
+                "aggs": {
+                    "top_asn_orgs": {
+                        "terms": {
+                            "field": "destination.as.organization.name",
+                            "size": capped_top_n,
+                        },
+                        "aggs": {
+                            "bytes": {"sum": {"field": "network.bytes"}},
+                        },
+                    }
+                },
+            },
+        },
+    }
+
+
+def build_group_recent_domains_query(
+    ipv4_addresses: list[str],
+    window: str = "24h",
+    domain_search: str | None = None,
+    limit: int = 40,
+) -> dict[str, Any]:
+    """Construct the ES search query for chronological recent DNS queries across a group."""
+    clean_ips = validate_ipv4_list(ipv4_addresses)
+    _, es_gte, _ = resolve_time_window(window)
+    safe_limit = max(1, min(int(limit), 100))
+    safe_search = sanitize_domain_search(domain_search)
+
+    filters: list[dict[str, Any]] = [
+        {"range": {"@timestamp": {"gte": es_gte}}},
+        {"term": {"event.provider": "unbound"}},
+        {
+            "bool": {
+                "should": [
+                    {"terms": {"source.ip": clean_ips}},
+                    {"terms": {"client.ip": clean_ips}},
+                ],
+                "minimum_should_match": 1,
+            }
+        },
+    ]
+    if safe_search:
+        filters.append(
+            {
+                "wildcard": {
+                    "dns.question.name": {
+                        "value": f"*{safe_search}*",
+                        "case_insensitive": True,
+                    }
+                }
+            }
+        )
+
+    return {
+        "size": safe_limit,
+        "sort": [{"@timestamp": {"order": "desc"}}],
+        "_source": [
+            "@timestamp",
+            "dns.question.name",
+            "dns.question.registered_domain",
+            "dns.question.type",
+            "source.ip",
+            "client.ip",
+        ],
+        "query": {"bool": {"filter": filters}},
+    }
+
+
+def normalize_group_analytics_response(
+    raw_aggs_resp: dict[str, Any],
+    raw_recent_resp: dict[str, Any],
+    member_ips: list[str],
+    window: str = "24h",
+) -> dict[str, Any]:
+    """Normalize multi-IP group analytics and per-member IP traffic/DNS breakdown."""
+    base = normalize_device_analytics_response(
+        raw_aggs_resp,
+        raw_recent_resp,
+        window=window,
+    )
+    clean_ips = validate_ipv4_list(member_ips)
+    member_set = set(clean_ips)
+
+    per_ip: dict[str, dict[str, int]] = {
+        ip: {
+            "total_events": 0,
+            "bytes": 0,
+            "dns_query_count": 0,
+            "allowed_packet_count": 0,
+            "blocked_packet_count": 0,
+        }
+        for ip in clean_ips
+    }
+
+    aggs = raw_aggs_resp.get("aggregations") or {}
+    for b in (aggs.get("by_source_ip") or {}).get("buckets") or []:
+        ip_key = str(b.get("key") or "")
+        if ip_key not in member_set:
+            continue
+        entry = per_ip[ip_key]
+        entry["total_events"] += int(b.get("doc_count") or 0)
+        entry["bytes"] += int(float((b.get("bytes") or {}).get("value") or 0))
+        entry["dns_query_count"] += int((b.get("dns_queries") or {}).get("doc_count") or 0)
+        entry["allowed_packet_count"] += int(
+            (b.get("allowed_packets") or {}).get("doc_count") or 0
+        )
+        entry["blocked_packet_count"] += int(
+            (b.get("blocked_packets") or {}).get("doc_count") or 0
+        )
+
+    for b in (aggs.get("by_destination_ip") or {}).get("buckets") or []:
+        ip_key = str(b.get("key") or "")
+        if ip_key not in member_set:
+            continue
+        entry = per_ip[ip_key]
+        entry["total_events"] += int(b.get("doc_count") or 0)
+        entry["bytes"] += int(float((b.get("bytes") or {}).get("value") or 0))
+        entry["allowed_packet_count"] += int(
+            (b.get("allowed_packets") or {}).get("doc_count") or 0
+        )
+        entry["blocked_packet_count"] += int(
+            (b.get("blocked_packets") or {}).get("doc_count") or 0
+        )
+
+    base["member_ip_breakdown"] = [
+        {
+            "ip": ip,
+            **stats,
+        }
+        for ip, stats in sorted(
+            per_ip.items(),
+            key=lambda kv: (kv[1]["bytes"], kv[1]["total_events"]),
+            reverse=True,
+        )
+    ]
+    return base
 
 
 class ElasticsearchServiceClient:
@@ -684,6 +939,63 @@ class ElasticsearchServiceClient:
             return normalize_device_analytics_response(
                 dict(aggs_resp),
                 dict(recent_resp),
+                window=win_key,
+            )
+        except (AuthenticationException, AuthorizationException) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch authentication/authorization failed: {exc.message}",
+                status_code=403,
+            ) from exc
+        except (TransportError, Exception) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch query failed: {exc.__class__.__name__}: {exc}",
+                status_code=503,
+            ) from exc
+        finally:
+            await client.close()
+
+    async def fetch_group_analytics(
+        self,
+        ipv4_addresses: list[str],
+        window: str = "24h",
+        domain_search: str | None = None,
+        top_n: int = 15,
+        recent_limit: int = 40,
+    ) -> dict[str, Any]:
+        """Execute multi-IP group usage, 24h access profile, member breakdown, and DNS queries."""
+        win_key, _, _ = resolve_time_window(window)
+        clean_ips = validate_ipv4_list(ipv4_addresses)
+        aggs_body = build_group_analytics_query(
+            ipv4_addresses=clean_ips,
+            window=win_key,
+            tz_name=self._tz,
+            top_n=top_n,
+        )
+        recent_body = build_group_recent_domains_query(
+            ipv4_addresses=clean_ips,
+            window=win_key,
+            domain_search=domain_search,
+            limit=recent_limit,
+        )
+        target_pattern = ",".join(self._index_patterns)
+        client = self.create_es_client()
+        try:
+            aggs_resp = await client.search(
+                index=target_pattern,
+                body=aggs_body,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+            recent_resp = await client.search(
+                index=target_pattern,
+                body=recent_body,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+            return normalize_group_analytics_response(
+                dict(aggs_resp),
+                dict(recent_resp),
+                member_ips=clean_ips,
                 window=win_key,
             )
         except (AuthenticationException, AuthorizationException) as exc:

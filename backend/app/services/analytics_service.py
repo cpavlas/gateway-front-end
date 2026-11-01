@@ -102,6 +102,8 @@ class RecentDomainQueryItem(BaseModel):
     domain: str
     registered_domain: str | None = None
     record_type: str
+    source_ip: str | None = None
+    device_name: str | None = None
 
 
 class DeviceAnalyticsSummary(BaseModel):

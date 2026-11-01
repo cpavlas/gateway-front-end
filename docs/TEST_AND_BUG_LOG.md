@@ -37,5 +37,13 @@ This ledger tracks all defects uncovered during unit testing, static analysis, c
 | :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
 | `BUG-P3-001` | Phase 3 / Step 3.3 (`DeviceAnalyticsDrawer.tsx`, `AnalyticsPage.tsx`) | Unit Test (`Vitest`) | **Medium** | `Resolved in Phase 3` | Typing into `Filter recent domains` (`domainSearch`) inside `DeviceAnalyticsDrawer` changed the TanStack Query key (`['deviceAnalytics', deviceId, windowKey, domainSearch.trim()]`), which reset `analytics` to `undefined` while `isLoading` was `true` and unmounted the search `<input>`, causing focus loss after the first keystroke (`'d'`). | Added `placeholderData: (previousData) => previousData` to the `useQuery` hooks in `DeviceAnalyticsDrawer.tsx` and `AnalyticsPage.tsx` so previous telemetry stays mounted while new filter/window queries fetch in the background. | `frontend/src/__tests__/Analytics.test.tsx` | `Phase 3 (phase3)` |
 
+---
+
+## Phase 4 (Test Cycle 4): Control Feature #2 — Device Groups / Profiles & Bulk Access Control
+
+| Bug ID | Phase / Area | Found During | Severity | Disposition / Status | Symptom & Root Cause | Resolution / Interim Mitigation | Regression Test | Commit Ref |
+| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| `BUG-P4-001` | Phase 4 / Step 4.2 (`backend/app/services/device_service.py`) | Unit Test | **Low** | `Resolved in Phase 4` | Calling `build_device_response()` on an in-memory `Device(...)` instance constructed without explicitly passing `lease_type` raised a Pydantic `ValidationError` (`lease_type=None`) because SQLAlchemy column `default="unknown"` is only populated upon database flush. | Updated `build_device_response()` in `backend/app/services/device_service.py` to coerce `lease_type=device.lease_type or "unknown"` and `is_online=bool(device.is_online)`. | `backend/tests/test_groups_api.py::test_synchronous_group_helpers_and_state_calculation` | `Phase 4 (phase4)` |
+
 
 

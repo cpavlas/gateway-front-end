@@ -1,6 +1,8 @@
 export type HealthLevel = 'healthy' | 'degraded' | 'unhealthy'
-export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected'
+export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected' | 'unassigned'
 export type TimeWindow = '1h' | '24h' | '7d' | '30d'
+export type GroupColor = 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet' | 'slate'
+export type GroupAccessStatus = 'empty' | 'allowed' | 'partially_blocked' | 'blocked'
 
 export interface AuthUserResponse {
   username: string
@@ -32,6 +34,13 @@ export interface SystemHealthResponse {
   }
 }
 
+export interface DeviceGroupBadge {
+  id: number
+  name: string
+  color_badge: string
+  icon: string
+}
+
 export interface DeviceItem {
   id: number
   mac_address: string
@@ -47,6 +56,7 @@ export interface DeviceItem {
   is_protected: boolean
   protection_reason: string | null
   notes: string
+  groups?: DeviceGroupBadge[]
   first_seen_at: string
   last_seen_at: string
   updated_at: string
@@ -76,6 +86,55 @@ export interface DeviceActionResponse {
   action: 'block' | 'unblock'
   states_killed: boolean
   warning: string | null
+}
+
+export interface GroupItem {
+  id: number
+  name: string
+  description: string
+  color_badge: string
+  icon: string
+  access_status: GroupAccessStatus
+  total_devices: number
+  online_devices: number
+  blocked_devices: number
+  protected_devices: number
+  blockable_devices: number
+  member_device_ids: number[]
+  members: DeviceItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface GroupListResponse {
+  groups: GroupItem[]
+}
+
+export interface GroupCreatePayload {
+  name: string
+  description?: string
+  color_badge?: string
+  icon?: string
+  device_ids?: number[]
+}
+
+export interface GroupUpdatePayload {
+  name?: string
+  description?: string
+  color_badge?: string
+  icon?: string
+  device_ids?: number[]
+}
+
+export interface GroupBulkActionResponse {
+  group: GroupItem
+  action: 'block' | 'unblock'
+  affected_device_ids: number[]
+  affected_ips: string[]
+  skipped_protected_names: string[]
+  skipped_no_ip_names: string[]
+  states_killed_ips: string[]
+  warnings: string[]
 }
 
 export interface TimelineBucketItem {
@@ -151,6 +210,8 @@ export interface RecentDomainQueryItem {
   domain: string
   registered_domain: string | null
   record_type: string
+  source_ip?: string | null
+  device_name?: string | null
 }
 
 export interface DeviceAnalyticsSummary {
@@ -172,6 +233,39 @@ export interface DeviceAnalyticsResponse {
   es_reachable: boolean
   warning: string | null
   summary: DeviceAnalyticsSummary
+  timeline: TimelineBucketItem[]
+  hourly_access_profile: HourlyAccessPoint[]
+  top_domains: TopDomainItem[]
+  top_registered_domains: TopDomainItem[]
+  top_organizations: TopOrganizationItem[]
+  recent_queries: RecentDomainQueryItem[]
+}
+
+export interface GroupMemberTrafficItem {
+  device_id: number
+  effective_name: string
+  ipv4_address: string | null
+  mac_address: string
+  vendor: string | null
+  is_online: boolean
+  is_blocked: boolean
+  is_protected: boolean
+  total_events: number
+  bytes: number
+  dns_query_count: number
+  allowed_packet_count: number
+  blocked_packet_count: number
+}
+
+export interface GroupAnalyticsResponse {
+  group: GroupItem
+  tracked_ips: string[]
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  summary: DeviceAnalyticsSummary
+  member_breakdown: GroupMemberTrafficItem[]
   timeline: TimelineBucketItem[]
   hourly_access_profile: HourlyAccessPoint[]
   top_domains: TopDomainItem[]
@@ -221,6 +315,10 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(errorMessage, response.status)
   }
 
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return (await response.json()) as T
 }
 
@@ -253,6 +351,7 @@ export const apiClient = {
   getDevices(params?: {
     search?: string
     status?: DeviceStatusFilter
+    group_id?: number
     sync?: boolean
   }): Promise<DeviceListResponse> {
     const query = new URLSearchParams()
@@ -261,6 +360,9 @@ export const apiClient = {
     }
     if (params?.status && params.status !== 'all') {
       query.set('status', params.status)
+    }
+    if (params?.group_id !== undefined) {
+      query.set('group_id', String(params.group_id))
     }
     if (params?.sync) {
       query.set('sync', 'true')
@@ -294,6 +396,66 @@ export const apiClient = {
     return requestJson<DeviceActionResponse>(`/api/v1/devices/${deviceId}/unblock`, {
       method: 'POST',
     })
+  },
+
+  getGroups(): Promise<GroupListResponse> {
+    return requestJson<GroupListResponse>('/api/v1/groups', {
+      method: 'GET',
+    })
+  },
+
+  createGroup(payload: GroupCreatePayload): Promise<GroupItem> {
+    return requestJson<GroupItem>('/api/v1/groups', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateGroup(groupId: number, payload: GroupUpdatePayload): Promise<GroupItem> {
+    return requestJson<GroupItem>(`/api/v1/groups/${groupId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteGroup(groupId: number): Promise<void> {
+    return requestJson<void>(`/api/v1/groups/${groupId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  blockGroup(groupId: number): Promise<GroupBulkActionResponse> {
+    return requestJson<GroupBulkActionResponse>(`/api/v1/groups/${groupId}/block`, {
+      method: 'POST',
+    })
+  },
+
+  unblockGroup(groupId: number): Promise<GroupBulkActionResponse> {
+    return requestJson<GroupBulkActionResponse>(`/api/v1/groups/${groupId}/unblock`, {
+      method: 'POST',
+    })
+  },
+
+  getGroupAnalytics(
+    groupId: number,
+    params?: {
+      window?: TimeWindow
+      domain_search?: string
+      refresh?: boolean
+    },
+  ): Promise<GroupAnalyticsResponse> {
+    const query = new URLSearchParams()
+    query.set('window', params?.window ?? '24h')
+    if (params?.domain_search && params.domain_search.trim()) {
+      query.set('domain_search', params.domain_search.trim())
+    }
+    if (params?.refresh) {
+      query.set('refresh', 'true')
+    }
+    return requestJson<GroupAnalyticsResponse>(
+      `/api/v1/groups/${groupId}/analytics?${query.toString()}`,
+      { method: 'GET' },
+    )
   },
 
   getNetworkOverview(params?: {
