@@ -23,11 +23,13 @@ import {
   type DeviceItem,
   type DeviceStatusFilter,
   type GroupItem,
+  type TimerStartPayload,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
 import { GroupFormModal, getGroupBadgeClasses } from '../components/GroupFormModal'
+import { TimerPopoverMenu } from '../components/TimerPopoverMenu'
 
 interface DevicesPageProps {
   activeTab?: AppTab
@@ -201,6 +203,53 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       setBannerMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Failed to change group internet access.',
+      })
+    },
+  })
+
+  const deviceTimerMutation = useMutation({
+    mutationFn: ({ deviceId, payload }: { deviceId: number; payload: TimerStartPayload }) =>
+      apiClient.startDeviceTimer(deviceId, payload),
+    onSuccess: () => {
+      setBannerMessage(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to start device timer.',
+      })
+    },
+  })
+
+  const groupTimerMutation = useMutation({
+    mutationFn: ({ groupId, payload }: { groupId: number; payload: TimerStartPayload }) =>
+      apiClient.startGroupTimer(groupId, payload),
+    onSuccess: () => {
+      setBannerMessage(null)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to start group timer.',
+      })
+    },
+  })
+
+  const cancelTimerMutation = useMutation({
+    mutationFn: (overrideId: number) => apiClient.cancelTimer(overrideId, true),
+    onSuccess: () => {
+      setBannerMessage(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to cancel active timer.',
       })
     },
   })
@@ -506,33 +555,46 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       </div>
 
                       {grp.blockable_devices > 0 ? (
-                        grp.access_status === 'blocked' ? (
-                          <button
-                            type="button"
-                            data-testid={`group-toggle-${grp.id}`}
-                            disabled={isGroupBusy}
-                            onClick={() =>
-                              groupAccessMutation.mutate({ group: grp, action: 'unblock' })
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          <TimerPopoverMenu
+                            targetType="group"
+                            targetId={grp.id}
+                            targetName={grp.name}
+                            activeOverride={grp.active_override}
+                            isPending={groupTimerMutation.isPending || cancelTimerMutation.isPending}
+                            onStartTimer={(payload) =>
+                              groupTimerMutation.mutate({ groupId: grp.id, payload })
                             }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
-                          >
-                            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-                            <span>{isGroupBusy ? 'Updating...' : 'Allow Group'}</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            data-testid={`group-toggle-${grp.id}`}
-                            disabled={isGroupBusy}
-                            onClick={() =>
-                              groupAccessMutation.mutate({ group: grp, action: 'block' })
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
-                          >
-                            <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                            <span>{isGroupBusy ? 'Blocking...' : 'Block Group'}</span>
-                          </button>
-                        )
+                            onCancelTimer={(ovId) => cancelTimerMutation.mutate(ovId)}
+                          />
+                          {grp.access_status === 'blocked' ? (
+                            <button
+                              type="button"
+                              data-testid={`group-toggle-${grp.id}`}
+                              disabled={isGroupBusy}
+                              onClick={() =>
+                                groupAccessMutation.mutate({ group: grp, action: 'unblock' })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                            >
+                              <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+                              <span>{isGroupBusy ? 'Updating...' : 'Allow Group'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              data-testid={`group-toggle-${grp.id}`}
+                              disabled={isGroupBusy}
+                              onClick={() =>
+                                groupAccessMutation.mutate({ group: grp, action: 'block' })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
+                            >
+                              <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                              <span>{isGroupBusy ? 'Blocking...' : 'Block Group'}</span>
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-[11px] text-slate-500 italic">No blockable IPs</span>
                       )}
@@ -817,7 +879,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                         </button>
                       </td>
 
-                      {/* Column 5: Per-Device Usage & Domains Drawer Trigger */}
+                      {/* Column 5: Per-Device Analytics Drawer Trigger (FB-P4-003) */}
                       <td className="px-4 py-3.5 align-middle">
                         <button
                           type="button"
@@ -826,50 +888,68 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                           className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
                         >
                           <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
-                          <span>Usage &amp; Domains</span>
+                          <span>Analytics</span>
                         </button>
                       </td>
 
-                      {/* Column 6: Instant Internet Access Toggle */}
+                      {/* Column 6: Instant Internet Access Toggle & Timed Controls (FB-P4-004 & Phase 5) */}
                       <td className="px-4 py-3.5 align-middle text-right">
-                        {dev.is_protected ? (
-                          <button
-                            type="button"
-                            data-testid={`access-toggle-${dev.id}`}
-                            disabled
-                            title={dev.protection_reason ?? 'Protected device cannot be blocked'}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs font-semibold text-slate-400 opacity-75 cursor-not-allowed"
-                          >
-                            <Lock className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
-                            <span>Always Allowed</span>
-                          </button>
-                        ) : dev.is_blocked ? (
-                          <button
-                            type="button"
-                            data-testid={`access-toggle-${dev.id}`}
-                            disabled={isBusy}
-                            onClick={() =>
-                              accessMutation.mutate({ device: dev, action: 'unblock' })
+                        <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                          <TimerPopoverMenu
+                            targetType="device"
+                            targetId={dev.id}
+                            targetName={dev.effective_name}
+                            activeOverride={dev.active_override}
+                            disabled={dev.is_protected || !dev.ipv4_address}
+                            isPending={
+                              deviceTimerMutation.isPending || cancelTimerMutation.isPending
                             }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
-                          >
-                            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-                            <span>{isBusy ? 'Updating...' : 'Blocked — Click to Allow'}</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            data-testid={`access-toggle-${dev.id}`}
-                            disabled={isBusy || !dev.ipv4_address}
-                            onClick={() =>
-                              accessMutation.mutate({ device: dev, action: 'block' })
+                            onStartTimer={(payload) =>
+                              deviceTimerMutation.mutate({ deviceId: dev.id, payload })
                             }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
-                          >
-                            <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                            <span>{isBusy ? 'Blocking...' : 'Allowed — Click to Block'}</span>
-                          </button>
-                        )}
+                            onCancelTimer={(ovId) => cancelTimerMutation.mutate(ovId)}
+                          />
+                          {dev.is_protected ? (
+                            <button
+                              type="button"
+                              data-testid={`access-toggle-${dev.id}`}
+                              disabled
+                              title={dev.protection_reason ?? 'Protected device cannot be blocked'}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs font-semibold text-slate-400 opacity-75 cursor-not-allowed"
+                            >
+                              <Lock className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+                              <span>Always Allowed</span>
+                            </button>
+                          ) : dev.is_blocked ? (
+                            <button
+                              type="button"
+                              data-testid={`access-toggle-${dev.id}`}
+                              disabled={isBusy}
+                              title="Click to restore internet access"
+                              onClick={() =>
+                                accessMutation.mutate({ device: dev, action: 'unblock' })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                            >
+                              <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+                              <span>{isBusy ? 'Updating...' : 'Blocked'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              data-testid={`access-toggle-${dev.id}`}
+                              disabled={isBusy || !dev.ipv4_address}
+                              title="Click to block internet access"
+                              onClick={() =>
+                                accessMutation.mutate({ device: dev, action: 'block' })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
+                            >
+                              <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                              <span>{isBusy ? 'Blocking...' : 'Allowed'}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

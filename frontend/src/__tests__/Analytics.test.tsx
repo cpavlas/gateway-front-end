@@ -291,7 +291,7 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
 
     await screen.findByTestId('device-row-1')
 
-    // Click "Usage & Domains" button on device 1
+    // Click "Analytics" button on device 1
     await user.click(screen.getByTestId('view-analytics-btn-1'))
 
     const drawer = await screen.findByTestId('device-analytics-drawer')
@@ -332,7 +332,7 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
     // Toggle block inside the drawer
     await user.click(screen.getByTestId('drawer-access-toggle'))
     await waitFor(() => {
-      expect(screen.getByTestId('drawer-access-toggle')).toHaveTextContent('Blocked — Click to Allow')
+      expect(screen.getByTestId('drawer-access-toggle')).toHaveTextContent('Blocked')
     })
 
     // Close drawer
@@ -409,7 +409,7 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
     })
     await user.click(screen.getByTestId('overview-refresh-btn'))
 
-    // Click "Inspect Device" on row 1 in Top Active LAN Devices table -> opens drawer
+    // Click "Inspect" on row 1 in Top Active LAN Devices table -> opens drawer
     await user.click(screen.getByTestId('inspect-top-device-1'))
     expect(await screen.findByTestId('device-analytics-drawer')).toBeInTheDocument()
   })

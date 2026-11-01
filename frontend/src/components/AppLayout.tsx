@@ -144,7 +144,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${STATUS_BADGE_STYLES[overallStatus]}`}
               >
                 <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>System: {overallStatus}</span>
+                <span>{overallStatus === 'unhealthy' ? 'DOWN' : overallStatus}</span>
               </div>
             )}
 

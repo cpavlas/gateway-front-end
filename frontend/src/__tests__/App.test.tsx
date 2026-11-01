@@ -162,7 +162,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
       await screen.findByRole('heading', { name: /System Connectivity & Telemetry Status/i }),
     ).toBeInTheDocument()
 
-    expect(await screen.findByTestId('overall-health-badge')).toHaveTextContent('System: healthy')
+    expect(await screen.findByTestId('overall-health-badge')).toHaveTextContent('healthy')
 
     const opnsenseCard = screen.getByTestId('service-card-opnsense')
     expect(within(opnsenseCard).getByText('gateway.sparkle-pony.com')).toBeInTheDocument()
@@ -179,7 +179,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     // Click Refresh Status -> should update overall badge to degraded
     await user.click(screen.getByRole('button', { name: /Refresh Status/i }))
     await waitFor(() => {
-      expect(screen.getByTestId('overall-health-badge')).toHaveTextContent('System: degraded')
+      expect(screen.getByTestId('overall-health-badge')).toHaveTextContent('degraded')
     })
 
     // Click Sign Out -> should return to LoginPage

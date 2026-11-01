@@ -415,9 +415,24 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
               {/* Usage Timeline & 24-Hour Access Profile */}
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                  <h3 className="text-sm font-semibold text-slate-200">
-                    Group Activity Timeline ({windowKey})
-                  </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      Group Activity Timeline ({windowKey})
+                    </h3>
+                    <div
+                      data-testid="group-timeline-legend"
+                      className="flex items-center gap-2.5 text-[11px] text-slate-300"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-xs bg-cyan-400" />
+                        <span>DNS Queries</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-xs bg-indigo-500" />
+                        <span>Firewall Events</span>
+                      </span>
+                    </div>
+                  </div>
                   <div className="mt-3 flex h-28 items-end gap-1 pt-2">
                     {timeline.length === 0 ? (
                       <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
@@ -425,17 +440,37 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                       </div>
                     ) : (
                       timeline.map((b, idx) => {
+                        const dnsCount = Math.max(0, b.dns_queries)
+                        const fwCount = Math.max(0, b.total_events - dnsCount)
+                        const combinedTotal = Math.max(b.total_events, dnsCount + fwCount)
                         const heightPct = Math.max(
                           6,
-                          Math.round((b.total_events / maxTimelineEvents) * 100),
+                          Math.round((combinedTotal / maxTimelineEvents) * 100),
                         )
+                        const dnsSharePct =
+                          combinedTotal > 0 ? Math.round((dnsCount / combinedTotal) * 100) : 50
+                        const fwSharePct = Math.max(0, 100 - dnsSharePct)
+                        const tooltipText = `${new Date(b.timestamp).toLocaleString()} — Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${dnsCount.toLocaleString()} | Firewall Events: ${fwCount.toLocaleString()} (${formatBytes(b.bytes)})`
                         return (
                           <div
                             key={`${b.timestamp}-${idx}`}
-                            title={`${new Date(b.timestamp).toLocaleString()} — ${b.total_events.toLocaleString()} events (${formatBytes(b.bytes)})`}
-                            className="flex-1 rounded-t bg-indigo-500/80 hover:bg-indigo-400 transition-all"
-                            style={{ height: `${b.total_events > 0 ? heightPct : 4}%` }}
-                          />
+                            title={tooltipText}
+                            className="group relative flex-1 flex flex-col items-center justify-end h-full"
+                          >
+                            <div
+                              style={{ height: `${combinedTotal > 0 ? heightPct : 4}%` }}
+                              className="w-full flex flex-col overflow-hidden rounded-t transition-all"
+                            >
+                              <div
+                                style={{ height: `${dnsSharePct}%` }}
+                                className="w-full bg-cyan-400/85 group-hover:bg-cyan-300"
+                              />
+                              <div
+                                style={{ height: `${fwSharePct}%` }}
+                                className="w-full bg-indigo-500/85 group-hover:bg-indigo-400"
+                              />
+                            </div>
+                          </div>
                         )
                       })
                     )}

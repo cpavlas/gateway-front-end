@@ -376,7 +376,7 @@ describe('Phase 2 Devices & Internet Access Control Dashboard', () => {
     // Click Allow on Device 2 (currently Blocked)
     await user.click(screen.getByTestId('access-toggle-2'))
     await waitFor(() => {
-      expect(screen.getByTestId('access-toggle-2')).toHaveTextContent('Allowed — Click to Block')
+      expect(screen.getByTestId('access-toggle-2')).toHaveTextContent('Allowed')
     })
 
     // Navigate to System Connectivity tab and back to Devices tab

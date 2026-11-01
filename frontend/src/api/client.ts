@@ -3,6 +3,8 @@ export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected' | 'u
 export type TimeWindow = '1h' | '24h' | '7d' | '30d'
 export type GroupColor = 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet' | 'slate'
 export type GroupAccessStatus = 'empty' | 'allowed' | 'partially_blocked' | 'blocked'
+export type OverrideMode = 'pause' | 'bonus'
+export type OverrideTargetType = 'device' | 'group'
 
 export interface AuthUserResponse {
   username: string
@@ -34,6 +36,43 @@ export interface SystemHealthResponse {
   }
 }
 
+export interface ActiveOverrideInfo {
+  id: number
+  target_type: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  target_name: string
+  mode: OverrideMode
+  duration_minutes: number
+  created_by: string
+  reason: string
+  is_active: boolean
+  created_at: string
+  expires_at: string
+  remaining_seconds: number
+}
+
+export interface TimerStartPayload {
+  mode: OverrideMode
+  duration_minutes?: number
+  preset?: string
+  reason?: string
+}
+
+export interface TimerListResponse {
+  timers: ActiveOverrideInfo[]
+}
+
+export interface TimerCancelResponse {
+  cancelled_override_id: number
+  target_type: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  mode: OverrideMode
+  reverted_state: boolean
+  warnings: string[]
+}
+
 export interface DeviceGroupBadge {
   id: number
   name: string
@@ -57,6 +96,7 @@ export interface DeviceItem {
   protection_reason: string | null
   notes: string
   groups?: DeviceGroupBadge[]
+  active_override?: ActiveOverrideInfo | null
   first_seen_at: string
   last_seen_at: string
   updated_at: string
@@ -102,6 +142,7 @@ export interface GroupItem {
   blockable_devices: number
   member_device_ids: number[]
   members: DeviceItem[]
+  active_override?: ActiveOverrideInfo | null
   created_at: string
   updated_at: string
 }
@@ -282,6 +323,17 @@ export function formatBytes(bytes: number): string {
   return `${exp === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exp]}`
 }
 
+export function formatRemainingDuration(remainingSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(remainingSeconds))
+  if (clamped <= 0) return '0m left'
+  const hours = Math.floor(clamped / 3600)
+  const mins = Math.ceil((clamped % 3600) / 60)
+  if (hours > 0) {
+    return mins > 0 ? `${hours}h ${mins}m left` : `${hours}h left`
+  }
+  return `${Math.max(1, mins)}m left`
+}
+
 export class ApiError extends Error {
   public readonly status: number
 
@@ -455,6 +507,39 @@ export const apiClient = {
     return requestJson<GroupAnalyticsResponse>(
       `/api/v1/groups/${groupId}/analytics?${query.toString()}`,
       { method: 'GET' },
+    )
+  },
+
+  getActiveTimers(): Promise<TimerListResponse> {
+    return requestJson<TimerListResponse>('/api/v1/timers', {
+      method: 'GET',
+    })
+  },
+
+  startDeviceTimer(
+    deviceId: number,
+    payload: TimerStartPayload,
+  ): Promise<ActiveOverrideInfo> {
+    return requestJson<ActiveOverrideInfo>(`/api/v1/timers/devices/${deviceId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  startGroupTimer(
+    groupId: number,
+    payload: TimerStartPayload,
+  ): Promise<ActiveOverrideInfo> {
+    return requestJson<ActiveOverrideInfo>(`/api/v1/timers/groups/${groupId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  cancelTimer(overrideId: number, revertState = true): Promise<TimerCancelResponse> {
+    return requestJson<TimerCancelResponse>(
+      `/api/v1/timers/${overrideId}?revert_state=${revertState ? 'true' : 'false'}`,
+      { method: 'DELETE' },
     )
   },
 

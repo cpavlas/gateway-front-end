@@ -423,6 +423,8 @@ flowchart TD
      - **DHCP IP Drift Sync:** If a blocked MAC address receives a new IP from OPNsense Dnsmasq, the reconciliation loop swaps the old IP out and adds the new IP into `gateway_blocked_devices` + kills states.
   2. **React Schedule Manager UI**:
      - Dedicated **Schedules** tab with visual day-of-week & time-window rule builder, enable/disable rule switch, target Device/Group selector, and clear status badges on devices (*"Blocked by Schedule: School Night Bedtime until 07:00"*).
+  3. **Phase 5 Waterfall Update 6A — Centered Timer Modal, Unified Timer Button, UI Polish & Persistent SQLite Volume (`docs/FEATURE_BACKLOG.md` `FB-P5-001`..`FB-P5-010`)**:
+     - Convert Timer controls into a centered screen modal dialog (`FB-P5-001`), merge active countdown & mode color directly into the `Timer` button (`FB-P5-002`), show duration-only preset labels (`FB-P5-003`), set Bonus Access presets to `20m` / `40m` / `60m` (`FB-P5-004`), align `Timer` button height on Group cards (`FB-P5-005`), rename `Sign Out` to `Logout` (`FB-P5-006`), stabilize Group `Filter` button layout (`FB-P5-007`), remove `(gateway_blocked_devices)` from Devices subtitle (`FB-P5-008`), format `Synced: HH:MM:SS` as 24-hour time underneath `Sync from OPNsense` (`FB-P5-009`), and bind `SQLITE_DB_PATH=/app/data/gateway.db` in `Settings.database_url` so groups, timers, and schedules persist across container restarts/rebuilds (`FB-P5-010`).
 - **Unit Testing Scope:**
   - Midnight-spanning window evaluation (`21:00` Monday → `07:00` Tuesday) across all 7 days of the week.
   - Daylight Saving Time (spring-forward / fall-back) boundary tests in configured `TZ`.

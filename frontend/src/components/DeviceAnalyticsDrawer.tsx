@@ -326,16 +326,29 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Usage & Activity Timeline */}
+              {/* Usage & Activity Timeline (FB-P4-006 Stacked Bar Graph) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-100">
                       Usage &amp; Activity Timeline ({windowKey})
                     </h3>
                     <p className="text-xs text-slate-400">
-                      Combined Unbound DNS lookups and filterlog firewall events over time
+                      Stacked DNS lookups and firewall packet events over time
                     </p>
+                  </div>
+                  <div
+                    data-testid="drawer-timeline-legend"
+                    className="flex items-center gap-3 text-xs text-slate-300"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-xs bg-cyan-400" />
+                      <span>DNS Queries</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-xs bg-indigo-500" />
+                      <span>Firewall Events</span>
+                    </span>
                   </div>
                 </div>
 
@@ -349,20 +362,55 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                     className="flex h-32 items-end gap-1 pt-4 border-b border-slate-800/80"
                   >
                     {timeline.map((bucket) => {
+                      const dnsCount = Math.max(0, bucket.dns_queries)
+                      const fwCount = Math.max(0, bucket.total_events - dnsCount)
+                      const combinedTotal = Math.max(bucket.total_events, dnsCount + fwCount)
                       const heightPct = Math.max(
-                        4,
-                        Math.round((bucket.total_events / maxTimelineEvents) * 100),
+                        6,
+                        Math.round((combinedTotal / maxTimelineEvents) * 100),
                       )
+                      const dnsSharePct =
+                        combinedTotal > 0 ? Math.round((dnsCount / combinedTotal) * 100) : 50
+                      const fwSharePct = Math.max(0, 100 - dnsSharePct)
+                      const tooltipText = `${new Date(bucket.timestamp).toLocaleString()} — Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${dnsCount.toLocaleString()} | Firewall Events: ${fwCount.toLocaleString()} (${formatBytes(bucket.bytes)})`
                       return (
                         <div
                           key={bucket.timestamp}
-                          title={`${new Date(bucket.timestamp).toLocaleString()}: ${bucket.total_events} events (${bucket.dns_queries} DNS, ${formatBytes(bucket.bytes)})`}
-                          className="group flex-1 flex flex-col items-center justify-end h-full"
+                          title={tooltipText}
+                          className="group relative flex-1 flex flex-col items-center justify-end h-full"
                         >
+                          <div className="pointer-events-none invisible group-hover:visible absolute bottom-full mb-1.5 z-30 w-48 rounded-lg border border-slate-700 bg-slate-900/95 p-2 text-[10px] text-slate-100 shadow-xl">
+                            <div className="font-semibold text-white truncate">
+                              {new Date(bucket.timestamp).toLocaleString()}
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-cyan-300">
+                              <span>DNS Queries:</span>
+                              <span className="font-mono">{dnsCount.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-indigo-300">
+                              <span>Firewall Events:</span>
+                              <span className="font-mono">{fwCount.toLocaleString()}</span>
+                            </div>
+                            <div className="mt-0.5 border-t border-slate-800 pt-0.5 flex items-center justify-between text-slate-300">
+                              <span>Volume:</span>
+                              <span className="font-mono">{formatBytes(bucket.bytes)}</span>
+                            </div>
+                          </div>
                           <div
-                            style={{ height: `${heightPct}%` }}
-                            className="w-full rounded-t bg-indigo-500/80 group-hover:bg-indigo-400 transition-all"
-                          />
+                            style={{ height: `${combinedTotal > 0 ? heightPct : 4}%` }}
+                            className="w-full flex flex-col overflow-hidden rounded-t transition-all"
+                          >
+                            <div
+                              data-testid="timeline-dns-segment"
+                              style={{ height: `${dnsSharePct}%` }}
+                              className="w-full bg-cyan-400/85 group-hover:bg-cyan-300"
+                            />
+                            <div
+                              data-testid="timeline-fw-segment"
+                              style={{ height: `${fwSharePct}%` }}
+                              className="w-full bg-indigo-500/85 group-hover:bg-indigo-400"
+                            />
+                          </div>
                         </div>
                       )
                     })}
@@ -430,7 +478,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   <div className="flex items-center gap-2 mb-3">
                     <Globe className="h-4 w-4 text-sky-400" aria-hidden="true" />
                     <h3 className="text-sm font-semibold text-slate-100">
-                      Top Visited Domains (`dns.question.name`)
+                      Top Visited Domains
                     </h3>
                   </div>
 

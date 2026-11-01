@@ -173,3 +173,50 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **How we will apply these learnings to Phase 5:**
   1. Leverage `PRAGMA foreign_keys=ON` for Phase 5's `temporary_overrides` table (`device_id` and `group_id` foreign keys with `ON DELETE CASCADE`) so deleting a group automatically cleans up its timers.
   2. Begin Phase 5 by reviewing [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and executing the scheduled Phase 4 UI & chart enhancements alongside the Temporary Pause / Bonus Access timer engine.
+
+---
+
+## Phase 5 Exit Analysis & Unplanned-Information Retrospective (`2026-11-01`)
+
+### 1. Phase 5 Execution Summary & Verification Metrics
+- **Branch:** `phase5` (merged to `main` as `v0.5.0`)
+- **Automated Test Gate Results:**
+  - **Backend (`pytest` + `coverage` + `ruff` + `mypy`):** **100 passed** in `5.04s`, **88% total coverage** (`100%` on `api/timers.py` and `models/__init__.py`, `85%` on `services/timer_service.py`), `0` `ruff` warnings, `0` `mypy` type errors across 22 source files.
+  - **Frontend (`vitest --coverage` + `tsc -b && vite build`):** **15 passed** across 5 test files (`App.test.tsx`, `DevicesPage.test.tsx`, `Analytics.test.tsx`, `Groups.test.tsx`, `Timers.test.tsx`), **93.57% statement/line coverage** (`97.32%` on `TimerPopoverMenu.tsx`, `99.2%` on `StatusPage.tsx`, `96.49%` on `DeviceAnalyticsDrawer.tsx`), `0` TypeScript/Vite build errors.
+  - **Live Container & User UI Verification (`http://localhost:8080`):**
+    - Confirmed header displays `v0.5.0` and `HEALTHY` (without `SYSTEM:`).
+    - Confirmed `Traffic & DNS Analytics` title/button updates (`FB-P4-010`) and new live enforcement summary panel on `System Connectivity` (`FB-P4-011`).
+    - Confirmed `Analytics` button label (`FB-P4-003`), simplified `Blocked` / `Allowed` state labels (`FB-P4-004`), `Top Visited Domains` label (`FB-P4-005`), and the new **Stacked Bar Graph** (`FB-P4-006`) with DNS Queries vs. Firewall Events color legend and hover breakdown.
+    - Confirmed Pause & Bonus timers, live countdown pills, and timer cancellation on live devices and groups.
+
+---
+
+### 2. Waterfall Impact & Plan Adjustments for Subsequent Phases (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
+1. **Zero Deferred Bugs from Phase 5:**
+   - All 3 defects discovered during Phase 5 (`BUG-P5-001`, `BUG-P5-002`, and `BUG-P5-003`) were resolved and verified with regression tests before Phase 5 check-in.
+2. **User Phase 5 UI & Persistence Feedback Logged in `docs/FEATURE_BACKLOG.md` & Scheduled for Phase 6 (`FB-P5-001` – `FB-P5-010`):**
+   - **`FB-P5-001` (Centered Modal Dialog for Timer Controls):** Convert the Timer popover into a centered screen modal dialog (`fixed inset-0 z-50`) so it never requires scrolling near the bottom of the viewport and prevents multiple timer menus from opening simultaneously.
+   - **`FB-P5-002` (Active Countdown & Mode Color on Timer Button):** Merge the active countdown directly into the `Timer` button (`Paused · Xm left` in amber, `Bonus · Xm left` in emerald) instead of rendering a separate pill.
+   - **`FB-P5-003` (Duration-Only Preset Button Labels):** Show only duration values (`15m`, `30m`, `1h`, `2h`, `Until 07:00`) inside the modal preset buttons without repeating `Pause` or `Bonus`.
+   - **`FB-P5-004` (Bonus Access Presets `20m`, `40m`, `60m`):** Change Bonus Access default preset buttons to `20m`, `40m`, and `60m` (and add `"20m": 20`, `"40m": 40`, `"60m": 60` to `PRESET_MINUTES`).
+   - **`FB-P5-005` (Timer Button Height Alignment):** Match the `Timer` button height (`px-2.5 py-1.5 text-xs`) to the adjacent buttons on the Device Groups & Profiles cards.
+   - **`FB-P5-006` (Header `Logout` Label):** Change the header `Sign Out` button text to `Logout`.
+   - **`FB-P5-007` (Stable Group Card Filter Button Layout):** Keep `Filter` button text and dimensions constant when toggled so clicking `Filter` only highlights the button without shifting or stacking buttons on the card.
+   - **`FB-P5-008` (Remove `(gateway_blocked_devices)` from Devices Header):** Remove ``(`gateway_blocked_devices`)`` from the `Devices & Access Control` page subtitle.
+   - **`FB-P5-009` (24-Hour `Synced:` Clock Under `Sync from OPNsense` Button):** Format `Synced: HH:MM:SS` in 24-hour time (`hour12: false`) on a single line directly below the `Sync from OPNsense` button.
+   - **`FB-P5-010` (Persistent SQLite Volume Path Across Container Resets/Rebuilds):** Wire `SQLITE_DB_PATH` (`/app/data/gateway.db`) into `Settings.database_url` (`sqlite+aiosqlite:////app/data/gateway.db`) so the container writes to the host-mounted `../data:/app/data` volume rather than `/app/backend/data/gateway.db`.
+
+---
+
+### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 6
+- **What information or configuration was needed that we did not originally plan for?**
+  - *Finding 1 (WSL2 / Hyper-V Sub-Second Clock Jitter vs. `PyJWT` `iat` Validation — `BUG-P5-003`):*
+    - On Windows Docker Desktop (WSL2), Hyper-V NTP clock synchronization can nudge the Linux VM clock backwards by `< 1s` between consecutive HTTP requests. Because `PyJWT >= 2.6.0` validates `iat` (`verify_iat=True`) with `leeway=0` by default, a request arriving immediately after `/api/v1/auth/login` could fail with `jwt.ImmatureSignatureError` (`InvalidTokenError`). Adding `leeway=10` to `jwt.decode()` eliminates false `401` rejections from sub-second clock jitter.
+  - *Finding 2 (SQLAlchemy ORM Attribute Expiration After `await db.rollback()` — `BUG-P5-001`):*
+    - Calling `await db.rollback()` inside an exception handler expires all ORM attributes on loaded instances (`ov`). Accessing `ov.id` in the `except` block to log an error message triggers a synchronous lazy reload outside `greenlet_spawn` (`MissingGreenlet`). Capturing primitive IDs (`ov_id = ov.id`) before the `try` block avoids post-rollback lazy loads.
+  - *Finding 3 (`WORKDIR /app/backend` vs. Relative `./data/gateway.db` Volume Mount — `FB-P5-010`):*
+    - In `docker/Dockerfile`, `WORKDIR` is `/app/backend`, while `docker/docker-compose.yml` mounts `../data:/app/data` and sets `SQLITE_DB_PATH=/app/data/gateway.db`. Because `Settings.database_url` defaulted to `sqlite+aiosqlite:///./data/gateway.db` without reading `SQLITE_DB_PATH`, SQLite created `/app/backend/data/gateway.db` inside the ephemeral container layer instead of `/app/data/gateway.db` on the host volume.
+- **How we will apply these learnings to Phase 6:**
+  1. Fix `Settings.database_url` in Phase 6 Step 6.1 to honor `SQLITE_DB_PATH=/app/data/gateway.db` so all groups, nicknames, active timers, and recurring schedules persist across container rebuilds and restarts (`FB-P5-010`).
+  2. Capture primitive IDs prior to `try / except` blocks in `ScheduleService`'s background reconciliation loop.
+  3. Implement all 10 Phase 5 UI & Persistence feedback items (`FB-P5-001` through `FB-P5-010`) alongside Phase 6's Recurring Schedules & Bedtime Rules engine.

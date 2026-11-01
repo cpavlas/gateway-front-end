@@ -122,6 +122,7 @@ def decode_session_token(token: str, settings: Settings) -> AuthUserResponse:
             token,
             settings.app_secret_key.get_secret_value(),
             algorithms=[JWT_ALGORITHM],
+            leeway=10,
         )
     except jwt.ExpiredSignatureError as exc:
         raise HTTPException(

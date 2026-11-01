@@ -122,3 +122,23 @@ def test_argon2_prehashed_admin_password_supported(test_settings: Settings) -> N
     assert (
         verify_admin_credentials("wronguser", "MySuperSecretAdminPass!", hashed_settings) is False
     )
+
+
+async def test_jwt_session_tolerates_minor_clock_skew_in_iat(
+    async_client: AsyncClient, test_settings: Settings
+) -> None:
+    """decode_session_token tolerates minor clock skew (up to 10s leeway) in iat."""
+    skewed_payload = {
+        "sub": test_settings.admin_username,
+        "iat": int((datetime.now(UTC) + timedelta(seconds=3)).timestamp()),
+        "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
+        "type": "admin_session",
+    }
+    skewed_token = jwt.encode(
+        skewed_payload,
+        test_settings.app_secret_key.get_secret_value(),
+        algorithm=JWT_ALGORITHM,
+    )
+    async_client.cookies.set(SESSION_COOKIE_NAME, skewed_token)
+    resp = await async_client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
