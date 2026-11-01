@@ -18,7 +18,7 @@ function createTestQueryClient() {
 
 const MOCK_HEALTHY_REPORT: SystemHealthResponse = {
   overall_status: 'healthy',
-  version: '0.4.0',
+  version: '0.6.0',
   services: {
     sqlite: {
       service: 'sqlite',
@@ -182,8 +182,8 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
       expect(screen.getByTestId('overall-health-badge')).toHaveTextContent('degraded')
     })
 
-    // Click Sign Out -> should return to LoginPage
-    await user.click(screen.getByRole('button', { name: /Sign Out/i }))
+    // Click Logout (FB-P5-006) -> should return to LoginPage
+    await user.click(screen.getByRole('button', { name: /Logout/i }))
     expect(await screen.findByRole('button', { name: /Sign In/i })).toBeInTheDocument()
   })
 

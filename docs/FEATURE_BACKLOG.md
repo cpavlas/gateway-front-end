@@ -13,7 +13,7 @@
 | ID | UI Area / Tab | Short Summary | Category | Complexity | Recommended Target Phase | Status |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: |
 | **`FB-P4-001`** | Page Header | Remove `SYSTEM:` prefix from health badge (`HEALTHY`, `DEGRADED`, `UNHEALTHY`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
-| **`FB-P4-002`** | Page Header / Versioning | Increment application version (`v0.1.0` → `v0.4.0` / `v0.5.0`...) on each phase push to match GitHub | Release & Versioning | `1 / 5` | **Phase 4 Exit / Every Phase Push** | `COMPLETED (Ongoing Rule — v0.5.0 in Phase 5)` |
+| **`FB-P4-002`** | Page Header / Versioning | Increment application version (`v0.1.0` → `v0.4.0` / `v0.5.0`...) on each phase push to match GitHub | Release & Versioning | `1 / 5` | **Phase 4 Exit / Every Phase Push** | `COMPLETED (Ongoing Rule — v0.6.0 in Phase 6)` |
 | **`FB-P4-003`** | Devices & Access Control Tab | Change Telemetry column button label from `Usage & Domains` to `Analytics` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-004`** | Devices & Access Control Tab | Internet Access column button: remove `— Click to Block` / `— Click to Allow` and show only current state (`Blocked` / `Allowed`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-005`** | Analytics Pop-Out Drawer | Remove ``(`dns.question.name`)`` from `Top Visited Domains` panel title | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
@@ -23,16 +23,21 @@
 | **`FB-P4-009`** | Analytics Pop-Out Drawer | Add **Blocked Domains & ASN Organizations** panel below `Chronological Recent DNS Queries` with an **Unblock / Remove** button per item | New Control Feature (Per-Device Block Management UI) | `3 / 5` | **Phase 6 / 7** *(Paired with `FB-P4-007` & `008`)* | `EVALUATING` |
 | **`FB-P4-010`** | Traffic & DNS Analytics Tab | Remove ``(`logs-pfsense.log*`)`` from page title and change `Inspect Device` button label to `Inspect` in `Top Active LAN Devices` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-011`** | System Connectivity Tab | Evaluate & replace/remove stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at bottom of `StatusPage.tsx` | Architecture / Design Review | `1.5 / 5` | **Phase 5** *(Design Decision Below)* | `COMPLETED (Phase 5 — Option A)` |
-| **`FB-P5-001`** | Timer Controls (Modal) | Open Timer controls as a **centered screen modal dialog** instead of an inline dropdown so it never requires scrolling and prevents multiple menus from opening simultaneously | UX / Modal Interaction | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-002`** | Timer Controls (Active Button) | When a timer is active, display the **live countdown directly inside the Timer button** (`Paused: 28m left` / `Bonus: 19m left`) and color the button (`amber` for Pause, `emerald` for Bonus) instead of rendering a separate pill | UI / Control Polish | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-003`** | Timer Controls (Preset Labels) | Show only durations (`15m`, `30m`, `1h`, `2h`, `Until 07:00`) on preset buttons inside the Timer modal without repeating `Pause` or `Bonus` inside each button | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-004`** | Timer Controls (Bonus Presets) | Change Bonus Access default preset values to **`20m`**, **`40m`**, and **`60m`** | Control Feature Update | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-005`** | Device Groups & Profiles | Match the `Timer` button height (`py-1.5 text-xs`) to the adjacent buttons (`Filter`, `Analytics`, `Allow All`, `Block All`) in the Device Groups & Profiles cards | UI Alignment | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-006`** | Top Page Header | Change the header `Sign Out` button label to simply say `Logout` | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-007`** | Device Groups & Profiles | When clicking `Filter` on a Group card, highlight the button (`Filter` active state) **without changing button text width or rearranging/stacking** the card's buttons | UI Layout Stability | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-008`** | Devices & Access Control Header | Remove ``(`gateway_blocked_devices`)`` from the page header description | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-009`** | Devices & Access Control Header | Format `Synced: HH:MM:SS` as a **24-hour clock** (single line, no `AM/PM`) and move it directly underneath the `Sync from OPNsense` button | UI Layout / Formatting | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
-| **`FB-P5-010`** | Container & SQLite Persistence | Ensure saved groups, nicknames, timers, and schedules persist across container restarts/rebuilds (`SQLITE_DB_PATH=/app/data/gateway.db` bound to `../data:/app/data` in `Settings.database_url`) | Infrastructure / Persistence | `1.5 / 5` | **Phase 6 & 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-001`** | Timer Controls (Modal) | Open Timer controls as a **centered screen modal dialog** instead of an inline dropdown so it never requires scrolling and prevents multiple menus from opening simultaneously | UX / Modal Interaction | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-002`** | Timer Controls (Active Button) | When a timer is active, display the **live countdown directly inside the Timer button** (`Paused: 28m left` / `Bonus: 19m left`) and color the button (`amber` for Pause, `emerald` for Bonus) instead of rendering a separate pill | UI / Control Polish | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-003`** | Timer Controls (Preset Labels) | Show only durations (`15m`, `30m`, `1h`, `2h`, `Until 07:00`) on preset buttons inside the Timer modal without repeating `Pause` or `Bonus` inside each button | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-004`** | Timer Controls (Bonus Presets) | Change Bonus Access default preset values to **`20m`**, **`40m`**, and **`60m`** | Control Feature Update | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-005`** | Device Groups & Profiles | Match the `Timer` button height (`py-1.5 text-xs`) to the adjacent buttons (`Filter`, `Analytics`, `Allow All`, `Block All`) in the Device Groups & Profiles cards | UI Alignment | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-006`** | Top Page Header | Change the header `Sign Out` button label to simply say `Logout` | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-007`** | Device Groups & Profiles | When clicking `Filter` on a Group card, highlight the button (`Filter` active state) **without changing button text width or rearranging/stacking** the card's buttons | UI Layout Stability | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-008`** | Devices & Access Control Header | Remove ``(`gateway_blocked_devices`)`` from the page header description | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-009`** | Devices & Access Control Header | Format `Synced: HH:MM:SS` as a **24-hour clock** (single line, no `AM/PM`) and move it directly underneath the `Sync from OPNsense` button | UI Layout / Formatting | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P5-010`** | Container & SQLite Persistence | Ensure saved groups, nicknames, timers, and schedules persist across container restarts/rebuilds (`SQLITE_DB_PATH=/app/data/gateway.db` bound to `../data:/app/data` in `Settings.database_url`) | Infrastructure / Persistence | `1.5 / 5` | **Phase 6 & 7** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
+| **`FB-P6-001`** | Schedules & Bedtime Modal | When creating a schedule for a single device, add a **search input field** above the target device selector to quickly filter devices by name, IP, or MAC | UX / Search Polish | `1 / 5` | **Phase 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 7)` |
+| **`FB-P6-002`** | Top Page Header | Add live **system time** (updating every 1 second) directly below the `Logout` button in the top-right header | UI / Live Clock | `1 / 5` | **Phase 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 7)` |
+| **`FB-P6-003`** | System Connectivity Tab | For the `Local SQLite Store` service card, display **storage size** (on-disk DB + WAL size) and **record count** stats | Observability / Telemetry | `1.5 / 5` | **Phase 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 7)` |
+| **`FB-P6-004`** | Application Usage Stats (YouTube & Plex) | Track and display **active usage time** (minutes/hours, query/packet volume, and last active timestamp) for **YouTube** and **Plex** across devices, groups, and network overview | Application Analytics (`logs-pfsense.log*`) | `2.5 / 5` | **Phase 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 7)` |
+| **`FB-P6-005`** | Selective Application Blocking (YouTube vs. Plex) | Application blocking control to **prevent access to YouTube** while **allowing access to Plex and everything else** (per-device and per-group toggle via OPNsense alias enforcement) | New Control Feature (App Control) | `3.5 / 5` | **Phase 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 7)` |
 
 ---
 
@@ -286,4 +291,63 @@
     1. Update `Settings` in `backend/app/config.py` (and `docker/Dockerfile` + `docker/docker-compose.yml`) so that when `SQLITE_DB_PATH` is set (or in container defaults), `database_url` resolves to `sqlite+aiosqlite:////app/data/gateway.db` (the host-mounted `d:\source\gateway-front-end\data\gateway.db` volume).
     2. Ensure startup initialization (`init_db()` / Alembic migrations) non-destructively creates/upgrades tables in `/app/data/gateway.db` so device nicknames, protection flags, groups, active timers, and recurring schedules all survive container restarts, rebuilds, and version upgrades.
 - **Complexity:** `1.5 / 5` (Low–Medium).
+
+---
+
+### Area 8 — Phase 6 User Feedback & Feature Requests (`FB-P6-001` – `FB-P6-005`)
+
+#### `FB-P6-001` — Single-Device Search Field in New Schedule Modal (`ScheduleFormModal.tsx`)
+- **User Feedback:** *"When creating a new schedule for a single device, add a search field above the target device box to allow for quick searching of devices"*
+- **Planned Change:**
+  - In [`frontend/src/components/ScheduleFormModal.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/ScheduleFormModal.tsx), when `targetType === 'device'`, render a search input (`Search device by name, IP, hostname, or MAC...`, `data-testid="schedule-device-search"`) directly above the `Target Device` selector.
+  - Filter `blockableDevices` in real time by matching against `effective_name`, `display_name`, `hostname`, `ipv4_address`, `mac_address`, and `vendor`, and automatically select the first matching device when the current selection is filtered out.
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P6-002` — Live Per-Second System Clock Below `Logout` Button in Top Header (`AppLayout.tsx`)
+- **User Feedback:** *"Add system time to the top of the page below the logout button that does per second updates."*
+- **Planned Change:**
+  - In [`frontend/src/components/AppLayout.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx), wrap the `Logout` button in a right-aligned vertical column (`flex flex-col items-end gap-1`) and render a live 1-second updating clock (`data-testid="header-system-clock"`, formatted in 24-hour `HH:MM:SS` monospace) directly beneath the `Logout` button.
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P6-003` — Local SQLite Store Storage Size & Record Count Stats (`system.py`, `StatusPage.tsx`)
+- **User Feedback:** *"In system connectivity tab, for Local SQLite Store, add storage size and record count stat."*
+- **Planned Change:**
+  - In [`backend/app/api/system.py`](file:///d:/source/gateway-front-end/backend/app/api/system.py) (`_probe_sqlite()`), compute:
+    - `storage_bytes` and `storage_size_formatted` (summing the on-disk size of `gateway.db`, `gateway.db-wal`, and `gateway.db-shm`, with fallback to `PRAGMA page_count * PRAGMA page_size` for in-memory test DBs).
+    - `total_records` and per-table counts (`devices_count`, `groups_count`, `timers_count`, `schedules_count`, `audit_logs_count`).
+  - In [`frontend/src/pages/StatusPage.tsx`](file:///d:/source/gateway-front-end/frontend/src/pages/StatusPage.tsx), display **Storage Size** (e.g., `140.0 KB`) and **Total Records** (with table breakdown) inside the `Local SQLite Store` service card (`data-testid="service-card-sqlite"`).
+- **Complexity:** `1.5 / 5` (Low–Medium).
+
+#### `FB-P6-004` — Application Usage Stats (`YouTube` & `Plex` Active Usage Time Tracking)
+- **User Feedback:** *"Application usage stats that logs amount of time using the application. To start, only work on doing this for Youtube and Plex"*
+- **Technical Design:**
+  - **Application Signatures in Elasticsearch (`logs-pfsense.log*`):**
+    - **YouTube:** DNS queries (`event.dataset: "pfsense.unbound"`) matching `youtube.com`, `*.youtube.com`, `googlevideo.com`, `*.googlevideo.com`, `ytimg.com`, `*.ytimg.com`, `youtu.be`, `youtubei.googleapis.com`, `youtube-nocookie.com`.
+    - **Plex:** DNS queries matching `plex.tv`, `*.plex.tv`, `plex.direct`, `*.plex.direct`, `plex.bz`, `plexapp.com`, `*.plexapp.com` **PLUS** firewall events (`event.dataset: "pfsense.filterlog"`) on Plex Media Server port `destination.port: 32400` or `source.port: 32400`.
+  - **Active Usage Time Calculation (`active_minutes`):**
+    - Using an Elasticsearch `filters` aggregation (`youtube` and `plex`) with a nested `date_histogram` (`fixed_interval: "5m"`) and `sum(network.bytes)`:
+      - Every 5-minute bucket in which a device/group generates YouTube or Plex activity counts as **5 minutes of active usage** (`active_minutes = active_5m_buckets * 5`), alongside `event_count` (DNS queries + firewall packets), `total_bytes`, and `last_active_at`.
+  - **UI Integration:**
+    - Render a dedicated **Application Usage (YouTube & Plex)** panel in:
+      1. **Per-Device Analytics Drawer (`DeviceAnalyticsDrawer.tsx`)**
+      2. **Per-Group Analytics Drawer (`GroupAnalyticsDrawer.tsx`)**
+      3. **Traffic & DNS Analytics Tab (`AnalyticsPage.tsx`)**
+    - Display formatted usage duration (e.g., `1h 25m` / `45m`), query/event counts, bandwidth, and last active time.
+- **Complexity:** `2.5 / 5` (Medium).
+
+#### `FB-P6-005` — Selective Application Blocking: Prevent Access to YouTube While Allowing Plex & Everything Else
+- **User Feedback:** *"Application blocking feature to prevent access to Youtube, but allow access to Plex and everything else."*
+- **Architectural Design:**
+  - **Why Targeted Alias Enforcement Is Required:**
+    - Full device blocking (`gateway_blocked_devices`) blocks all WAN access, whereas blocking all of Google's ASN (`AS15169`) would break Google Search, Gmail, and Classroom.
+    - To block **YouTube** while keeping **Plex** (`plex.tv`, `plex.direct`, `:32400`) and all other websites working normally:
+      1. **OPNsense Alias Pair (`gateway_youtube_blocked_devices` + `gateway_youtube_domains`):**
+         - `gateway_youtube_blocked_devices` (`host` alias): holds the IPv4 addresses of LAN devices that have **YouTube Blocked** (`Device.is_youtube_blocked == True`).
+         - `gateway_youtube_domains` (`host` alias): holds YouTube's FQDNs (`youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be`, `googlevideo.com`, `ytimg.com`, `i.ytimg.com`, `s.ytimg.com`, `youtubei.googleapis.com`, `youtube-nocookie.com`), which OPNsense's `filterdns` resolves into PF table entries for a LAN Reject rule (`Source: gateway_youtube_blocked_devices -> Destination: gateway_youtube_domains`).
+         - `OPNsenseClient` automatically verifies/provisions `gateway_youtube_blocked_devices` and `gateway_youtube_domains` via `/api/firewall/alias/*` (using the existing `Firewall: Alias: Edit` privilege) and adds/removes device IPs via `/api/firewall/alias_util/{add,delete}/gateway_youtube_blocked_devices` + `kill_states`.
+      2. **Per-Device & Per-Group YouTube Toggle UI:**
+         - Add `is_youtube_blocked: bool` to `Device` (and `youtube_status` to `GroupResponse`) with `POST /api/v1/devices/{id}/youtube/block`, `POST /api/v1/devices/{id}/youtube/unblock`, `POST /api/v1/groups/{id}/youtube/block`, and `POST /api/v1/groups/{id}/youtube/unblock`.
+         - Expose one-click **YouTube Allowed / YouTube Blocked** controls on Device rows, Group cards, and inside the Analytics Drawer's **Application Usage & Control (YouTube & Plex)** panel.
+- **Complexity:** `3.5 / 5` (Medium–High).
+
 

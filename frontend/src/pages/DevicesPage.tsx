@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   BarChart3,
+  CalendarClock,
   Check,
   Edit2,
   Filter,
@@ -34,6 +35,19 @@ import { TimerPopoverMenu } from '../components/TimerPopoverMenu'
 interface DevicesPageProps {
   activeTab?: AppTab
   onSelectTab?: (tab: AppTab) => void
+}
+
+export function formatSyncClock24h(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    return isoTimestamp
+  }
+  return parsed.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 }
 
 export const DevicesPage: React.FC<DevicesPageProps> = ({
@@ -335,28 +349,23 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       onSelectTab={onSelectTab}
     >
       <div className="space-y-6">
-        {/* Page Header & Sync Button */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Page Header & Sync Button (FB-P5-008 & FB-P5-009) */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-100">
               Network Device Inventory &amp; Access Control
             </h1>
             <p className="text-sm text-slate-400">
-              Manage internet access via OPNsense (`gateway_blocked_devices`), organize profiles &amp; groups, and inspect per-device or per-group usage &amp; DNS domains
+              Manage internet access via OPNsense, organize profiles &amp; groups, and inspect per-device or per-group usage &amp; DNS domains
             </p>
           </div>
 
-          <div className="flex items-center gap-3 self-start">
-            {deviceList?.last_synced_at && (
-              <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-                Synced: {new Date(deviceList.last_synced_at).toLocaleTimeString()}
-              </span>
-            )}
+          <div className="flex flex-col items-start sm:items-end gap-1 self-start shrink-0">
             <button
               type="button"
               onClick={() => syncMutation.mutate()}
               disabled={syncMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
             >
               <RefreshCw
                 className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
@@ -364,6 +373,14 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
               />
               <span>{syncMutation.isPending ? 'Syncing OPNsense...' : 'Sync from OPNsense'}</span>
             </button>
+            {deviceList?.last_synced_at && (
+              <span
+                data-testid="last-synced-clock"
+                className="text-[11px] text-slate-400 font-mono whitespace-nowrap"
+              >
+                Synced: {formatSyncClock24h(deviceList.last_synced_at)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -493,6 +510,17 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                     ? 'Allowed'
                                     : 'Empty'}
                             </span>
+                            {grp.active_schedule && (
+                              <span
+                                data-testid={`group-schedule-badge-${grp.id}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-semibold text-violet-200"
+                              >
+                                <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                <span>
+                                  {grp.active_schedule.name} (until {grp.active_schedule.end_time})
+                                </span>
+                              </span>
+                            )}
                           </div>
                           {grp.description && (
                             <p className="mt-1 text-xs text-slate-400 truncate">
@@ -526,36 +554,37 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-nowrap items-center gap-1.5">
                         <button
                           type="button"
                           data-testid={`group-filter-btn-${grp.id}`}
+                          aria-pressed={isFilterSelected}
                           onClick={() =>
                             setSelectedGroupId((prev) => (prev === grp.id ? null : grp.id))
                           }
-                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium cursor-pointer ${
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                             isFilterSelected
-                              ? 'border-indigo-500 bg-indigo-600 text-white'
+                              ? 'border-indigo-400 bg-indigo-500/25 text-indigo-100 shadow-xs'
                               : 'border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
                           }`}
                         >
-                          <Filter className="h-3 w-3" aria-hidden="true" />
-                          <span>{isFilterSelected ? 'Filtered' : 'Filter'}</span>
+                          <Filter className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>Filter</span>
                         </button>
 
                         <button
                           type="button"
                           data-testid={`group-analytics-btn-${grp.id}`}
                           onClick={() => setSelectedAnalyticsGroupId(grp.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 whitespace-nowrap cursor-pointer"
                         >
-                          <BarChart3 className="h-3 w-3" aria-hidden="true" />
+                          <BarChart3 className="h-3 w-3 shrink-0" aria-hidden="true" />
                           <span>Analytics</span>
                         </button>
                       </div>
 
                       {grp.blockable_devices > 0 ? (
-                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5">
                           <TimerPopoverMenu
                             targetType="group"
                             targetId={grp.id}
@@ -575,7 +604,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               onClick={() =>
                                 groupAccessMutation.mutate({ group: grp, action: 'unblock' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 whitespace-nowrap cursor-pointer"
                             >
                               <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
                               <span>{isGroupBusy ? 'Updating...' : 'Allow Group'}</span>
@@ -588,7 +617,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               onClick={() =>
                                 groupAccessMutation.mutate({ group: grp, action: 'block' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 whitespace-nowrap cursor-pointer"
                             >
                               <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                               <span>{isGroupBusy ? 'Blocking...' : 'Block Group'}</span>
@@ -813,6 +842,17 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                     {badge.name}
                                   </button>
                                 ))}
+                                {dev.active_schedule && (
+                                  <span
+                                    data-testid={`device-schedule-badge-${dev.id}`}
+                                    className="inline-flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-violet-200"
+                                  >
+                                    <CalendarClock className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+                                    <span>
+                                      {dev.active_schedule.name} (until {dev.active_schedule.end_time})
+                                    </span>
+                                  </span>
+                                )}
                               </div>
                             )}
 
@@ -885,7 +925,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                           type="button"
                           data-testid={`view-analytics-btn-${dev.id}`}
                           onClick={() => setSelectedAnalyticsDeviceId(dev.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
                         >
                           <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
                           <span>Analytics</span>
@@ -915,7 +955,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               data-testid={`access-toggle-${dev.id}`}
                               disabled
                               title={dev.protection_reason ?? 'Protected device cannot be blocked'}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs font-semibold text-slate-400 opacity-75 cursor-not-allowed"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1 text-xs font-semibold text-slate-400 opacity-75 cursor-not-allowed"
                             >
                               <Lock className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
                               <span>Always Allowed</span>
@@ -929,7 +969,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               onClick={() =>
                                 accessMutation.mutate({ device: dev, action: 'unblock' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
                             >
                               <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
                               <span>{isBusy ? 'Updating...' : 'Blocked'}</span>
@@ -943,7 +983,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               onClick={() =>
                                 accessMutation.mutate({ device: dev, action: 'block' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
                             >
                               <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                               <span>{isBusy ? 'Blocking...' : 'Allowed'}</span>

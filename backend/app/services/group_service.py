@@ -42,6 +42,7 @@ from app.services.device_service import (
     build_device_group_badge_map,
     build_device_response,
 )
+from app.services.schedule_service import ActiveScheduleInfo, get_active_schedule_maps
 from app.services.timer_service import (
     ActiveOverrideInfo,
     cancel_active_overrides_for_group,
@@ -99,6 +100,7 @@ class GroupResponse(BaseModel):
     member_device_ids: list[int]
     members: list[DeviceResponse]
     active_override: ActiveOverrideInfo | None = None
+    active_schedule: ActiveScheduleInfo | None = None
     created_at: str
     updated_at: str
 
@@ -208,6 +210,7 @@ def build_group_response(
     group: DeviceGroup,
     members: list[DeviceResponse],
     active_override: ActiveOverrideInfo | None = None,
+    active_schedule: ActiveScheduleInfo | None = None,
 ) -> GroupResponse:
     """Construct a sorted `GroupResponse` with computed status and KPI counts."""
     sorted_members = sorted(
@@ -234,6 +237,7 @@ def build_group_response(
         member_device_ids=[m.id for m in sorted_members],
         members=sorted_members,
         active_override=active_override,
+        active_schedule=active_schedule,
         created_at=group.created_at.isoformat(),
         updated_at=group.updated_at.isoformat(),
     )
@@ -247,11 +251,15 @@ def assemble_group_responses(
     client_ip: str | None = None,
     overrides_by_device: dict[int, ActiveOverrideInfo] | None = None,
     overrides_by_group: dict[int, ActiveOverrideInfo] | None = None,
+    schedules_by_device: dict[int, ActiveScheduleInfo] | None = None,
+    schedules_by_group: dict[int, ActiveScheduleInfo] | None = None,
 ) -> list[GroupResponse]:
     """Assemble all `GroupResponse` items sorted alphabetically by group name."""
     badges_by_device = build_device_group_badge_map(groups, memberships)
     dev_overrides = overrides_by_device or {}
     grp_overrides = overrides_by_group or {}
+    dev_schedules = schedules_by_device or {}
+    grp_schedules = schedules_by_group or {}
     device_resp_by_id: dict[int, DeviceResponse] = {
         d.id: build_device_response(
             d,
@@ -259,6 +267,7 @@ def assemble_group_responses(
             client_ip,
             groups=badges_by_device.get(d.id, []),
             active_override=dev_overrides.get(d.id),
+            active_schedule=dev_schedules.get(d.id),
         )
         for d in devices
     }
@@ -274,6 +283,7 @@ def assemble_group_responses(
             g,
             members_by_group.get(g.id, []),
             active_override=grp_overrides.get(g.id),
+            active_schedule=grp_schedules.get(g.id),
         )
         for g in sorted_groups
     ]
@@ -523,6 +533,7 @@ async def list_groups(
     memberships = list((await db.execute(select(DeviceGroupMembership))).scalars().all())
     devices = list((await db.execute(select(Device))).scalars().all())
     overrides_by_device, overrides_by_group = await load_active_override_maps(db)
+    schedules_by_device, schedules_by_group = await get_active_schedule_maps(db)
     return GroupListResponse(
         groups=assemble_group_responses(
             groups,
@@ -532,6 +543,8 @@ async def list_groups(
             client_ip,
             overrides_by_device=overrides_by_device,
             overrides_by_group=overrides_by_group,
+            schedules_by_device=schedules_by_device,
+            schedules_by_group=schedules_by_group,
         )
     )
 
@@ -552,6 +565,7 @@ async def get_group_by_id(
     memberships = list((await db.execute(select(DeviceGroupMembership))).scalars().all())
     devices = list((await db.execute(select(Device))).scalars().all())
     overrides_by_device, overrides_by_group = await load_active_override_maps(db)
+    schedules_by_device, schedules_by_group = await get_active_schedule_maps(db)
     assembled = assemble_group_responses(
         all_groups,
         memberships,
@@ -560,6 +574,8 @@ async def get_group_by_id(
         client_ip,
         overrides_by_device=overrides_by_device,
         overrides_by_group=overrides_by_group,
+        schedules_by_device=schedules_by_device,
+        schedules_by_group=schedules_by_group,
     )
     for item in assembled:
         if item.id == grp.id:
@@ -807,6 +823,8 @@ async def block_group_internet(
     )
     for d in devs:
         d.is_blocked = True
+        if not actor.startswith(("timer", "schedule")):
+            d.is_manually_blocked = True
         d.updated_at = now
 
     await cancel_active_overrides_for_group(db, group_id, now)
@@ -890,6 +908,8 @@ async def unblock_group_internet(
     )
     for d in devs:
         d.is_blocked = False
+        if not actor.startswith(("timer", "schedule")):
+            d.is_manually_blocked = False
         d.updated_at = now
 
     await cancel_active_overrides_for_group(db, group_id, now)

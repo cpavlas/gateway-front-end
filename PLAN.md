@@ -444,6 +444,8 @@ flowchart TD
      - One-click JSON backup & restore of local metadata (device nicknames, groups, schedules) without exposing `.env` secrets.
   3. **Container & Security Hardening**:
      - Non-root container execution, Docker `HEALTHCHECK`, structured JSON logging, CSP/security headers, automatic SQLite audit-log retention pruning (e.g., 90 days), and comprehensive `README.md` self-hosting runbook.
+  4. **Phase 6 Waterfall Update 7A — Selective Application Blocking (YouTube vs. Plex), Application Usage Time Telemetry & UI Enhancements (`docs/FEATURE_BACKLOG.md` `FB-P6-001`..`FB-P6-005`)**:
+     - Add single-device search filter in `ScheduleFormModal.tsx` (`FB-P6-001`), live per-second 24h system clock below `Logout` in `AppLayout.tsx` (`FB-P6-002`), `Local SQLite Store` storage size (`KB`/`MB`) and record count metrics in `/api/v1/system/health` & `StatusPage.tsx` (`FB-P6-003`), **YouTube & Plex Active Usage Time Tracking** (`active_minutes`, query/packet counts, and bandwidth from `logs-pfsense.log*` in `DeviceAnalyticsDrawer`, `GroupAnalyticsDrawer`, and `AnalyticsPage` — `FB-P6-004`), and **Selective Application Blocking for YouTube** (allowing Plex & general internet traffic via OPNsense `gateway_youtube_blocked_devices` + `gateway_youtube_domains` aliases — `FB-P6-005`).
 - **Unit & Integration Testing Scope:**
   - Audit log filtering, pagination, and retention pruning unit tests.
   - Config JSON export/import schema validation & duplicate-handling tests.
@@ -459,6 +461,7 @@ gateway-front-end/
 ├── .env                        # Hidden runtime secrets (GIT-IGNORED — never committed)
 ├── .env.example                # Safe template with placeholder keys (committed)
 ├── .gitignore
+├── AGENTS.md                   # Mandatory agent continuity protocol, phase workflow & review gates
 ├── PLAN.md                     # Living master plan (updated at each Phase Exit Analysis)
 ├── README.md                   # Deployment & operations guide
 ├── docker/
@@ -472,7 +475,8 @@ gateway-front-end/
 │   ├── ES_SCHEMA_DISCOVERY.md  # Generated in Phase 1 from live ES mapping inspection
 │   ├── FEATURE_BACKLOG.md      # User UI feedback & feature evaluation backlog reviewed at each phase
 │   ├── TEST_AND_BUG_LOG.md     # Per-phase bug, fix & deferred-waterfall ledger
-│   └── PHASE_EXIT_REPORTS.md   # Phase-end exit analyses, waterfall deltas & unplanned-info learnings
+│   ├── PHASE_EXIT_REPORTS.md   # Phase-end exit analyses, waterfall deltas & unplanned-info learnings
+│   └── PHASE_1..7_TRACKING.md  # Per-phase step & checkpoint tracking documents
 ├── scripts/
 │   └── discover_environment.py # Phase 1 read-only OPNsense & ES index/mapping inspector
 ├── backend/

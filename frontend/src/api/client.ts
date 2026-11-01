@@ -52,6 +52,69 @@ export interface ActiveOverrideInfo {
   remaining_seconds: number
 }
 
+export interface ActiveScheduleInfo {
+  id: number
+  name: string
+  target_type: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  start_time: string
+  end_time: string
+  timezone: string
+}
+
+export interface ScheduleRule {
+  id: number
+  name: string
+  description: string
+  target_type: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  target_name: string
+  days_of_week: number[]
+  start_time: string
+  end_time: string
+  timezone: string
+  is_enabled: boolean
+  is_active_now: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduleCreatePayload {
+  name: string
+  description?: string
+  target_type: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  days_of_week: number[]
+  start_time: string
+  end_time: string
+  timezone?: string | null
+  is_enabled?: boolean
+}
+
+export interface ScheduleUpdatePayload {
+  name?: string
+  description?: string
+  days_of_week?: number[]
+  start_time?: string
+  end_time?: string
+  timezone?: string | null
+  is_enabled?: boolean
+}
+
+export interface ScheduleListResponse {
+  schedules: ScheduleRule[]
+}
+
+export interface ScheduleReconcileResponse {
+  blocked_count: number
+  unblocked_count: number
+  ip_drift_healed_count: number
+  warnings: string[]
+}
+
 export interface TimerStartPayload {
   mode: OverrideMode
   duration_minutes?: number
@@ -92,11 +155,13 @@ export interface DeviceItem {
   lease_type: string
   is_online: boolean
   is_blocked: boolean
+  is_manually_blocked?: boolean
   is_protected: boolean
   protection_reason: string | null
   notes: string
   groups?: DeviceGroupBadge[]
   active_override?: ActiveOverrideInfo | null
+  active_schedule?: ActiveScheduleInfo | null
   first_seen_at: string
   last_seen_at: string
   updated_at: string
@@ -143,6 +208,7 @@ export interface GroupItem {
   member_device_ids: number[]
   members: DeviceItem[]
   active_override?: ActiveOverrideInfo | null
+  active_schedule?: ActiveScheduleInfo | null
   created_at: string
   updated_at: string
 }
@@ -541,6 +607,45 @@ export const apiClient = {
       `/api/v1/timers/${overrideId}?revert_state=${revertState ? 'true' : 'false'}`,
       { method: 'DELETE' },
     )
+  },
+
+  getSchedules(): Promise<ScheduleListResponse> {
+    return requestJson<ScheduleListResponse>('/api/v1/schedules', {
+      method: 'GET',
+    })
+  },
+
+  createSchedule(payload: ScheduleCreatePayload): Promise<ScheduleRule> {
+    return requestJson<ScheduleRule>('/api/v1/schedules', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateSchedule(scheduleId: number, payload: ScheduleUpdatePayload): Promise<ScheduleRule> {
+    return requestJson<ScheduleRule>(`/api/v1/schedules/${scheduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  toggleSchedule(scheduleId: number, isEnabled: boolean): Promise<ScheduleRule> {
+    return requestJson<ScheduleRule>(`/api/v1/schedules/${scheduleId}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ is_enabled: isEnabled }),
+    })
+  },
+
+  deleteSchedule(scheduleId: number): Promise<void> {
+    return requestJson<void>(`/api/v1/schedules/${scheduleId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  reconcileSchedules(): Promise<ScheduleReconcileResponse> {
+    return requestJson<ScheduleReconcileResponse>('/api/v1/schedules/reconcile', {
+      method: 'POST',
+    })
   },
 
   getNetworkOverview(params?: {

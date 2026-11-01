@@ -16,11 +16,13 @@ from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.groups import router as groups_router
+from app.api.schedules import router as schedules_router
 from app.api.system import router as system_router
 from app.api.timers import router as timers_router
 from app.clients.opnsense import OPNsenseClient
 from app.config import get_settings
 from app.db import dispose_db, get_session_factory, init_db
+from app.services.schedule_service import reconcile_schedules_and_policies
 from app.services.timer_service import reconcile_expired_overrides
 
 DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -33,6 +35,7 @@ async def run_scheduled_override_reconciliation() -> None:
     opnsense = OPNsenseClient(settings)
     async with session_factory() as session:
         await reconcile_expired_overrides(session, opnsense, settings)
+        await reconcile_schedules_and_policies(session, opnsense, settings)
 
 
 @asynccontextmanager
@@ -96,6 +99,7 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
     app.include_router(devices_router)
     app.include_router(groups_router)
     app.include_router(timers_router)
+    app.include_router(schedules_router)
     app.include_router(analytics_router)
 
     dist_path = frontend_dist_dir if frontend_dist_dir is not None else DEFAULT_FRONTEND_DIST

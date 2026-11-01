@@ -27,6 +27,7 @@ from app.models import (
     normalize_mac_address,
     utc_now,
 )
+from app.services.schedule_service import ActiveScheduleInfo, get_active_schedule_maps
 from app.services.timer_service import (
     ActiveOverrideInfo,
     cancel_active_overrides_for_device,
@@ -65,6 +66,7 @@ class DeviceResponse(BaseModel):
     notes: str
     groups: list[DeviceGroupBadge] = Field(default_factory=list)
     active_override: ActiveOverrideInfo | None = None
+    active_schedule: ActiveScheduleInfo | None = None
     first_seen_at: str
     last_seen_at: str
     updated_at: str
@@ -154,6 +156,7 @@ def build_device_response(
     client_ip: str | None = None,
     groups: list[DeviceGroupBadge] | None = None,
     active_override: ActiveOverrideInfo | None = None,
+    active_schedule: ActiveScheduleInfo | None = None,
 ) -> DeviceResponse:
     """Convert a SQLAlchemy `Device` row into a `DeviceResponse` with protection metadata."""
     ip = device.ipv4_address
@@ -193,6 +196,7 @@ def build_device_response(
         notes=device.notes or "",
         groups=groups or [],
         active_override=active_override,
+        active_schedule=active_schedule,
         first_seen_at=device.first_seen_at.isoformat(),
         last_seen_at=device.last_seen_at.isoformat(),
         updated_at=device.updated_at.isoformat(),
@@ -377,11 +381,13 @@ def _filter_and_summarize_devices(
     group_id: int | None = None,
     badges_by_device: dict[int, list[DeviceGroupBadge]] | None = None,
     overrides_by_device: dict[int, ActiveOverrideInfo] | None = None,
+    schedules_by_device: dict[int, ActiveScheduleInfo] | None = None,
     last_synced_at: str | None = None,
 ) -> DeviceListResponse:
     """Build sorted, filtered `DeviceListResponse` and KPI summary counts."""
     badge_map = badges_by_device or {}
     override_map = overrides_by_device or {}
+    schedule_map = schedules_by_device or {}
     all_responses = [
         build_device_response(
             d,
@@ -389,6 +395,7 @@ def _filter_and_summarize_devices(
             client_ip,
             groups=badge_map.get(d.id, []),
             active_override=override_map.get(d.id),
+            active_schedule=schedule_map.get(d.id),
         )
         for d in rows
     ]
@@ -597,6 +604,7 @@ async def list_devices_inventory(
     rows = list((await db.execute(select(Device))).scalars().all())
     badges_by_device = await _load_device_group_badges(db)
     overrides_by_device, _ = await load_active_override_maps(db)
+    schedules_by_device, _ = await get_active_schedule_maps(db)
     meta = (
         await db.execute(
             select(SystemMetadata).where(SystemMetadata.key == LAST_SYNC_METADATA_KEY)
@@ -612,6 +620,7 @@ async def list_devices_inventory(
         group_id=group_id,
         badges_by_device=badges_by_device,
         overrides_by_device=overrides_by_device,
+        schedules_by_device=schedules_by_device,
         last_synced_at=meta.value if meta else None,
     )
 
@@ -691,6 +700,8 @@ async def block_device_internet(
         )
 
     dev.is_blocked = True
+    if not actor.startswith(("timer", "schedule")):
+        dev.is_manually_blocked = True
     dev.updated_at = utc_now()
     await cancel_active_overrides_for_device(db, dev.id, dev.updated_at)
     db.add(
@@ -753,6 +764,8 @@ async def unblock_device_internet(
             ) from exc
 
     dev.is_blocked = False
+    if not actor.startswith(("timer", "schedule")):
+        dev.is_manually_blocked = False
     dev.updated_at = utc_now()
     await cancel_active_overrides_for_device(db, dev.id, dev.updated_at)
     db.add(

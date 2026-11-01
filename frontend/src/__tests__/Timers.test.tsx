@@ -19,7 +19,7 @@ const futureIso = (minutesAhead: number): string =>
 
 const mockHealth: SystemHealthResponse = {
   overall_status: 'healthy',
-  version: '0.4.0',
+  version: '0.6.0',
   services: {
     sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 2, message: 'OK' },
     opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 45, message: 'OK' },
@@ -55,13 +55,13 @@ const mockActiveGroupBonus: ActiveOverrideInfo = {
   group_id: 10,
   target_name: 'Kids Profile',
   mode: 'bonus',
-  duration_minutes: 15,
+  duration_minutes: 20,
   created_by: 'admin',
   reason: 'Extra time',
   is_active: true,
   created_at: new Date().toISOString(),
-  expires_at: futureIso(15),
-  remaining_seconds: 900,
+  expires_at: futureIso(20),
+  remaining_seconds: 1200,
 }
 
 const mockDevices: DeviceListResponse = {
@@ -111,6 +111,15 @@ const mockDevices: DeviceListResponse = {
       notes: '',
       groups: [{ id: 10, name: 'Kids Profile', color_badge: 'indigo', icon: 'users' }],
       active_override: mockActivePauseOverride,
+      active_schedule: {
+        id: 1,
+        name: 'School Night Bedtime',
+        target_type: 'group',
+        group_id: 10,
+        start_time: '21:00',
+        end_time: '07:00',
+        timezone: 'America/Los_Angeles',
+      },
       first_seen_at: '2026-10-31T10:00:00Z',
       last_seen_at: '2026-10-31T21:00:00Z',
       updated_at: '2026-10-31T21:00:00Z',
@@ -135,13 +144,22 @@ const mockGroups: GroupListResponse = {
       member_device_ids: [2],
       members: [mockDevices.devices[1]],
       active_override: mockActiveGroupBonus,
+      active_schedule: {
+        id: 1,
+        name: 'School Night Bedtime',
+        target_type: 'group',
+        group_id: 10,
+        start_time: '21:00',
+        end_time: '07:00',
+        timezone: 'America/Los_Angeles',
+      },
       created_at: '2026-10-31T10:00:00Z',
       updated_at: '2026-10-31T21:00:00Z',
     },
   ],
 }
 
-describe('Phase 5 Timed Temporary Controls & Phase 4 UI Backlog Integration', () => {
+describe('Phase 5 & Phase 6 Timed Temporary Controls & UI Backlog Integration', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.spyOn(apiClient, 'getCurrentUser').mockResolvedValue({
@@ -161,7 +179,7 @@ describe('Phase 5 Timed Temporary Controls & Phase 4 UI Backlog Integration', ()
     expect(formatRemainingDuration(5400)).toBe('1h 30m left')
   })
 
-  it('renders active countdown pills, starts device/group preset & custom timers, and cancels timers', async () => {
+  it('renders unified active timer buttons, centered modal, duration-only presets (20m/40m/60m bonus), and 24h sync clock', async () => {
     const startDeviceSpy = vi
       .spyOn(apiClient, 'startDeviceTimer')
       .mockResolvedValue(mockActivePauseOverride)
@@ -191,29 +209,46 @@ describe('Phase 5 Timed Temporary Controls & Phase 4 UI Backlog Integration', ()
       </QueryClientProvider>,
     )
 
-    // Verify active countdown pills on Device #2 and Group #10
+    // Verify active countdown buttons on Device #2 and Group #10 (FB-P5-002)
     await waitFor(() => {
       expect(screen.getByTestId('active-timer-pill-device-2')).toBeInTheDocument()
       expect(screen.getByTestId('active-timer-pill-group-10')).toBeInTheDocument()
     })
     expect(screen.getByTestId('active-timer-pill-device-2')).toHaveTextContent(/Paused/i)
-    expect(screen.getByTestId('active-timer-pill-group-10')).toHaveTextContent(/Bonus Time/i)
+    expect(screen.getByTestId('active-timer-pill-group-10')).toHaveTextContent(/Bonus/i)
 
-    // Cancel Device #2 timer
+    // Verify 24h sync clock underneath Sync from OPNsense button (FB-P5-009)
+    expect(screen.getByTestId('last-synced-clock')).toHaveTextContent(/Synced:/i)
+    expect(screen.getByTestId('last-synced-clock').textContent).not.toMatch(/AM|PM/i)
+
+    // Verify active schedule badges on Device #2 and Group #10
+    expect(screen.getByTestId('device-schedule-badge-2')).toHaveTextContent(
+      'School Night Bedtime (until 07:00)',
+    )
+    expect(screen.getByTestId('group-schedule-badge-10')).toHaveTextContent(
+      'School Night Bedtime (until 07:00)',
+    )
+
+    // Cancel Device #2 timer via inline X button
     await user.click(screen.getByTestId('cancel-timer-device-2'))
     await waitFor(() => {
       expect(cancelSpy).toHaveBeenCalledWith(501, true)
     })
 
-    // Open Device #2 timer popover and click preset Pause 30m
+    // Open Device #2 centered timer modal (FB-P5-001) and verify duration-only labels (FB-P5-003) & 20m/40m/60m bonus (FB-P5-004)
     await user.click(screen.getByTestId('open-timer-menu-device-2'))
     expect(screen.getByTestId('timer-popover-device-2')).toBeInTheDocument()
+    expect(screen.getByTestId('timer-preset-pause-30m-device-2')).toHaveTextContent('30m')
+    expect(screen.getByTestId('timer-preset-bonus-20m-device-2')).toHaveTextContent('20m')
+    expect(screen.getByTestId('timer-preset-bonus-40m-device-2')).toHaveTextContent('40m')
+    expect(screen.getByTestId('timer-preset-bonus-60m-device-2')).toHaveTextContent('60m')
+
     await user.click(screen.getByTestId('timer-preset-pause-30m-device-2'))
     await waitFor(() => {
       expect(startDeviceSpy).toHaveBeenCalledWith(2, { mode: 'pause', preset: '30m' })
     })
 
-    // Open Device #2 timer popover and submit custom 45m bonus
+    // Open Device #2 timer modal and submit custom 45m bonus
     await user.click(screen.getByTestId('open-timer-menu-device-2'))
     await user.click(screen.getByTestId('custom-timer-bonus-device-2'))
     await waitFor(() => {
@@ -223,15 +258,13 @@ describe('Phase 5 Timed Temporary Controls & Phase 4 UI Backlog Integration', ()
       })
     })
 
-    // Open Group #10 timer popover and click Until 07:00
+    // Open Group #10 timer modal and click 40m bonus preset
     await user.click(screen.getByTestId('open-timer-menu-group-10'))
-    await user.click(
-      screen.getByTestId('timer-preset-pause-until_tomorrow_0700-group-10'),
-    )
+    await user.click(screen.getByTestId('timer-preset-bonus-40m-group-10'))
     await waitFor(() => {
       expect(startGroupSpy).toHaveBeenCalledWith(10, {
-        mode: 'pause',
-        preset: 'until_tomorrow_0700',
+        mode: 'bonus',
+        preset: '40m',
       })
     })
   })
@@ -262,4 +295,3 @@ describe('Phase 5 Timed Temporary Controls & Phase 4 UI Backlog Integration', ()
     expect(onSelectTab).toHaveBeenCalledWith('devices')
   })
 })
-

@@ -1,4 +1,4 @@
-"""SQLAlchemy declarative base and models for Phases 1–5."""
+"""SQLAlchemy declarative base and models for Phases 1–6."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uni
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _HEX_MAC_RE = re.compile(r"^[0-9a-f]{12}$")
+_TIME_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _PLACEHOLDER_HOSTNAMES = frozenset({"", "*", "?", "(none)", "none", "unknown"})
 VALID_GROUP_COLORS = frozenset(
     {"indigo", "emerald", "amber", "rose", "cyan", "violet", "slate"}
@@ -47,7 +48,7 @@ def normalize_override_mode(mode: str) -> str:
 
 
 def normalize_override_target_type(target_type: str) -> str:
-    """Validate and normalize a temporary override target type ('device' or 'group')."""
+    """Validate and normalize a temporary override or schedule target type ('device' or 'group')."""
     if not isinstance(target_type, str):
         raise ValueError("Override target_type must be a string.")
     cleaned = target_type.strip().lower()
@@ -55,6 +56,50 @@ def normalize_override_target_type(target_type: str) -> str:
         allowed_targets = sorted(VALID_OVERRIDE_TARGETS)
         raise ValueError(
             f"Unsupported override target_type '{target_type}'. Allowed: {allowed_targets}"
+        )
+    return cleaned
+
+
+def parse_days_of_week(days: str | list[int]) -> list[int]:
+    """Validate and normalize days of week (0=Monday .. 6=Sunday) into a sorted unique list."""
+    raw_items: list[int] = []
+    if isinstance(days, str):
+        parts = [p.strip() for p in days.split(",") if p.strip()]
+        for part in parts:
+            try:
+                raw_items.append(int(part))
+            except ValueError as exc:
+                raise ValueError(f"Invalid day of week '{part}'. Expected 0..6.") from exc
+    elif isinstance(days, list):
+        for item in days:
+            if isinstance(item, bool) or not isinstance(item, int):
+                raise ValueError(f"Invalid day of week '{item}'. Expected integer 0..6.")
+            raw_items.append(item)
+    else:
+        raise ValueError("days_of_week must be a comma-separated string or list of integers 0..6.")
+
+    unique_days = sorted(set(raw_items))
+    if not unique_days:
+        raise ValueError("At least one day of the week (0..6) must be selected.")
+    for day in unique_days:
+        if day < 0 or day > 6:
+            raise ValueError(f"Day of week {day} is out of range (must be 0=Mon .. 6=Sun).")
+    return unique_days
+
+
+def format_days_of_week(days: str | list[int]) -> str:
+    """Format validated days of week into canonical comma-separated string ('0,1,2,3,6')."""
+    return ",".join(str(d) for d in parse_days_of_week(days))
+
+
+def validate_time_hhmm(time_str: str) -> str:
+    """Validate a 24-hour 'HH:MM' time string ('00:00'..'23:59')."""
+    if not isinstance(time_str, str):
+        raise ValueError("Time must be a string in 'HH:MM' 24-hour format.")
+    cleaned = time_str.strip()
+    if not _TIME_HHMM_RE.match(cleaned):
+        raise ValueError(
+            f"Invalid time '{time_str}'. Must be 24-hour 'HH:MM' between 00:00 and 23:59."
         )
     return cleaned
 
@@ -128,6 +173,9 @@ class Device(Base):
     lease_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     is_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    is_manually_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
     is_protected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     first_seen_at: Mapped[datetime] = mapped_column(
@@ -220,4 +268,40 @@ class TemporaryOverride(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+class RecurringSchedule(Base):
+    """Recurring weekly block schedule assignable to a single device or device group."""
+
+    __tablename__ = "schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    device_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("device_groups.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    days_of_week: Mapped[str] = mapped_column(String(32), nullable=False)
+    start_time: Mapped[str] = mapped_column(String(8), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(8), nullable=False)
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="America/Los_Angeles"
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )

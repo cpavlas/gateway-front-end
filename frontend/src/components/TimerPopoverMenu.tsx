@@ -19,17 +19,17 @@ interface TimerPopoverMenuProps {
 }
 
 const PAUSE_PRESETS: Array<{ label: string; preset: string }> = [
-  { label: 'Pause 15m', preset: '15m' },
-  { label: 'Pause 30m', preset: '30m' },
-  { label: 'Pause 1h', preset: '1h' },
-  { label: 'Pause 2h', preset: '2h' },
+  { label: '15m', preset: '15m' },
+  { label: '30m', preset: '30m' },
+  { label: '1h', preset: '1h' },
+  { label: '2h', preset: '2h' },
   { label: 'Until 07:00', preset: 'until_tomorrow_0700' },
 ]
 
 const BONUS_PRESETS: Array<{ label: string; preset: string }> = [
-  { label: 'Bonus 15m', preset: '15m' },
-  { label: 'Bonus 30m', preset: '30m' },
-  { label: 'Bonus 1h', preset: '1h' },
+  { label: '20m', preset: '20m' },
+  { label: '40m', preset: '40m' },
+  { label: '60m', preset: '60m' },
 ]
 
 export function TimerPopoverMenu({
@@ -67,6 +67,17 @@ export function TimerPopoverMenu({
     return () => window.clearInterval(timer)
   }, [activeOverride])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen])
+
   const handleSelectPreset = (mode: 'pause' | 'bonus', preset: string) => {
     onStartTimer({ mode, preset })
     setIsOpen(false)
@@ -86,142 +97,203 @@ export function TimerPopoverMenu({
   )
 
   return (
-    <div className="relative inline-flex items-center gap-1.5">
-      {hasActiveOverride && activeOverride && (
+    <div className="inline-flex items-center">
+      {!disabled && (
         <div
-          data-testid={`active-timer-pill-${targetType}-${targetId}`}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium ${
-            activeOverride.mode === 'pause'
-              ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
-              : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200'
+          data-testid={
+            hasActiveOverride ? `active-timer-pill-${targetType}-${targetId}` : undefined
+          }
+          className={`inline-flex items-center rounded-lg border text-xs font-semibold transition ${
+            hasActiveOverride && activeOverride
+              ? activeOverride.mode === 'pause'
+                ? 'border-amber-500/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+                : 'border-emerald-500/50 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
+              : isOpen
+                ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-200'
+                : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-600 hover:text-white'
           }`}
         >
-          <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
-          <span>
-            {activeOverride.mode === 'pause' ? 'Paused' : 'Bonus Time'} —{' '}
-            {formatRemainingDuration(liveRemainingSeconds)}
-          </span>
           <button
             type="button"
-            data-testid={`cancel-timer-${targetType}-${targetId}`}
+            data-testid={`open-timer-menu-${targetType}-${targetId}`}
             disabled={isPending}
-            onClick={() => onCancelTimer(activeOverride.id)}
-            title={`Cancel timer on ${targetName}`}
-            className="ml-0.5 rounded p-0.5 hover:bg-slate-900/60 text-current transition"
+            onClick={() => setIsOpen((prev) => !prev)}
+            title={`Timed Pause / Bonus controls for ${targetName}`}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50"
           >
-            <X className="h-3 w-3" aria-hidden="true" />
-            <span className="sr-only">Cancel Timer</span>
+            <Clock
+              className={`h-3.5 w-3.5 shrink-0 ${
+                hasActiveOverride && activeOverride
+                  ? activeOverride.mode === 'pause'
+                    ? 'text-amber-300'
+                    : 'text-emerald-300'
+                  : 'text-indigo-400'
+              }`}
+              aria-hidden="true"
+            />
+            {hasActiveOverride && activeOverride ? (
+              <span>
+                {activeOverride.mode === 'pause' ? 'Paused' : 'Bonus'} ·{' '}
+                {formatRemainingDuration(liveRemainingSeconds)}
+              </span>
+            ) : (
+              <span>Timer</span>
+            )}
           </button>
-        </div>
-      )}
 
-      {!disabled && (
-        <button
-          type="button"
-          data-testid={`open-timer-menu-${targetType}-${targetId}`}
-          disabled={isPending}
-          onClick={() => setIsOpen((prev) => !prev)}
-          title={`Timed Pause / Bonus controls for ${targetName}`}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
-            isOpen
-              ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-200'
-              : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-600 hover:text-white'
-          } disabled:opacity-50`}
-        >
-          <Clock className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
-          <span>Timer</span>
-        </button>
+          {hasActiveOverride && activeOverride && (
+            <button
+              type="button"
+              data-testid={`cancel-timer-${targetType}-${targetId}`}
+              disabled={isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancelTimer(activeOverride.id)
+              }}
+              title={`Cancel timer on ${targetName}`}
+              className="mr-1 rounded p-0.5 text-current hover:bg-slate-900/60 transition cursor-pointer"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+              <span className="sr-only">Cancel Timer</span>
+            </button>
+          )}
+        </div>
       )}
 
       {isOpen && (
         <div
-          data-testid={`timer-popover-${targetType}-${targetId}`}
-          className="absolute right-0 top-full z-40 mt-1.5 w-64 rounded-xl border border-slate-700 bg-slate-900 p-3 text-left shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Timed Control: ${targetName}`}
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
         >
-          <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-1.5">
-            <span className="text-xs font-semibold text-white truncate">
-              Timed Control: {targetName}
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            <div>
-              <p className="mb-1 flex items-center gap-1 text-[11px] font-medium text-amber-300">
-                <PauseCircle className="h-3 w-3" aria-hidden="true" />
-                Pause Internet (Temporary Block)
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {PAUSE_PRESETS.map((item) => (
-                  <button
-                    key={item.preset}
-                    type="button"
-                    data-testid={`timer-preset-pause-${item.preset}-${targetType}-${targetId}`}
-                    onClick={() => handleSelectPreset('pause', item.preset)}
-                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-500/25 transition"
-                  >
-                    {item.label}
-                  </button>
-                ))}
+          <div
+            data-testid={`timer-popover-${targetType}-${targetId}`}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-4 text-left shadow-2xl"
+          >
+            <div className="mb-3 flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div>
+                <h3 className="text-sm font-bold text-white truncate">
+                  Timed Control: {targetName}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Start a temporary internet pause or bonus access window
+                </p>
               </div>
+              <button
+                type="button"
+                aria-label="Close timer dialog"
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
             </div>
 
-            <div>
-              <p className="mb-1 flex items-center gap-1 text-[11px] font-medium text-cyan-300">
-                <Sparkles className="h-3 w-3" aria-hidden="true" />
-                Bonus Access (Temporary Allow)
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {BONUS_PRESETS.map((item) => (
-                  <button
-                    key={item.preset}
-                    type="button"
-                    data-testid={`timer-preset-bonus-${item.preset}-${targetType}-${targetId}`}
-                    onClick={() => handleSelectPreset('bonus', item.preset)}
-                    className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/25 transition"
-                  >
-                    {item.label}
-                  </button>
-                ))}
+            {hasActiveOverride && activeOverride && (
+              <div
+                className={`mb-3 flex items-center justify-between rounded-xl border px-3 py-2 text-xs ${
+                  activeOverride.mode === 'pause'
+                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                    : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    {activeOverride.mode === 'pause' ? 'Paused' : 'Bonus Time'} —{' '}
+                    {formatRemainingDuration(liveRemainingSeconds)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  data-testid={`modal-cancel-timer-${targetType}-${targetId}`}
+                  disabled={isPending}
+                  onClick={() => {
+                    onCancelTimer(activeOverride.id)
+                    setIsOpen(false)
+                  }}
+                  className="rounded-md border border-current/30 bg-slate-950/50 px-2 py-0.5 text-[11px] font-semibold hover:bg-slate-950 cursor-pointer"
+                >
+                  Cancel Timer
+                </button>
               </div>
-            </div>
+            )}
 
-            <div className="border-t border-slate-800 pt-2">
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">
-                Custom Duration (Minutes)
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  value={customMinutes}
-                  onChange={(e) => setCustomMinutes(e.target.value)}
-                  data-testid={`custom-timer-minutes-${targetType}-${targetId}`}
-                  className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  data-testid={`custom-timer-pause-${targetType}-${targetId}`}
-                  onClick={() => handleCustomSubmit('pause')}
-                  className="flex-1 rounded-md border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-500/25"
-                >
-                  Pause
-                </button>
-                <button
-                  type="button"
-                  data-testid={`custom-timer-bonus-${targetType}-${targetId}`}
-                  onClick={() => handleCustomSubmit('bonus')}
-                  className="flex-1 rounded-md border border-cyan-500/30 bg-cyan-500/15 px-2 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/25"
-                >
-                  Bonus
-                </button>
+            <div className="space-y-3.5">
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+                  <PauseCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  Pause Internet (Temporary Block)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {PAUSE_PRESETS.map((item) => (
+                    <button
+                      key={item.preset}
+                      type="button"
+                      data-testid={`timer-preset-pause-${item.preset}-${targetType}-${targetId}`}
+                      onClick={() => handleSelectPreset('pause', item.preset)}
+                      className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 transition cursor-pointer"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  Bonus Access (Temporary Allow)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {BONUS_PRESETS.map((item) => (
+                    <button
+                      key={item.preset}
+                      type="button"
+                      data-testid={`timer-preset-bonus-${item.preset}-${targetType}-${targetId}`}
+                      onClick={() => handleSelectPreset('bonus', item.preset)}
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 transition cursor-pointer"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Custom Duration (Minutes)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={customMinutes}
+                    onChange={(e) => setCustomMinutes(e.target.value)}
+                    data-testid={`custom-timer-minutes-${targetType}-${targetId}`}
+                    className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    data-testid={`custom-timer-pause-${targetType}-${targetId}`}
+                    onClick={() => handleCustomSubmit('pause')}
+                    className="flex-1 rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 cursor-pointer"
+                  >
+                    Pause
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`custom-timer-bonus-${targetType}-${targetId}`}
+                    onClick={() => handleCustomSubmit('bonus')}
+                    className="flex-1 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 cursor-pointer"
+                  >
+                    Bonus
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -230,4 +302,3 @@ export function TimerPopoverMenu({
     </div>
   )
 }
-
