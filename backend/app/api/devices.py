@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
@@ -19,6 +17,7 @@ from app.services.device_service import (
     DeviceActionResponse,
     DeviceListResponse,
     DeviceResponse,
+    DeviceStatusFilter,
     DeviceUpdateRequest,
     block_device_internet,
     list_devices_inventory,
@@ -38,8 +37,9 @@ async def get_devices(
         description="If true, force a live sync from OPNsense before returning devices.",
     ),
     search: str | None = Query(default=None, description="Search by name, IP, MAC, or vendor."),
-    status_filter: Literal["all", "online", "blocked", "protected"] = Query(
-        default="all", alias="status"
+    status_filter: DeviceStatusFilter = Query(default="all", alias="status"),
+    group_id: int | None = Query(
+        default=None, description="Optional group ID to filter member devices."
     ),
     _current_user: AuthUserResponse = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db_session),
@@ -65,6 +65,7 @@ async def get_devices(
         client_ip=client_ip,
         search=search,
         status_filter=status_filter,
+        group_id=group_id,
     )
 
 
@@ -150,4 +151,3 @@ async def unblock_device(
         actor=current_user.username,
         client_ip=client_ip,
     )
-

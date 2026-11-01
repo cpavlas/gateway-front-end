@@ -1,4 +1,4 @@
-"""Device discovery, reconciliation, and instant block/unblock service (Phase 2)."""
+"""Device discovery, reconciliation, and instant block/unblock service (Phases 2–4)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from app.config import Settings
 from app.models import (
     AuditLog,
     Device,
+    DeviceGroup,
+    DeviceGroupMembership,
     SystemMetadata,
     clean_discovered_hostname,
     normalize_mac_address,
@@ -27,6 +29,16 @@ from app.models import (
 )
 
 LAST_SYNC_METADATA_KEY = "devices_last_synced_at"
+DeviceStatusFilter = Literal["all", "online", "blocked", "protected", "unassigned"]
+
+
+class DeviceGroupBadge(BaseModel):
+    """Compact group badge attached to a DeviceResponse."""
+
+    id: int
+    name: str
+    color_badge: str
+    icon: str
 
 
 class DeviceResponse(BaseModel):
@@ -46,6 +58,7 @@ class DeviceResponse(BaseModel):
     is_protected: bool
     protection_reason: str | None = None
     notes: str
+    groups: list[DeviceGroupBadge] = Field(default_factory=list)
     first_seen_at: str
     last_seen_at: str
     updated_at: str
@@ -105,10 +118,35 @@ def _pick_vendor(arp_vendor: str | None, lease_vendor: str | None) -> str | None
     return cleaned_arp or cleaned_lease
 
 
+def build_device_group_badge_map(
+    groups: list[DeviceGroup],
+    memberships: list[DeviceGroupMembership],
+) -> dict[int, list[DeviceGroupBadge]]:
+    """Build a mapping of {device_id: [DeviceGroupBadge, ...]} sorted by group name."""
+    group_by_id: dict[int, DeviceGroupBadge] = {
+        g.id: DeviceGroupBadge(
+            id=g.id,
+            name=g.name,
+            color_badge=g.color_badge,
+            icon=g.icon,
+        )
+        for g in groups
+    }
+    by_device: dict[int, list[DeviceGroupBadge]] = {}
+    for m in memberships:
+        badge = group_by_id.get(m.group_id)
+        if badge is not None:
+            by_device.setdefault(m.device_id, []).append(badge)
+    for badge_list in by_device.values():
+        badge_list.sort(key=lambda b: b.name.lower())
+    return by_device
+
+
 def build_device_response(
     device: Device,
     settings: Settings,
     client_ip: str | None = None,
+    groups: list[DeviceGroupBadge] | None = None,
 ) -> DeviceResponse:
     """Convert a SQLAlchemy `Device` row into a `DeviceResponse` with protection metadata."""
     ip = device.ipv4_address
@@ -140,12 +178,13 @@ def build_device_response(
         effective_name=effective_name,
         vendor=device.vendor,
         interface_name=device.interface_name,
-        lease_type=device.lease_type,
-        is_online=device.is_online,
+        lease_type=device.lease_type or "unknown",
+        is_online=bool(device.is_online),
         is_blocked=device.is_blocked,
         is_protected=effective_protected,
         protection_reason=protection_reason,
         notes=device.notes or "",
+        groups=groups or [],
         first_seen_at=device.first_seen_at.isoformat(),
         last_seen_at=device.last_seen_at.isoformat(),
         updated_at=device.updated_at.isoformat(),
@@ -326,11 +365,17 @@ def _filter_and_summarize_devices(
     *,
     client_ip: str | None = None,
     search: str | None = None,
-    status_filter: Literal["all", "online", "blocked", "protected"] = "all",
+    status_filter: DeviceStatusFilter = "all",
+    group_id: int | None = None,
+    badges_by_device: dict[int, list[DeviceGroupBadge]] | None = None,
     last_synced_at: str | None = None,
 ) -> DeviceListResponse:
     """Build sorted, filtered `DeviceListResponse` and KPI summary counts."""
-    all_responses = [build_device_response(d, settings, client_ip) for d in rows]
+    badge_map = badges_by_device or {}
+    all_responses = [
+        build_device_response(d, settings, client_ip, groups=badge_map.get(d.id, []))
+        for d in rows
+    ]
     all_responses.sort(
         key=lambda item: (
             0 if item.is_online else 1,
@@ -353,6 +398,11 @@ def _filter_and_summarize_devices(
         filtered = [d for d in filtered if d.is_blocked]
     elif status_filter == "protected":
         filtered = [d for d in filtered if d.is_protected]
+    elif status_filter == "unassigned":
+        filtered = [d for d in filtered if len(d.groups) == 0]
+
+    if group_id is not None:
+        filtered = [d for d in filtered if any(g.id == group_id for g in d.groups)]
 
     if search and search.strip():
         q = search.strip().lower()
@@ -366,6 +416,7 @@ def _filter_and_summarize_devices(
             or q in d.mac_address.lower()
             or (d.vendor and q in d.vendor.lower())
             or (d.interface_name and q in d.interface_name.lower())
+            or any(q in g.name.lower() for g in d.groups)
         ]
 
     return DeviceListResponse(
@@ -462,6 +513,21 @@ def _validate_device_blockable(
     return dev, dev.ipv4_address
 
 
+async def _load_device_group_badges(
+    db: AsyncSession,
+    device_id: int | None = None,
+) -> dict[int, list[DeviceGroupBadge]]:
+    """Fetch group badge assignments for all devices or a single device."""
+    groups = list((await db.execute(select(DeviceGroup))).scalars().all())
+    if not groups:
+        return {}
+    stmt = select(DeviceGroupMembership)
+    if device_id is not None:
+        stmt = stmt.where(DeviceGroupMembership.device_id == device_id)
+    memberships = list((await db.execute(stmt)).scalars().all())
+    return build_device_group_badge_map(groups, memberships)
+
+
 async def sync_devices_from_opnsense(
     db: AsyncSession,
     opnsense: OPNsenseClient,
@@ -508,10 +574,12 @@ async def list_devices_inventory(
     *,
     client_ip: str | None = None,
     search: str | None = None,
-    status_filter: Literal["all", "online", "blocked", "protected"] = "all",
+    status_filter: DeviceStatusFilter = "all",
+    group_id: int | None = None,
 ) -> DeviceListResponse:
     """Return KPI summary counts and filtered/sorted device inventory from SQLite."""
     rows = list((await db.execute(select(Device))).scalars().all())
+    badges_by_device = await _load_device_group_badges(db)
     meta = (
         await db.execute(
             select(SystemMetadata).where(SystemMetadata.key == LAST_SYNC_METADATA_KEY)
@@ -524,6 +592,8 @@ async def list_devices_inventory(
         client_ip=client_ip,
         search=search,
         status_filter=status_filter,
+        group_id=group_id,
+        badges_by_device=badges_by_device,
         last_synced_at=meta.value if meta else None,
     )
 
@@ -554,7 +624,8 @@ async def update_device_metadata(
     )
     await db.commit()
     await db.refresh(dev)
-    return build_device_response(dev, settings, client_ip)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
+    return build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, []))
 
 
 async def block_device_internet(
@@ -614,9 +685,10 @@ async def block_device_internet(
     )
     await db.commit()
     await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
 
     return DeviceActionResponse(
-        device=build_device_response(dev, settings, client_ip),
+        device=build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, [])),
         action="block",
         states_killed=states_killed,
         warning=warning_msg,
@@ -674,9 +746,10 @@ async def unblock_device_internet(
     )
     await db.commit()
     await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
 
     return DeviceActionResponse(
-        device=build_device_response(dev, settings, client_ip),
+        device=build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, [])),
         action="unblock",
         states_killed=False,
         warning=None,

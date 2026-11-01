@@ -126,3 +126,50 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   1. Reuse `_compute_24h_access_profile()` and the combined `filterlog` + `unbound` query structure for Group-Level Analytics (`/api/v1/groups/{group_id}/analytics`).
   2. Use `placeholderData: (previousData) => previousData` in all Phase 4 Group Analytics and Group filter hooks in React.
 
+
+---
+
+## Phase 4 Exit Report (`2026-10-31`)
+
+### 1. Quality Gate Summary
+- **Backend Unit Tests (`pytest`):** `87 / 87 passed` in `3.01s` — **96.0% total statement coverage** (exceeds `>= 85%` gate; `100%` on `api/groups.py` and `models`, `96%` on `services/group_service.py` and `clients/elasticsearch.py`).
+- **Backend Static Analysis (`ruff` + `mypy`):** `0 errors` across all 20 source files and 12 test suites.
+- **Frontend Unit Tests (`Vitest`):** `12 / 12 passed` in `3.92s` — **94.06% line/statement coverage**, **84.22% branch coverage**, **89.70% function coverage**.
+- **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.59s` with `0 errors`.
+- **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
+  - Verified live Group creation, member assignment, one-click Group Block/Unblock against `https://gateway.sparkle-pony.com`, and multi-IP Group Analytics (`108,822` events / `37.65 MB` / `32,692` DNS queries with per-member contribution breakdown) against `https://es1.sparkle-pony.com`.
+  - User confirmed manual verification: *"Buttons are working; Block / Unblock works, including with created groups"*, and provided 11 structured UI & feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md).
+- **Bugs Resolved in Phase 4:** `1` (`BUG-P4-001` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `11` user UI/feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and waterfalled into Phases 5–7 of [PLAN.md](../PLAN.md).
+
+---
+
+### 2. Waterfall Adjustments & Feature Backlog Integration (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
+1. **Established `docs/FEATURE_BACKLOG.md` as a Mandatory Phase-Gate Artifact:**
+   - All 11 Phase 4 user feedback items (`FB-P4-001` through `FB-P4-011`) are tracked with complexity ratings, code references, and architectural evaluations in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md), and reviewed at the start and end of every phase.
+2. **Waterfalled into Phase 5 (Update 5A — Quick-Win UI Polish, Versioning, Stacked Timeline Chart & Status Page Cleanup):**
+   - **`FB-P4-001`:** Remove `SYSTEM:` prefix from the header health badge (`HEALTHY`, `DEGRADED`, `DOWN` / `UNHEALTHY`).
+   - **`FB-P4-002`:** Increment application version (`backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json`) with each phase push to match GitHub (`v0.4.0` → `v0.5.0` → `v0.6.0` → `v1.0.0`).
+   - **`FB-P4-003`:** Change Telemetry column button label in `DevicesPage.tsx` from `Usage & Domains` to `Analytics`.
+   - **`FB-P4-004`:** Remove `— Click to Block` / `— Click to Allow` from Internet Access column button in `DevicesPage.tsx` and display only the current state (`Blocked` / `Allowed`).
+   - **`FB-P4-005`:** Remove ``(`dns.question.name`)`` from `Top Visited Domains` heading in `DeviceAnalyticsDrawer.tsx`.
+   - **`FB-P4-006`:** Upgrade `Usage & Activity Timeline` bar chart in `DeviceAnalyticsDrawer.tsx` and `GroupAnalyticsDrawer.tsx` to a **Stacked Bar Graph** showing distinct colors for **DNS Queries** and **Firewall Events**, with a color key legend in the chart header and detailed DNS vs. Firewall event breakdown in the hover tooltip.
+   - **`FB-P4-010`:** Remove ``(`logs-pfsense.log*`)`` from the `Traffic & DNS Analytics` page title and change `Inspect Device` button label to `Inspect`.
+   - **`FB-P4-011`:** Replace or remove the stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at the bottom of `StatusPage.tsx` (since the full table was implemented in Phase 2 as the dedicated `Devices & Access Control` tab).
+   - **Phase 5 Complexity Impact:** Remains **3.5 / 5 (Medium–High)**.
+3. **Evaluated for Phase 6 / Phase 7 (`FB-P4-007`, `FB-P4-008`, `FB-P4-009` — Per-Device Domain & ASN Organization Blocking):**
+   - Documented technical architecture options in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) for per-device domain (`type: "host"`) and ASN (`type: "asn"` + `destination.as.number` ES sub-aggregation) blocking via OPNsense aliases and per-device firewall rules, plus the **Blocked Domains & ASN Organizations** management panel in the Analytics Drawer.
+
+---
+
+### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 5
+- **What information or configuration was needed that we did not originally plan for?**
+  - *Finding 1 (SQLite Foreign Key Cascade Enforcement Requires Explicit Connection Pragma):*
+    - SQLite parses `ON DELETE CASCADE` in `CREATE TABLE` DDL (`device_group_memberships`), but does **not** enforce foreign key cascades unless `PRAGMA foreign_keys=ON` is executed on each SQLite connection. Registering an SQLAlchemy `@event.listens_for(engine.sync_engine, "connect")` hook in `backend/app/db/__init__.py` guarantees cascade deletes work reliably when deleting a `DeviceGroup` or `Device`.
+  - *Finding 2 (In-Memory ORM Column Defaults Before SQLite Flush — `BUG-P4-001`):*
+    - SQLAlchemy `mapped_column(..., default=...)` populates defaults on `flush()`/`commit()`, so pure unit tests constructing transient `Device(...)` objects in memory had `lease_type=None`. Defensive coalescing (`device.lease_type or "unknown"`) in response builders keeps pure unit tests fast and database-free.
+  - *Finding 3 (Multi-IP Group Aggregation Attribution for Shared Local Traffic):*
+    - When querying `logs-pfsense.log*` across multiple group member IPs, using a `terms` aggregation on `source.ip` (`by_member_ip` for `filterlog` and `by_member_dns` for `unbound`) cleanly attributes each member's outbound traffic and DNS query share in a single round-trip query.
+- **How we will apply these learnings to Phase 5:**
+  1. Leverage `PRAGMA foreign_keys=ON` for Phase 5's `temporary_overrides` table (`device_id` and `group_id` foreign keys with `ON DELETE CASCADE`) so deleting a group automatically cleans up its timers.
+  2. Begin Phase 5 by reviewing [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and executing the scheduled Phase 4 UI & chart enhancements alongside the Temporary Pause / Bonus Access timer engine.

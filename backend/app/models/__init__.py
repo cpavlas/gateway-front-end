@@ -1,20 +1,35 @@
-"""SQLAlchemy declarative base and models for Phase 1 & Phase 2."""
+"""SQLAlchemy declarative base and models for Phases 1–4."""
 
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _HEX_MAC_RE = re.compile(r"^[0-9a-f]{12}$")
 _PLACEHOLDER_HOSTNAMES = frozenset({"", "*", "?", "(none)", "none", "unknown"})
+VALID_GROUP_COLORS = frozenset(
+    {"indigo", "emerald", "amber", "rose", "cyan", "violet", "slate"}
+)
 
 
 def utc_now() -> datetime:
     """Return timezone-aware UTC timestamp."""
     return datetime.now(UTC)
+
+
+def normalize_group_color(color: str | None) -> str:
+    """Validate and normalize a group badge color token."""
+    if not color:
+        return "indigo"
+    cleaned = color.strip().lower()
+    if cleaned not in VALID_GROUP_COLORS:
+        raise ValueError(
+            f"Unsupported group color '{color}'. Allowed: {sorted(VALID_GROUP_COLORS)}"
+        )
+    return cleaned
 
 
 def normalize_mac_address(mac: str) -> str:
@@ -96,4 +111,48 @@ class Device(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class DeviceGroup(Base):
+    """Named profile/group of network devices for bulk control and group analytics."""
+
+    __tablename__ = "device_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    color_badge: Mapped[str] = mapped_column(String(32), nullable=False, default="indigo")
+    icon: Mapped[str] = mapped_column(String(32), nullable=False, default="users")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class DeviceGroupMembership(Base):
+    """Many-to-many association linking devices to device groups."""
+
+    __tablename__ = "device_group_memberships"
+    __table_args__ = (
+        UniqueConstraint("group_id", "device_id", name="uq_device_group_membership"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("device_groups.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
     )

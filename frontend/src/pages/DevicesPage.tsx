@@ -5,13 +5,16 @@ import {
   BarChart3,
   Check,
   Edit2,
+  Filter,
   Globe,
   Laptop,
   Lock,
+  Plus,
   RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
+  Users,
   Wifi,
   X,
 } from 'lucide-react'
@@ -19,9 +22,12 @@ import {
   apiClient,
   type DeviceItem,
   type DeviceStatusFilter,
+  type GroupItem,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
+import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
+import { GroupFormModal, getGroupBadgeClasses } from '../components/GroupFormModal'
 
 interface DevicesPageProps {
   activeTab?: AppTab
@@ -35,6 +41,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<DeviceStatusFilter>('all')
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [editingDeviceId, setEditingDeviceId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
   const [bannerMessage, setBannerMessage] = useState<{
@@ -42,7 +49,11 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     text: string
   } | null>(null)
   const [pendingActionId, setPendingActionId] = useState<number | null>(null)
+  const [pendingGroupActionId, setPendingGroupActionId] = useState<number | null>(null)
   const [selectedAnalyticsDeviceId, setSelectedAnalyticsDeviceId] = useState<number | null>(null)
+  const [selectedAnalyticsGroupId, setSelectedAnalyticsGroupId] = useState<number | null>(null)
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<GroupItem | null>(null)
 
   const {
     data: deviceList,
@@ -53,6 +64,14 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     queryKey: ['devices'],
     queryFn: () => apiClient.getDevices(),
     refetchInterval: 30_000,
+    placeholderData: (previousData) => previousData,
+  })
+
+  const { data: groupList } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => apiClient.getGroups(),
+    refetchInterval: 30_000,
+    placeholderData: (previousData) => previousData,
   })
 
   const { data: healthReport } = useQuery({
@@ -65,6 +84,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     mutationFn: () => apiClient.syncDevices(),
     onSuccess: (updated) => {
       queryClient.setQueryData(['devices'], updated)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
       setBannerMessage(null)
     },
     onError: (err: unknown) => {
@@ -82,6 +102,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       setEditingDeviceId(null)
       setEditingName('')
       void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
     },
     onError: (err: unknown) => {
       setBannerMessage({
@@ -96,6 +117,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       apiClient.updateDevice(id, { is_protected }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
     },
     onError: (err: unknown) => {
       setBannerMessage({
@@ -133,6 +155,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
         setBannerMessage(null)
       }
       void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
     },
     onError: (err: unknown) => {
@@ -143,12 +166,63 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     },
   })
 
+  const groupAccessMutation = useMutation({
+    mutationFn: async ({
+      group,
+      action,
+    }: {
+      group: GroupItem
+      action: 'block' | 'unblock'
+    }) => {
+      setPendingGroupActionId(group.id)
+      try {
+        if (action === 'block') {
+          return await apiClient.blockGroup(group.id)
+        }
+        return await apiClient.unblockGroup(group.id)
+      } finally {
+        setPendingGroupActionId(null)
+      }
+    },
+    onSuccess: (result) => {
+      if (result.warnings && result.warnings.length > 0) {
+        setBannerMessage({
+          type: 'warning',
+          text: result.warnings.join(' • '),
+        })
+      } else {
+        setBannerMessage(null)
+      }
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to change group internet access.',
+      })
+    },
+  })
+
+  const groups = groupList?.groups ?? []
+  const activeFilterGroup = useMemo(
+    () => groups.find((g) => g.id === selectedGroupId) ?? null,
+    [groups, selectedGroupId],
+  )
+
   const filteredDevices = useMemo(() => {
     const items = deviceList?.devices ?? []
     return items.filter((dev) => {
+      const devGroups = dev.groups ?? []
       if (statusFilter === 'online' && !dev.is_online) return false
       if (statusFilter === 'blocked' && !dev.is_blocked) return false
       if (statusFilter === 'protected' && !dev.is_protected) return false
+      if (statusFilter === 'unassigned' && devGroups.length > 0) return false
+
+      if (selectedGroupId !== null && !devGroups.some((g) => g.id === selectedGroupId)) {
+        return false
+      }
 
       const q = searchTerm.trim().toLowerCase()
       if (!q) return true
@@ -160,10 +234,11 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
         (dev.ipv4_address && dev.ipv4_address.toLowerCase().includes(q)) ||
         dev.mac_address.toLowerCase().includes(q) ||
         (dev.vendor && dev.vendor.toLowerCase().includes(q)) ||
-        (dev.interface_name && dev.interface_name.toLowerCase().includes(q))
+        (dev.interface_name && dev.interface_name.toLowerCase().includes(q)) ||
+        devGroups.some((g) => g.name.toLowerCase().includes(q))
       )
     })
-  }, [deviceList?.devices, searchTerm, statusFilter])
+  }, [deviceList?.devices, searchTerm, statusFilter, selectedGroupId])
 
   const summary = deviceList?.summary ?? {
     total_devices: 0,
@@ -193,6 +268,16 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     )
   }
 
+  const openCreateGroupModal = () => {
+    setEditingGroup(null)
+    setIsGroupModalOpen(true)
+  }
+
+  const openEditGroupModal = (group: GroupItem) => {
+    setEditingGroup(group)
+    setIsGroupModalOpen(true)
+  }
+
   return (
     <AppLayout
       overallStatus={healthReport?.overall_status}
@@ -208,7 +293,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
               Network Device Inventory &amp; Access Control
             </h1>
             <p className="text-sm text-slate-400">
-              Manage internet access via OPNsense (`gateway_blocked_devices`), assign friendly nicknames, and inspect per-device usage &amp; DNS domains
+              Manage internet access via OPNsense (`gateway_blocked_devices`), organize profiles &amp; groups, and inspect per-device or per-group usage &amp; DNS domains
             </p>
           </div>
 
@@ -280,6 +365,185 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
           </div>
         </div>
 
+        {/* Device Groups / Profiles Section */}
+        <section
+          data-testid="groups-section"
+          className="rounded-xl border border-slate-800 bg-slate-900/75 p-4 shadow"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+              <div>
+                <h2 className="text-sm font-bold text-slate-100">
+                  Device Groups &amp; Profiles ({groups.length})
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Group related devices (e.g., Kids Devices, Media, IoT) for one-click bulk internet control and combined usage analytics
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="new-group-btn"
+              onClick={openCreateGroupModal}
+              className="inline-flex items-center gap-1.5 self-start rounded-lg border border-indigo-500/40 bg-indigo-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>New Group / Profile</span>
+            </button>
+          </div>
+
+          {groups.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">
+              No device groups created yet. Click <strong>New Group / Profile</strong> to create a group and assign devices.
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {groups.map((grp) => {
+                const isGroupBusy = pendingGroupActionId === grp.id
+                const isFilterSelected = selectedGroupId === grp.id
+                return (
+                  <div
+                    key={grp.id}
+                    data-testid={`group-card-${grp.id}`}
+                    className={`flex flex-col justify-between rounded-xl border p-3.5 transition ${
+                      isFilterSelected
+                        ? 'border-indigo-500 bg-indigo-950/20'
+                        : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold ${getGroupBadgeClasses(
+                                grp.color_badge,
+                              )}`}
+                            >
+                              {grp.name}
+                            </span>
+                            <span
+                              data-testid={`group-status-${grp.id}`}
+                              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                grp.access_status === 'blocked'
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                  : grp.access_status === 'partially_blocked'
+                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : grp.access_status === 'allowed'
+                                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                      : 'border-slate-700 bg-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {grp.access_status === 'blocked'
+                                ? 'Blocked'
+                                : grp.access_status === 'partially_blocked'
+                                  ? 'Partially Blocked'
+                                  : grp.access_status === 'allowed'
+                                    ? 'Allowed'
+                                    : 'Empty'}
+                            </span>
+                          </div>
+                          {grp.description && (
+                            <p className="mt-1 text-xs text-slate-400 truncate">
+                              {grp.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          data-testid={`group-edit-btn-${grp.id}`}
+                          aria-label={`Edit group ${grp.name}`}
+                          onClick={() => openEditGroupModal(grp)}
+                          className="rounded-lg border border-slate-800 bg-slate-900 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                        <span>
+                          <strong className="text-slate-200">{grp.total_devices}</strong> members
+                        </span>
+                        <span>
+                          <strong className="text-emerald-300">{grp.online_devices}</strong> online
+                        </span>
+                        <span>
+                          <strong className="text-rose-300">{grp.blocked_devices}</strong> blocked
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          data-testid={`group-filter-btn-${grp.id}`}
+                          onClick={() =>
+                            setSelectedGroupId((prev) => (prev === grp.id ? null : grp.id))
+                          }
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium cursor-pointer ${
+                            isFilterSelected
+                              ? 'border-indigo-500 bg-indigo-600 text-white'
+                              : 'border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          <Filter className="h-3 w-3" aria-hidden="true" />
+                          <span>{isFilterSelected ? 'Filtered' : 'Filter'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          data-testid={`group-analytics-btn-${grp.id}`}
+                          onClick={() => setSelectedAnalyticsGroupId(grp.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                        >
+                          <BarChart3 className="h-3 w-3" aria-hidden="true" />
+                          <span>Analytics</span>
+                        </button>
+                      </div>
+
+                      {grp.blockable_devices > 0 ? (
+                        grp.access_status === 'blocked' ? (
+                          <button
+                            type="button"
+                            data-testid={`group-toggle-${grp.id}`}
+                            disabled={isGroupBusy}
+                            onClick={() =>
+                              groupAccessMutation.mutate({ group: grp, action: 'unblock' })
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                          >
+                            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+                            <span>{isGroupBusy ? 'Updating...' : 'Allow Group'}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid={`group-toggle-${grp.id}`}
+                            disabled={isGroupBusy}
+                            onClick={() =>
+                              groupAccessMutation.mutate({ group: grp, action: 'block' })
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
+                          >
+                            <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                            <span>{isGroupBusy ? 'Blocking...' : 'Block Group'}</span>
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-[11px] text-slate-500 italic">No blockable IPs</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Alert / Warning Feedback Banner */}
         {(bannerMessage || isError) && (
           <div
@@ -315,19 +579,35 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
 
         {/* Search & Filter Toolbar */}
         <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 max-w-md">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              aria-label="Search devices"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, hostname, IP, MAC, or vendor..."
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[240px] max-w-md">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                aria-label="Search devices"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name, group, hostname, IP, MAC, or vendor..."
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+
+            {activeFilterGroup && (
+              <div className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-semibold text-indigo-200">
+                <span>Group: {activeFilterGroup.name}</span>
+                <button
+                  type="button"
+                  aria-label="Clear group filter"
+                  onClick={() => setSelectedGroupId(null)}
+                  className="rounded p-0.5 hover:bg-indigo-500/30 cursor-pointer"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter devices by status">
@@ -337,6 +617,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                 { key: 'online', label: 'Online' },
                 { key: 'blocked', label: 'Blocked' },
                 { key: 'protected', label: 'Protected' },
+                { key: 'unassigned', label: 'Unassigned' },
               ] as const
             ).map((tab) => (
               <button
@@ -389,6 +670,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                   const isEditing = editingDeviceId === dev.id
                   const immutableProt = isImmutableProtection(dev)
                   const isBusy = pendingActionId === dev.id
+                  const devGroups = dev.groups ?? []
 
                   return (
                     <tr
@@ -396,7 +678,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       data-testid={`device-row-${dev.id}`}
                       className="hover:bg-slate-800/40 transition"
                     >
-                      {/* Column 1: Online Status + Name / Inline Rename */}
+                      {/* Column 1: Online Status + Name / Inline Rename + Group Badges */}
                       <td className="px-4 py-3.5 align-middle">
                         <div className="flex items-start gap-3">
                           <span
@@ -441,7 +723,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() => setSelectedAnalyticsDeviceId(dev.id)}
@@ -457,6 +739,18 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                 >
                                   <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 </button>
+                                {devGroups.map((badge) => (
+                                  <button
+                                    key={badge.id}
+                                    type="button"
+                                    onClick={() => setSelectedGroupId(badge.id)}
+                                    className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer ${getGroupBadgeClasses(
+                                      badge.color_badge,
+                                    )}`}
+                                  >
+                                    {badge.name}
+                                  </button>
+                                ))}
                               </div>
                             )}
 
@@ -584,6 +878,28 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
             </table>
           </div>
         )}
+
+        {/* Group Create / Edit Modal */}
+        <GroupFormModal
+          isOpen={isGroupModalOpen}
+          editingGroup={editingGroup}
+          allDevices={deviceList?.devices ?? []}
+          onClose={() => setIsGroupModalOpen(false)}
+          onDeleted={(deletedId) => {
+            if (selectedGroupId === deletedId) setSelectedGroupId(null)
+            if (selectedAnalyticsGroupId === deletedId) setSelectedAnalyticsGroupId(null)
+          }}
+        />
+
+        {/* Per-Group Analytics Slide-Over Drawer */}
+        <GroupAnalyticsDrawer
+          groupId={selectedAnalyticsGroupId}
+          onClose={() => setSelectedAnalyticsGroupId(null)}
+          onSelectDeviceId={(devId) => {
+            setSelectedAnalyticsGroupId(null)
+            setSelectedAnalyticsDeviceId(devId)
+          }}
+        />
 
         {/* Per-Device Analytics Slide-Over Drawer */}
         <DeviceAnalyticsDrawer
