@@ -1,4 +1,4 @@
-"""FastAPI application entrypoint and SPA static serving."""
+"""FastAPI application entrypoint, SPA static serving, and background timer scheduler."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,17 +17,46 @@ from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.groups import router as groups_router
 from app.api.system import router as system_router
-from app.db import dispose_db, init_db
+from app.api.timers import router as timers_router
+from app.clients.opnsense import OPNsenseClient
+from app.config import get_settings
+from app.db import dispose_db, get_session_factory, init_db
+from app.services.timer_service import reconcile_expired_overrides
 
 DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+async def run_scheduled_override_reconciliation() -> None:
+    """Background task tick: reconcile any expired temporary overrides with OPNsense."""
+    settings = get_settings()
+    session_factory = get_session_factory(settings)
+    opnsense = OPNsenseClient(settings)
+    async with session_factory() as session:
+        await reconcile_expired_overrides(session, opnsense, settings)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Initialize SQLite schema on startup and dispose engine on shutdown."""
+    """Initialize SQLite schema, reconcile expired overrides on boot, and run 60s APScheduler."""
     await init_db()
-    yield
-    await dispose_db()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        run_scheduled_override_reconciliation,
+        "interval",
+        seconds=60,
+        id="reconcile_expired_overrides",
+        replace_existing=True,
+    )
+    scheduler.start()
+    try:
+        await run_scheduled_override_reconciliation()
+    except Exception:
+        pass
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+        await dispose_db()
 
 
 def configure_spa_serving(app: FastAPI, dist_dir: Path) -> None:
@@ -65,6 +95,7 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
     app.include_router(system_router)
     app.include_router(devices_router)
     app.include_router(groups_router)
+    app.include_router(timers_router)
     app.include_router(analytics_router)
 
     dist_path = frontend_dist_dir if frontend_dist_dir is not None else DEFAULT_FRONTEND_DIST

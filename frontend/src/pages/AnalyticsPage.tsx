@@ -88,7 +88,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-100">
-              Network Traffic &amp; DNS Analytics (`logs-pfsense.log*`)
+              Network Traffic &amp; DNS Analytics
             </h1>
             <p className="text-sm text-slate-400">
               Live telemetry from Elasticsearch 9.4.3 — Unbound DNS resolution and filterlog packet metrics
@@ -355,7 +355,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                                 onClick={() => setSelectedDeviceId(dev.device_id)}
                                 className="rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25 cursor-pointer"
                               >
-                                Inspect Device
+                                Inspect
                               </button>
                             ) : (
                               <span className="text-xs text-slate-500">Unregistered IP</span>

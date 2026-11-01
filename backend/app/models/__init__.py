@@ -1,4 +1,4 @@
-"""SQLAlchemy declarative base and models for Phases 1–4."""
+"""SQLAlchemy declarative base and models for Phases 1–5."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ _PLACEHOLDER_HOSTNAMES = frozenset({"", "*", "?", "(none)", "none", "unknown"})
 VALID_GROUP_COLORS = frozenset(
     {"indigo", "emerald", "amber", "rose", "cyan", "violet", "slate"}
 )
+VALID_OVERRIDE_MODES = frozenset({"pause", "bonus"})
+VALID_OVERRIDE_TARGETS = frozenset({"device", "group"})
 
 
 def utc_now() -> datetime:
@@ -28,6 +30,31 @@ def normalize_group_color(color: str | None) -> str:
     if cleaned not in VALID_GROUP_COLORS:
         raise ValueError(
             f"Unsupported group color '{color}'. Allowed: {sorted(VALID_GROUP_COLORS)}"
+        )
+    return cleaned
+
+
+def normalize_override_mode(mode: str) -> str:
+    """Validate and normalize a temporary override mode ('pause' or 'bonus')."""
+    if not isinstance(mode, str):
+        raise ValueError("Override mode must be a string.")
+    cleaned = mode.strip().lower()
+    if cleaned not in VALID_OVERRIDE_MODES:
+        raise ValueError(
+            f"Unsupported override mode '{mode}'. Allowed: {sorted(VALID_OVERRIDE_MODES)}"
+        )
+    return cleaned
+
+
+def normalize_override_target_type(target_type: str) -> str:
+    """Validate and normalize a temporary override target type ('device' or 'group')."""
+    if not isinstance(target_type, str):
+        raise ValueError("Override target_type must be a string.")
+    cleaned = target_type.strip().lower()
+    if cleaned not in VALID_OVERRIDE_TARGETS:
+        allowed_targets = sorted(VALID_OVERRIDE_TARGETS)
+        raise ValueError(
+            f"Unsupported override target_type '{target_type}'. Allowed: {allowed_targets}"
         )
     return cleaned
 
@@ -155,4 +182,42 @@ class DeviceGroupMembership(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class TemporaryOverride(Base):
+    """Timed temporary internet access override ('pause' or 'bonus') for a device or group."""
+
+    __tablename__ = "temporary_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    device_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("device_groups.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="admin")
+    reason: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

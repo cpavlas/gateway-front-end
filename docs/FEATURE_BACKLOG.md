@@ -12,17 +12,27 @@
 
 | ID | UI Area / Tab | Short Summary | Category | Complexity | Recommended Target Phase | Status |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: |
-| **`FB-P4-001`** | Page Header | Remove `SYSTEM:` prefix from health badge (`HEALTHY`, `DEGRADED`, `UNHEALTHY`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
-| **`FB-P4-002`** | Page Header / Versioning | Increment application version (`v0.1.0` → `v0.4.0` / `v0.5.0`...) on each phase push to match GitHub | Release & Versioning | `1 / 5` | **Phase 4 Exit / Every Phase Push** | `OPEN (Scheduled Phase 4/5)` |
-| **`FB-P4-003`** | Devices & Access Control Tab | Change Telemetry column button label from `Usage & Domains` to `Analytics` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
-| **`FB-P4-004`** | Devices & Access Control Tab | Internet Access column button: remove `— Click to Block` / `— Click to Allow` and show only current state (`Blocked` / `Allowed`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
-| **`FB-P4-005`** | Analytics Pop-Out Drawer | Remove ``(`dns.question.name`)`` from `Top Visited Domains` panel title | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
-| **`FB-P4-006`** | Analytics Pop-Out Drawer | Convert `Usage & Activity Timeline` bar chart to a **Stacked Bar Graph** (distinct colors for **DNS Queries** vs. **Firewall Events**, visible color legend, and breakdown in hover tooltip) | Data Visualization | `1.5 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
+| **`FB-P4-001`** | Page Header | Remove `SYSTEM:` prefix from health badge (`HEALTHY`, `DEGRADED`, `UNHEALTHY`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
+| **`FB-P4-002`** | Page Header / Versioning | Increment application version (`v0.1.0` → `v0.4.0` / `v0.5.0`...) on each phase push to match GitHub | Release & Versioning | `1 / 5` | **Phase 4 Exit / Every Phase Push** | `COMPLETED (Ongoing Rule — v0.5.0 in Phase 5)` |
+| **`FB-P4-003`** | Devices & Access Control Tab | Change Telemetry column button label from `Usage & Domains` to `Analytics` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
+| **`FB-P4-004`** | Devices & Access Control Tab | Internet Access column button: remove `— Click to Block` / `— Click to Allow` and show only current state (`Blocked` / `Allowed`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
+| **`FB-P4-005`** | Analytics Pop-Out Drawer | Remove ``(`dns.question.name`)`` from `Top Visited Domains` panel title | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
+| **`FB-P4-006`** | Analytics Pop-Out Drawer | Convert `Usage & Activity Timeline` bar chart to a **Stacked Bar Graph** (distinct colors for **DNS Queries** vs. **Firewall Events**, visible color legend, and breakdown in hover tooltip) | Data Visualization | `1.5 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-007`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each domain in `Top Visited Domains` to block that domain on the viewed device | New Control Feature (Per-Device Domain Block) | `4 / 5` | **Phase 6 / 7** *(Needs Architecture Sign-Off)* | `EVALUATING` |
 | **`FB-P4-008`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each organization in `Top Destination Organizations (ASN)` to block that ASN on the viewed device | New Control Feature (Per-Device ASN Block) | `4 / 5` | **Phase 6 / 7** *(Needs Architecture Sign-Off)* | `EVALUATING` |
 | **`FB-P4-009`** | Analytics Pop-Out Drawer | Add **Blocked Domains & ASN Organizations** panel below `Chronological Recent DNS Queries` with an **Unblock / Remove** button per item | New Control Feature (Per-Device Block Management UI) | `3 / 5` | **Phase 6 / 7** *(Paired with `FB-P4-007` & `008`)* | `EVALUATING` |
-| **`FB-P4-010`** | Traffic & DNS Analytics Tab | Remove ``(`logs-pfsense.log*`)`` from page title and change `Inspect Device` button label to `Inspect` in `Top Active LAN Devices` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `OPEN (Scheduled Phase 5)` |
-| **`FB-P4-011`** | System Connectivity Tab | Evaluate & replace/remove stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at bottom of `StatusPage.tsx` | Architecture / Design Review | `1.5 / 5` | **Phase 5** *(Design Decision Below)* | `EVALUATING (Recommended Option A/B)` |
+| **`FB-P4-010`** | Traffic & DNS Analytics Tab | Remove ``(`logs-pfsense.log*`)`` from page title and change `Inspect Device` button label to `Inspect` in `Top Active LAN Devices` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
+| **`FB-P4-011`** | System Connectivity Tab | Evaluate & replace/remove stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at bottom of `StatusPage.tsx` | Architecture / Design Review | `1.5 / 5` | **Phase 5** *(Design Decision Below)* | `COMPLETED (Phase 5 — Option A)` |
+| **`FB-P5-001`** | Timer Controls (Modal) | Open Timer controls as a **centered screen modal dialog** instead of an inline dropdown so it never requires scrolling and prevents multiple menus from opening simultaneously | UX / Modal Interaction | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-002`** | Timer Controls (Active Button) | When a timer is active, display the **live countdown directly inside the Timer button** (`Paused: 28m left` / `Bonus: 19m left`) and color the button (`amber` for Pause, `emerald` for Bonus) instead of rendering a separate pill | UI / Control Polish | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-003`** | Timer Controls (Preset Labels) | Show only durations (`15m`, `30m`, `1h`, `2h`, `Until 07:00`) on preset buttons inside the Timer modal without repeating `Pause` or `Bonus` inside each button | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-004`** | Timer Controls (Bonus Presets) | Change Bonus Access default preset values to **`20m`**, **`40m`**, and **`60m`** | Control Feature Update | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-005`** | Device Groups & Profiles | Match the `Timer` button height (`py-1.5 text-xs`) to the adjacent buttons (`Filter`, `Analytics`, `Allow All`, `Block All`) in the Device Groups & Profiles cards | UI Alignment | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-006`** | Top Page Header | Change the header `Sign Out` button label to simply say `Logout` | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-007`** | Device Groups & Profiles | When clicking `Filter` on a Group card, highlight the button (`Filter` active state) **without changing button text width or rearranging/stacking** the card's buttons | UI Layout Stability | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-008`** | Devices & Access Control Header | Remove ``(`gateway_blocked_devices`)`` from the page header description | UI Copy / Polish | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-009`** | Devices & Access Control Header | Format `Synced: HH:MM:SS` as a **24-hour clock** (single line, no `AM/PM`) and move it directly underneath the `Sync from OPNsense` button | UI Layout / Formatting | `1 / 5` | **Phase 6** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
+| **`FB-P5-010`** | Container & SQLite Persistence | Ensure saved groups, nicknames, timers, and schedules persist across container restarts/rebuilds (`SQLITE_DB_PATH=/app/data/gateway.db` bound to `../data:/app/data` in `Settings.database_url`) | Infrastructure / Persistence | `1.5 / 5` | **Phase 6 & 7** *(Scheduled Batch)* | `OPEN (Scheduled Phase 6)` |
 
 ---
 
@@ -186,4 +196,94 @@
      - **Option B (Simply Remove the Stale Phase 1 Placeholder Box):**
        - Delete lines 202–218 from `StatusPage.tsx` so the `System Connectivity` tab focuses purely on the 3 live subsystem health cards (OPNsense Gateway, Elasticsearch Cluster, and Local SQLite State DB).
 - **Complexity:** `1 / 5` (Option B) or `1.5 / 5` (Option A).
+
+---
+
+## 3. Phase 5 User Feedback & Planning Specifications (`FB-P5-001` – `FB-P5-010`)
+
+### Area 5 — Timer Operations (`frontend/src/components/TimerPopoverMenu.tsx`, `backend/app/services/timer_service.py`)
+
+#### `FB-P5-001` — Centered Screen Modal Dialog for Timer Controls
+- **User Feedback:** *"Currently when clicking the timer controls, a small window opens below the button that contains the settings. This has a side effect of requiring scrolling down on a page when clicking on an object near the bottom of the window, or if using search and only one item shows. Review changing the action of clicking the timer button to instead open the pop up in the middle of the screen so that it is always visible without needing to scroll. Additionally, this will prevent multiple buttons from being opened at the same time since the window should be treated as a modal action."*
+- **Planned Change:**
+  - Replace the relative `absolute right-0 top-full` anchored popover in `TimerPopoverMenu.tsx` with a centered modal overlay (`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs`) with backdrop-click and `Escape`/close-button dismissal.
+  - Because the modal backdrop covers the viewport (`fixed inset-0 z-50`), it is always centered on screen regardless of scroll position or table row count, and prevents clicking a second `Timer` button while open.
+- **Complexity:** `1.5 / 5` (Low–Medium).
+
+#### `FB-P5-002` — Active Countdown & Mode Coloring Directly on the Timer Button
+- **User Feedback:** *"When a timer is set, change the timer button to show active countdown of time remaining and color the button appropriately if it is paused or on bonus time."*
+- **Planned Change:**
+  - Merge the separate active countdown pill into the **Timer button itself** so there is always a single unified Timer button per Group card / Device row:
+    - **When no timer is active:** Neutral slate button (`Timer`).
+    - **When `mode === 'pause'` is active:** Amber-styled button (`border-amber-500/40 bg-amber-500/15 text-amber-200`) displaying the clock icon + live countdown (`Paused · 28m left`) + inline cancel (`X`) action (or clicking the button opens the centered modal showing active timer details + `Cancel Active Timer` button + options to replace the timer).
+    - **When `mode === 'bonus'` is active:** Emerald-styled button (`border-emerald-500/40 bg-emerald-500/15 text-emerald-200`) displaying the sparkles/clock icon + live countdown (`Bonus · 19m left`).
+- **Complexity:** `1.5 / 5` (Low–Medium).
+
+#### `FB-P5-003` — Duration-Only Preset Button Labels in Timer Modal
+- **User Feedback:** *"Change Pause and Bonus access buttons in the pop up to show only the minutes. So, instead of Pause 15m, just 15m. The label above the buttons already states what it is doing, so we dont need the label in the button itself."*
+- **Planned Change:**
+  - Under **Pause Internet Access**, label the preset buttons `15m`, `30m`, `1h`, `2h`, and `Until 07:00`.
+  - Under **Grant Bonus Access**, label the preset buttons `20m`, `40m`, and `60m` (`FB-P5-004`).
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P5-004` — Bonus Access Default Presets (`20m`, `40m`, `60m`)
+- **User Feedback:** *"Change the Bonus Access default values to 20m, 40m and 60m"*
+- **Planned Change:**
+  - Add `"20m": 20`, `"40m": 40`, and `"60m": 60` to `PRESET_MINUTES` in `backend/app/services/timer_service.py` (and `TimerPresetKey` in `frontend/src/api/client.ts`).
+  - Render `20m`, `40m`, and `60m` as the 3 Bonus Access preset buttons in `TimerPopoverMenu.tsx`.
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P5-005` — Match Timer Button Height in Device Groups & Profiles Cards
+- **User Feedback:** *"The Timer button is slightly larger in height than the other buttons for the Device Groups & Profile block. Change Timer button to match other button elements for height."*
+- **Planned Change:**
+  - Standardize the Timer button classes in `TimerPopoverMenu.tsx` to `inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold` (matching the exact `px-2.5 py-1.5 text-xs` height and padding of `Filter`, `Analytics`, `Allow All`, and `Block All` on the Group cards).
+- **Complexity:** `1 / 5` (Low).
+
+---
+
+### Area 6 — Top Page Header & Devices & Access Control Tab (`AppLayout.tsx`, `DevicesPage.tsx`)
+
+#### `FB-P5-006` — Change Header `Sign Out` Button Label to `Logout`
+- **User Feedback:** *"Change the Sign Out button to simply say Logout"*
+- **Planned Change:**
+  - In [frontend/src/components/AppLayout.tsx](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx#L166), change `Sign Out` to `Logout` (keep `aria-label="Logout"` / update unit tests in `App.test.tsx`).
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P5-007` — Keep Group Card Button Layout Fixed When `Filter` Is Clicked
+- **User Feedback:** *"When clicking filter, the window reorganizes the buttons and stacks them. Update to instead only highlight the Filtered Button but not change the layout at all"*
+- **Root Cause & Planned Change:**
+  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L288-L300), clicking `Filter` currently changes the button label from `Filter` to `Filtered` (widening the button) AND wraps the flex row on narrower cards.
+  - Keep the button text constant as `Filter` (with `whitespace-nowrap`) and only toggle the highlighted visual state (`border-indigo-400 bg-indigo-500/25 text-indigo-100 ring-1 ring-indigo-400/40` vs. default slate), so zero width or layout shift occurs when toggling a group filter.
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P5-008` — Remove ``(`gateway_blocked_devices`)`` from Devices Page Header Description
+- **User Feedback:** *"In the page header for the view, remove (`gateway_blocked_services`) from the description"*
+- **Planned Change:**
+  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L162-L166), change the subtitle from:
+    `Live OPNsense ARP & Dnsmasq DHCP inventory with instant firewall alias enforcement (gateway_blocked_devices)`
+    to:
+    `Live OPNsense ARP & Dnsmasq DHCP inventory with instant firewall enforcement`.
+- **Complexity:** `1 / 5` (Low).
+
+#### `FB-P5-009` — 24-Hour Clock & Position for `Synced: HH:MM:SS` Under `Sync from OPNsense` Button
+- **User Feedback:** *"In the page header the clock shows AM, which takes up a second row. Change this to a 24hr clock so it sits in a single line and move the Synced: XX:XX:XX data to show under the Sync from OPNsense button"*
+- **Planned Change:**
+  - Format `last_synced_at` using `new Date(data.last_synced_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })` so it outputs a single-line 24-hour timestamp (`Synced: 09:24:15`).
+  - Place the `Synced: HH:MM:SS` badge directly below the `Sync from OPNsense` button inside a right-aligned vertical column (`flex flex-col items-end gap-1`).
+- **Complexity:** `1 / 5` (Low).
+
+---
+
+### Area 7 — Container & SQLite Persistence Across Restarts / Rebuilds (`FB-P5-010`)
+
+#### `FB-P5-010` — Preserve Saved Groups, Nicknames, Timers & Schedules Across Container Resets / Rebuilds
+- **User Feedback:** *"For the final product, we need to ensure last saved settings for schedules, timers, etc are preserved through container resets / restarts. During development, it is reasonable that groups, and other data, is not preserved as we continue to make changes to the sql db."*
+- **Root-Cause Discovery & Planned Fix:**
+  - **Why data was resetting on `docker compose up -d --build`:**
+    - `docker/docker-compose.yml` mounts host `../data:/app/data` and sets `SQLITE_DB_PATH=/app/data/gateway.db`.
+    - However, `docker/Dockerfile` sets `WORKDIR /app/backend`, and `Settings.database_url` in `backend/app/config.py` defaults to `sqlite+aiosqlite:///./data/gateway.db` (without reading `SQLITE_DB_PATH`), which resolved to `/app/backend/data/gateway.db` *inside the ephemeral container filesystem* instead of `/app/data/gateway.db` on the mounted host volume!
+  - **Planned Fix (Scheduled for Phase 6 Step 6.1):**
+    1. Update `Settings` in `backend/app/config.py` (and `docker/Dockerfile` + `docker/docker-compose.yml`) so that when `SQLITE_DB_PATH` is set (or in container defaults), `database_url` resolves to `sqlite+aiosqlite:////app/data/gateway.db` (the host-mounted `d:\source\gateway-front-end\data\gateway.db` volume).
+    2. Ensure startup initialization (`init_db()` / Alembic migrations) non-destructively creates/upgrades tables in `/app/data/gateway.db` so device nicknames, protection flags, groups, active timers, and recurring schedules all survive container restarts, rebuilds, and version upgrades.
+- **Complexity:** `1.5 / 5` (Low–Medium).
 

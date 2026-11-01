@@ -1,15 +1,26 @@
 import React from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
+  Clock,
   Database,
   HardDrive,
+  Laptop,
   RefreshCw,
   Router,
+  ShieldAlert,
+  ShieldCheck,
+  Wifi,
   XCircle,
 } from 'lucide-react'
-import { apiClient, type HealthLevel, type ServiceHealthStatus } from '../api/client'
+import {
+  apiClient,
+  type DeviceListResponse,
+  type HealthLevel,
+  type ServiceHealthStatus,
+} from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 
 interface StatusPageProps {
@@ -110,6 +121,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   activeTab = 'status',
   onSelectTab,
 }) => {
+  const queryClient = useQueryClient()
   const {
     data: healthReport,
     isLoading,
@@ -122,6 +134,29 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     queryFn: () => apiClient.getSystemHealth(),
     refetchInterval: 30_000,
   })
+
+  const deviceList = queryClient.getQueryData<DeviceListResponse>(['devices'])
+  const opnsenseDetails = healthReport?.services?.opnsense?.details ?? {}
+  const summary = deviceList?.summary
+  const totalDevices =
+    summary?.total_devices ??
+    (typeof opnsenseDetails.dnsmasq_lease_count === 'number'
+      ? opnsenseDetails.dnsmasq_lease_count
+      : 0)
+  const onlineDevices =
+    summary?.online_devices ??
+    (typeof opnsenseDetails.arp_entry_count === 'number'
+      ? opnsenseDetails.arp_entry_count
+      : 0)
+  const blockedDevices =
+    summary?.blocked_devices ??
+    (typeof opnsenseDetails.blocked_ip_count === 'number'
+      ? opnsenseDetails.blocked_ip_count
+      : 0)
+  const protectedDevices = summary?.protected_devices ?? 2
+  const activeTimerCount = (deviceList?.devices ?? []).filter(
+    (d) => d.active_override && d.active_override.is_active,
+  ).length
 
   return (
     <AppLayout
@@ -179,7 +214,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               title="OPNsense Firewall"
               subtitle="gateway.sparkle-pony.com"
               icon={<Router className="h-5 w-5" aria-hidden="true" />}
-              health={healthReport?.services.opnsense}
+              health={healthReport?.services?.opnsense}
             />
 
             <ServiceCard
@@ -187,7 +222,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               title="Elasticsearch 9.4.3"
               subtitle="es1.sparkle-pony.com (logs-pfsense.log*)"
               icon={<Database className="h-5 w-5" aria-hidden="true" />}
-              health={healthReport?.services.elasticsearch}
+              health={healthReport?.services?.elasticsearch}
             />
 
             <ServiceCard
@@ -195,29 +230,94 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               title="Local SQLite Store"
               subtitle="data/gateway.db"
               icon={<HardDrive className="h-5 w-5" aria-hidden="true" />}
-              health={healthReport?.services.sqlite}
+              health={healthReport?.services?.sqlite}
             />
           </div>
         )}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <section
+          data-testid="status-enforcement-summary"
+          className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-100">
-                Network Device Inventory &amp; Internet Access Control
+                Gateway Enforcement &amp; Inventory Synchronization Summary
               </h2>
               <p className="text-xs text-slate-400">
-                Phase 2 connects live ARP &amp; Dnsmasq DHCP leases from{' '}
-                <code className="text-indigo-300">gateway.sparkle-pony.com</code> into this workspace.
+                Live state of OPNsense ARP / Dnsmasq DHCP discovery and{' '}
+                <code className="text-indigo-300">gateway_blocked_devices</code> enforcement
+                {deviceList?.last_synced_at
+                  ? ` — Last synced ${new Date(deviceList.last_synced_at).toLocaleString()}`
+                  : ''}
               </p>
             </div>
-            <span className="inline-flex items-center rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-300">
-              Phase 1 Foundation Ready
-            </span>
+            {onSelectTab && (
+              <button
+                type="button"
+                data-testid="status-open-devices-btn"
+                onClick={() => onSelectTab('devices')}
+                className="inline-flex items-center gap-1.5 self-start rounded-lg border border-indigo-500/40 bg-indigo-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer"
+              >
+                <span>Open Devices &amp; Access Control</span>
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Discovered Devices</span>
+                <Laptop className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
+              </div>
+              <p className="mt-1 text-lg font-bold text-slate-100">
+                {totalDevices}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Online in ARP</span>
+                <Wifi className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+              </div>
+              <p className="mt-1 text-lg font-bold text-emerald-300">
+                {onlineDevices}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Blocked in Alias</span>
+                <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+              </div>
+              <p className="mt-1 text-lg font-bold text-rose-300">
+                {blockedDevices}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Protected IPs</span>
+                <ShieldCheck className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+              </div>
+              <p className="mt-1 text-lg font-bold text-amber-300">
+                {protectedDevices}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Active Timers</span>
+                <Clock className="h-3.5 w-3.5 text-cyan-400" aria-hidden="true" />
+              </div>
+              <p className="mt-1 text-lg font-bold text-cyan-300">
+                {activeTimerCount}
+              </p>
+            </div>
           </div>
         </section>
       </div>
     </AppLayout>
   )
 }
-

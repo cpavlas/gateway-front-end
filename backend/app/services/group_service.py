@@ -42,6 +42,11 @@ from app.services.device_service import (
     build_device_group_badge_map,
     build_device_response,
 )
+from app.services.timer_service import (
+    ActiveOverrideInfo,
+    cancel_active_overrides_for_group,
+    load_active_override_maps,
+)
 
 GroupStatusLiteral = Literal["empty", "allowed", "partially_blocked", "blocked"]
 
@@ -93,6 +98,7 @@ class GroupResponse(BaseModel):
     blockable_devices: int
     member_device_ids: list[int]
     members: list[DeviceResponse]
+    active_override: ActiveOverrideInfo | None = None
     created_at: str
     updated_at: str
 
@@ -201,6 +207,7 @@ def compute_group_access_status(members: list[DeviceResponse]) -> GroupStatusLit
 def build_group_response(
     group: DeviceGroup,
     members: list[DeviceResponse],
+    active_override: ActiveOverrideInfo | None = None,
 ) -> GroupResponse:
     """Construct a sorted `GroupResponse` with computed status and KPI counts."""
     sorted_members = sorted(
@@ -226,6 +233,7 @@ def build_group_response(
         blockable_devices=len(blockable),
         member_device_ids=[m.id for m in sorted_members],
         members=sorted_members,
+        active_override=active_override,
         created_at=group.created_at.isoformat(),
         updated_at=group.updated_at.isoformat(),
     )
@@ -237,12 +245,20 @@ def assemble_group_responses(
     devices: list[Device],
     settings: Settings,
     client_ip: str | None = None,
+    overrides_by_device: dict[int, ActiveOverrideInfo] | None = None,
+    overrides_by_group: dict[int, ActiveOverrideInfo] | None = None,
 ) -> list[GroupResponse]:
     """Assemble all `GroupResponse` items sorted alphabetically by group name."""
     badges_by_device = build_device_group_badge_map(groups, memberships)
+    dev_overrides = overrides_by_device or {}
+    grp_overrides = overrides_by_group or {}
     device_resp_by_id: dict[int, DeviceResponse] = {
         d.id: build_device_response(
-            d, settings, client_ip, groups=badges_by_device.get(d.id, [])
+            d,
+            settings,
+            client_ip,
+            groups=badges_by_device.get(d.id, []),
+            active_override=dev_overrides.get(d.id),
         )
         for d in devices
     }
@@ -254,7 +270,11 @@ def assemble_group_responses(
 
     sorted_groups = sorted(groups, key=lambda g: g.name.lower())
     return [
-        build_group_response(g, members_by_group.get(g.id, []))
+        build_group_response(
+            g,
+            members_by_group.get(g.id, []),
+            active_override=grp_overrides.get(g.id),
+        )
         for g in sorted_groups
     ]
 
@@ -502,8 +522,17 @@ async def list_groups(
         return GroupListResponse(groups=[])
     memberships = list((await db.execute(select(DeviceGroupMembership))).scalars().all())
     devices = list((await db.execute(select(Device))).scalars().all())
+    overrides_by_device, overrides_by_group = await load_active_override_maps(db)
     return GroupListResponse(
-        groups=assemble_group_responses(groups, memberships, devices, settings, client_ip)
+        groups=assemble_group_responses(
+            groups,
+            memberships,
+            devices,
+            settings,
+            client_ip,
+            overrides_by_device=overrides_by_device,
+            overrides_by_group=overrides_by_group,
+        )
     )
 
 
@@ -522,7 +551,16 @@ async def get_group_by_id(
     all_groups = list((await db.execute(select(DeviceGroup))).scalars().all())
     memberships = list((await db.execute(select(DeviceGroupMembership))).scalars().all())
     devices = list((await db.execute(select(Device))).scalars().all())
-    assembled = assemble_group_responses(all_groups, memberships, devices, settings, client_ip)
+    overrides_by_device, overrides_by_group = await load_active_override_maps(db)
+    assembled = assemble_group_responses(
+        all_groups,
+        memberships,
+        devices,
+        settings,
+        client_ip,
+        overrides_by_device=overrides_by_device,
+        overrides_by_group=overrides_by_group,
+    )
     for item in assembled:
         if item.id == grp.id:
             return item
@@ -771,6 +809,7 @@ async def block_group_internet(
         d.is_blocked = True
         d.updated_at = now
 
+    await cancel_active_overrides_for_group(db, group_id, now)
     db.add(
         AuditLog(
             actor=actor,
@@ -853,6 +892,7 @@ async def unblock_group_internet(
         d.is_blocked = False
         d.updated_at = now
 
+    await cancel_active_overrides_for_group(db, group_id, now)
     db.add(
         AuditLog(
             actor=actor,
