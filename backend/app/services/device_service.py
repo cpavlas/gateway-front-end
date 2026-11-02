@@ -61,6 +61,7 @@ class DeviceResponse(BaseModel):
     lease_type: str
     is_online: bool
     is_blocked: bool
+    is_youtube_blocked: bool = False
     is_protected: bool
     protection_reason: str | None = None
     notes: str
@@ -101,7 +102,7 @@ class DeviceActionResponse(BaseModel):
     """Response payload for POST /api/v1/devices/{device_id}/block and /unblock."""
 
     device: DeviceResponse
-    action: Literal["block", "unblock"]
+    action: Literal["block", "unblock", "youtube_block", "youtube_unblock"]
     states_killed: bool = False
     warning: str | None = None
 
@@ -191,6 +192,7 @@ def build_device_response(
         lease_type=device.lease_type or "unknown",
         is_online=bool(device.is_online),
         is_blocked=device.is_blocked,
+        is_youtube_blocked=bool(getattr(device, "is_youtube_blocked", False)),
         is_protected=effective_protected,
         protection_reason=protection_reason,
         notes=device.notes or "",
@@ -784,6 +786,126 @@ async def unblock_device_internet(
     return DeviceActionResponse(
         device=build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, [])),
         action="unblock",
+        states_killed=False,
+        warning=None,
+    )
+
+
+async def block_device_youtube(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    device_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> DeviceActionResponse:
+    """Block YouTube access for a single device while keeping Plex and general internet allowed."""
+    raw_dev = (
+        await db.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one_or_none()
+    dev, target_ip = _validate_device_blockable(raw_dev, device_id, settings, client_ip)
+
+    try:
+        await opnsense.add_ip_to_youtube_block_alias(target_ip)
+    except (OPNsenseClientError, httpx.HTTPError) as exc:
+        db.add(
+            AuditLog(
+                actor=actor,
+                action="device.youtube_block",
+                target=f"{dev.mac_address} ({target_ip})",
+                status="failed",
+                details=f"OPNsense YouTube alias add failed: {exc}",
+            )
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to update OPNsense YouTube block alias: {exc}",
+        ) from exc
+
+    dev.is_youtube_blocked = True
+    dev.updated_at = utc_now()
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="device.youtube_block",
+            target=f"{dev.mac_address} ({target_ip})",
+            status="success",
+            details=(
+                "Device added to OPNsense YouTube block alias "
+                "(Plex and general internet remain allowed)."
+            ),
+        )
+    )
+    await db.commit()
+    await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
+
+    return DeviceActionResponse(
+        device=build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, [])),
+        action="youtube_block",
+        states_killed=False,
+        warning=None,
+    )
+
+
+async def unblock_device_youtube(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    device_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> DeviceActionResponse:
+    """Restore YouTube access for a single device."""
+    dev = (
+        await db.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one_or_none()
+    if not dev:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Device {device_id} not found.",
+        )
+
+    if dev.ipv4_address:
+        try:
+            await opnsense.remove_ip_from_youtube_block_alias(dev.ipv4_address)
+        except (OPNsenseClientError, httpx.HTTPError) as exc:
+            db.add(
+                AuditLog(
+                    actor=actor,
+                    action="device.youtube_unblock",
+                    target=f"{dev.mac_address} ({dev.ipv4_address})",
+                    status="failed",
+                    details=f"OPNsense YouTube alias remove failed: {exc}",
+                )
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to remove IP from OPNsense YouTube block alias: {exc}",
+            ) from exc
+
+    dev.is_youtube_blocked = False
+    dev.updated_at = utc_now()
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="device.youtube_unblock",
+            target=f"{dev.mac_address} ({dev.ipv4_address or 'no-ip'})",
+            status="success",
+            details="Device removed from OPNsense YouTube block alias.",
+        )
+    )
+    await db.commit()
+    await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
+
+    return DeviceActionResponse(
+        device=build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, [])),
+        action="youtube_unblock",
         states_killed=False,
         warning=None,
     )

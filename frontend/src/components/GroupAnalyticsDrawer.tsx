@@ -10,11 +10,14 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Tv,
+  VideoOff,
   Users,
   X,
 } from 'lucide-react'
 import {
   apiClient,
+  formatActiveMinutes,
   formatBytes,
   type TimeWindow,
 } from '../api/client'
@@ -95,6 +98,26 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
     },
   })
 
+  const youtubeMutation = useMutation({
+    mutationFn: async (action: 'block' | 'unblock') => {
+      if (!groupId) throw new Error('No group selected')
+      return action === 'block'
+        ? apiClient.blockGroupYoutube(groupId)
+        : apiClient.unblockGroupYoutube(groupId)
+    },
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics', groupId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to toggle group YouTube access.',
+      )
+    },
+  })
+
   if (groupId === null) {
     return null
   }
@@ -107,6 +130,10 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
   const topDomains = analytics?.top_domains ?? []
   const topOrgs = analytics?.top_organizations ?? []
   const recentQueries = analytics?.recent_queries ?? []
+  const appUsage = analytics?.application_usage ?? [
+    { app_key: 'youtube' as const, display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+  ]
 
   const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
   const maxHourlyEvents = Math.max(1, ...hourlyProfile.map((h) => h.total_events))
@@ -335,6 +362,92 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                       ? `Last: ${new Date(summary.last_active_at).toLocaleTimeString()}`
                       : 'No activity in window'}
                   </p>
+                </div>
+              </div>
+
+              {/* Application Usage & Control (FB-P6-004 & FB-P6-005) */}
+              <div
+                data-testid="group-drawer-app-usage-panel"
+                className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+              >
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    Application Usage &amp; Group Control (YouTube &amp; Plex)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Combined group streaming duration and one-click YouTube blocking across group members
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {appUsage.map((app) => {
+                    const isYoutube = app.app_key === 'youtube'
+                    return (
+                      <div
+                        key={app.app_key}
+                        data-testid={`group-drawer-app-card-${app.app_key}`}
+                        className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Tv
+                              className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
+                              aria-hidden="true"
+                            />
+                            <div>
+                              <span className="text-sm font-bold text-slate-100">
+                                {app.display_name}
+                              </span>
+                              <p className="text-[11px] text-slate-400">
+                                {(app.dns_queries ?? 0).toLocaleString()} DNS queries •{' '}
+                                {formatBytes(app.bytes ?? 0)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span
+                              data-testid={`group-drawer-app-minutes-${app.app_key}`}
+                              className="text-base font-bold text-indigo-300 font-mono"
+                            >
+                              {formatActiveMinutes(app.active_minutes)}
+                            </span>
+                            <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
+                          </div>
+                        </div>
+
+                        {isYoutube && group && group.blockable_devices > 0 && (
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-800/80 pt-2.5">
+                            <span className="text-[11px] text-slate-400">
+                              {group.youtube_status === 'blocked'
+                                ? 'YouTube blocked for group'
+                                : 'YouTube allowed for group'}
+                            </span>
+                            <button
+                              type="button"
+                              data-testid="group-drawer-youtube-toggle"
+                              disabled={youtubeMutation.isPending}
+                              onClick={() =>
+                                youtubeMutation.mutate(
+                                  group.youtube_status === 'blocked' ? 'unblock' : 'block',
+                                )
+                              }
+                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
+                                group.youtube_status === 'blocked'
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                                  : 'border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800'
+                              }`}
+                            >
+                              <VideoOff className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span>
+                                {group.youtube_status === 'blocked'
+                                  ? 'Allow YouTube'
+                                  : 'Block YouTube'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 

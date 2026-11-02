@@ -22,6 +22,7 @@ from app.services.group_service import (
     GroupResponse,
     GroupUpdateRequest,
     block_group_internet,
+    block_group_youtube,
     create_group,
     delete_group,
     get_group_analytics,
@@ -29,6 +30,7 @@ from app.services.group_service import (
     list_groups,
     set_group_members,
     unblock_group_internet,
+    unblock_group_youtube,
     update_group,
 )
 
@@ -167,6 +169,48 @@ async def post_unblock_group(
     """Restore internet access for all member devices in a group."""
     client_ip = get_client_ip(request)
     return await unblock_group_internet(
+        db,
+        opnsense,
+        settings,
+        group_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.post("/{group_id}/youtube/block", response_model=GroupBulkActionResponse)
+async def post_block_group_youtube(
+    group_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> GroupBulkActionResponse:
+    """Bulk-block YouTube access for all non-protected member devices in a group."""
+    client_ip = get_client_ip(request)
+    return await block_group_youtube(
+        db,
+        opnsense,
+        settings,
+        group_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.post("/{group_id}/youtube/unblock", response_model=GroupBulkActionResponse)
+async def post_unblock_group_youtube(
+    group_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> GroupBulkActionResponse:
+    """Restore YouTube access for all member devices in a group."""
+    client_ip = get_client_ip(request)
+    return await unblock_group_youtube(
         db,
         opnsense,
         settings,

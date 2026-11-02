@@ -20,9 +20,11 @@ from app.services.device_service import (
     DeviceStatusFilter,
     DeviceUpdateRequest,
     block_device_internet,
+    block_device_youtube,
     list_devices_inventory,
     sync_devices_from_opnsense,
     unblock_device_internet,
+    unblock_device_youtube,
     update_device_metadata,
 )
 
@@ -144,6 +146,48 @@ async def unblock_device(
     """Restore internet access for a single device."""
     client_ip = get_client_ip(request)
     return await unblock_device_internet(
+        db,
+        opnsense,
+        settings,
+        device_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.post("/{device_id}/youtube/block", response_model=DeviceActionResponse)
+async def post_block_device_youtube(
+    device_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> DeviceActionResponse:
+    """Block YouTube access for a single device while keeping Plex and general internet allowed."""
+    client_ip = get_client_ip(request)
+    return await block_device_youtube(
+        db,
+        opnsense,
+        settings,
+        device_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.post("/{device_id}/youtube/unblock", response_model=DeviceActionResponse)
+async def post_unblock_device_youtube(
+    device_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> DeviceActionResponse:
+    """Restore YouTube access for a single device."""
+    client_ip = get_client_ip(request)
+    return await unblock_device_youtube(
         db,
         opnsense,
         settings,

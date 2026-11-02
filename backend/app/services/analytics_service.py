@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,32 @@ from app.services.device_service import (
 # ---------------------------------------------------------------------------
 # Pydantic Response Models
 # ---------------------------------------------------------------------------
+
+
+class AppUsageItem(BaseModel):
+    app_key: Literal["youtube", "plex"]
+    display_name: str
+    active_minutes: int = 0
+    event_count: int = 0
+    dns_queries: int = 0
+    bytes: int = 0
+    last_active_at: str | None = None
+
+
+def _build_zero_app_usage() -> list[AppUsageItem]:
+    """Return zeroed YouTube and Plex usage items when Elasticsearch is empty or unreachable."""
+    return [
+        AppUsageItem(app_key="youtube", display_name="YouTube"),
+        AppUsageItem(app_key="plex", display_name="Plex"),
+    ]
+
+
+def _parse_app_usage_items(es_data: dict[str, Any]) -> list[AppUsageItem]:
+    """Parse raw `application_usage` dicts into typed `AppUsageItem` objects."""
+    raw = es_data.get("application_usage")
+    if isinstance(raw, list) and raw:
+        return [AppUsageItem(**a) for a in raw if isinstance(a, dict)]
+    return _build_zero_app_usage()
 
 
 class TimelineBucketItem(BaseModel):
@@ -86,6 +112,7 @@ class NetworkOverviewResponse(BaseModel):
     top_domains: list[TopDomainItem]
     top_registered_domains: list[TopDomainItem]
     top_organizations: list[TopOrganizationItem]
+    application_usage: list[AppUsageItem] = Field(default_factory=_build_zero_app_usage)
 
 
 class HourlyAccessPoint(BaseModel):
@@ -131,6 +158,7 @@ class DeviceAnalyticsResponse(BaseModel):
     top_registered_domains: list[TopDomainItem]
     top_organizations: list[TopOrganizationItem]
     recent_queries: list[RecentDomainQueryItem]
+    application_usage: list[AppUsageItem] = Field(default_factory=_build_zero_app_usage)
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +297,7 @@ def _assemble_network_overview_response(
         top_organizations=[
             TopOrganizationItem(**o) for o in (es_data.get("top_organizations") or [])
         ],
+        application_usage=_parse_app_usage_items(es_data),
     )
 
 
@@ -385,6 +414,7 @@ def _assemble_device_analytics_response(
         recent_queries=[
             RecentDomainQueryItem(**q) for q in (es_data.get("recent_queries") or [])
         ],
+        application_usage=_parse_app_usage_items(es_data),
     )
 
 

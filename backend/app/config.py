@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     opnsense_ca_cert_path: str = ""
     opnsense_timeout_seconds: float = Field(default=10.0, gt=0.5, le=120.0)
     opnsense_block_alias: str = Field(default="gateway_blocked_devices", min_length=1)
+    opnsense_youtube_block_alias: str = Field(
+        default="gateway_youtube_blocked_devices", min_length=1
+    )
+    opnsense_youtube_domains_alias: str = Field(
+        default="gateway_youtube_domains", min_length=1
+    )
     opnsense_protected_ips: str = DEFAULT_GATEWAY_IP
 
     # 3. Elasticsearch 9.4.3 Integration (https://es1.sparkle-pony.com)

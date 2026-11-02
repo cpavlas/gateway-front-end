@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
+  VideoOff,
   Wifi,
   X,
 } from 'lucide-react'
@@ -217,6 +218,68 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       setBannerMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Failed to change group internet access.',
+      })
+    },
+  })
+
+  const deviceYoutubeMutation = useMutation({
+    mutationFn: async ({
+      device,
+      action,
+    }: {
+      device: DeviceItem
+      action: 'block' | 'unblock'
+    }) => {
+      setPendingActionId(device.id)
+      try {
+        if (action === 'block') {
+          return await apiClient.blockDeviceYoutube(device.id)
+        }
+        return await apiClient.unblockDeviceYoutube(device.id)
+      } finally {
+        setPendingActionId(null)
+      }
+    },
+    onSuccess: () => {
+      setBannerMessage(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to change YouTube access state.',
+      })
+    },
+  })
+
+  const groupYoutubeMutation = useMutation({
+    mutationFn: async ({
+      group,
+      action,
+    }: {
+      group: GroupItem
+      action: 'block' | 'unblock'
+    }) => {
+      setPendingGroupActionId(group.id)
+      try {
+        if (action === 'block') {
+          return await apiClient.blockGroupYoutube(group.id)
+        }
+        return await apiClient.unblockGroupYoutube(group.id)
+      } finally {
+        setPendingGroupActionId(null)
+      }
+    },
+    onSuccess: () => {
+      setBannerMessage(null)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to change group YouTube state.',
       })
     },
   })
@@ -585,6 +648,34 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
 
                       {grp.blockable_devices > 0 ? (
                         <div className="flex flex-nowrap items-center justify-end gap-1.5">
+                          {/* selective YouTube toggle */}
+                          <button
+                            type="button"
+                            data-testid={`group-youtube-toggle-${grp.id}`}
+                            disabled={isGroupBusy}
+                            title={
+                              grp.youtube_status === 'blocked'
+                                ? 'YouTube blocked for group (Plex allowed) — Click to allow YouTube'
+                                : 'Block YouTube for group (keeps Plex & general internet allowed)'
+                            }
+                            onClick={() =>
+                              groupYoutubeMutation.mutate({
+                                group: grp,
+                                action: grp.youtube_status === 'blocked' ? 'unblock' : 'block',
+                              })
+                            }
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold whitespace-nowrap cursor-pointer disabled:opacity-60 ${
+                              grp.youtube_status === 'blocked'
+                                ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                                : 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'
+                            }`}
+                          >
+                            <VideoOff className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            <span>
+                              {grp.youtube_status === 'blocked' ? 'YT Blocked' : 'YT Allowed'}
+                            </span>
+                          </button>
+                          {/* selective YouTube toggle */}
                           <TimerPopoverMenu
                             targetType="group"
                             targetId={grp.id}
@@ -935,6 +1026,33 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       {/* Column 6: Instant Internet Access Toggle & Timed Controls (FB-P4-004 & Phase 5) */}
                       <td className="px-4 py-3.5 align-middle text-right">
                         <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                          {/* selective YouTube toggle */}
+                          {!dev.is_protected && (
+                            <button
+                              type="button"
+                              data-testid={`youtube-toggle-${dev.id}`}
+                              disabled={isBusy || !dev.ipv4_address}
+                              title={
+                                dev.is_youtube_blocked
+                                  ? 'YouTube blocked (Plex & Internet allowed) — Click to allow YouTube'
+                                  : 'Click to block YouTube only (keeps Plex & Internet allowed)'
+                              }
+                              onClick={() =>
+                                deviceYoutubeMutation.mutate({
+                                  device: dev,
+                                  action: dev.is_youtube_blocked ? 'unblock' : 'block',
+                                })
+                              }
+                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
+                                dev.is_youtube_blocked
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                                  : 'border-slate-700 bg-slate-950/60 text-slate-300 hover:bg-slate-800'
+                              }`}
+                            >
+                              <VideoOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>{dev.is_youtube_blocked ? 'YT Blocked' : 'YT Allowed'}</span>
+                            </button>
+                          )}
                           <TimerPopoverMenu
                             targetType="device"
                             targetId={dev.id}

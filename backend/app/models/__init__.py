@@ -176,6 +176,9 @@ class Device(Base):
     is_manually_blocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )
+    is_youtube_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
     is_protected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     first_seen_at: Mapped[datetime] = mapped_column(

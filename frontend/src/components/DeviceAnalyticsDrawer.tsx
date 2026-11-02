@@ -11,10 +11,13 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Tv,
+  VideoOff,
   X,
 } from 'lucide-react'
 import {
   apiClient,
+  formatActiveMinutes,
   formatBytes,
   type TimeWindow,
 } from '../api/client'
@@ -93,6 +96,25 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
     },
   })
 
+  const youtubeMutation = useMutation({
+    mutationFn: async (action: 'block' | 'unblock') => {
+      if (!deviceId) throw new Error('No device selected')
+      return action === 'block'
+        ? apiClient.blockDeviceYoutube(deviceId)
+        : apiClient.unblockDeviceYoutube(deviceId)
+    },
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics', deviceId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to toggle YouTube access.',
+      )
+    },
+  })
+
   if (deviceId === null) {
     return null
   }
@@ -104,6 +126,10 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
   const topDomains = analytics?.top_domains ?? []
   const topOrgs = analytics?.top_organizations ?? []
   const recentQueries = analytics?.recent_queries ?? []
+  const appUsage = analytics?.application_usage ?? [
+    { app_key: 'youtube' as const, display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+  ]
 
   const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
   const maxHourlyEvents = Math.max(1, ...hourlyProfile.map((h) => h.total_events))
@@ -323,6 +349,92 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                     {summary?.active_hours_in_day ?? 0} / 24h
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-400">Distinct hours active</p>
+                </div>
+              </div>
+
+              {/* Application Usage & Control (FB-P6-004 & FB-P6-005) */}
+              <div
+                data-testid="drawer-app-usage-panel"
+                className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+              >
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-100">
+                      Application Usage &amp; Selective Control (YouTube &amp; Plex)
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Active streaming time (5-minute activity windows) and selective YouTube blocking (keeps Plex &amp; general internet allowed)
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {appUsage.map((app) => {
+                    const isYoutube = app.app_key === 'youtube'
+                    return (
+                      <div
+                        key={app.app_key}
+                        data-testid={`drawer-app-card-${app.app_key}`}
+                        className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Tv
+                              className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
+                              aria-hidden="true"
+                            />
+                            <div>
+                              <span className="text-sm font-bold text-slate-100">
+                                {app.display_name}
+                              </span>
+                              <p className="text-[11px] text-slate-400">
+                                {(app.dns_queries ?? 0).toLocaleString()} DNS queries •{' '}
+                                {formatBytes(app.bytes ?? 0)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span
+                              data-testid={`drawer-app-minutes-${app.app_key}`}
+                              className="text-base font-bold text-indigo-300 font-mono"
+                            >
+                              {formatActiveMinutes(app.active_minutes)}
+                            </span>
+                            <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
+                          </div>
+                        </div>
+
+                        {isYoutube && device && !device.is_protected && (
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-800/80 pt-2.5">
+                            <span className="text-[11px] text-slate-400">
+                              {device.is_youtube_blocked
+                                ? 'YouTube blocked (Plex allowed)'
+                                : 'YouTube currently allowed'}
+                            </span>
+                            <button
+                              type="button"
+                              data-testid="drawer-youtube-toggle"
+                              disabled={youtubeMutation.isPending || !device.ipv4_address}
+                              onClick={() =>
+                                youtubeMutation.mutate(
+                                  device.is_youtube_blocked ? 'unblock' : 'block',
+                                )
+                              }
+                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
+                                device.is_youtube_blocked
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                                  : 'border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800'
+                              }`}
+                            >
+                              <VideoOff className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span>
+                                {device.is_youtube_blocked ? 'Allow YouTube' : 'Block YouTube'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 

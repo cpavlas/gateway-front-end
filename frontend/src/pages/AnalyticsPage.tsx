@@ -10,9 +10,11 @@ import {
   Laptop,
   RefreshCw,
   ShieldAlert,
+  Tv,
 } from 'lucide-react'
 import {
   apiClient,
+  formatActiveMinutes,
   formatBytes,
   type TimeWindow,
 } from '../api/client'
@@ -71,6 +73,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
   const topDomains = overview?.top_domains ?? []
   const topRegDomains = overview?.top_registered_domains ?? []
   const topOrgs = overview?.top_organizations ?? []
+  const appUsage = overview?.application_usage ?? []
 
   const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
   const maxDomainCount = Math.max(1, ...topDomains.map((d) => d.query_count))
@@ -225,6 +228,95 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
           </div>
         ) : (
           <>
+            {/* Application Usage Stats (YouTube & Plex — FB-P6-004) */}
+            <div
+              data-testid="overview-app-usage-panel"
+              className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Tv className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-100">
+                      Application Usage Stats — YouTube &amp; Plex ({windowKey})
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Estimated active usage time derived from 5-minute activity buckets across all LAN devices
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {(['youtube', 'plex'] as const).map((appKey) => {
+                  const item = appUsage.find((a) => a.app_key === appKey) ?? {
+                    app_key: appKey,
+                    display_name: appKey === 'youtube' ? 'YouTube' : 'Plex',
+                    active_minutes: 0,
+                    event_count: 0,
+                    dns_queries: 0,
+                    bytes: 0,
+                    last_active_at: null,
+                  }
+                  const isYoutube = appKey === 'youtube'
+                  return (
+                    <div
+                      key={appKey}
+                      data-testid={`overview-app-card-${appKey}`}
+                      className="rounded-lg border border-slate-800 bg-slate-950/70 p-3.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-xs font-bold uppercase tracking-wide ${
+                            isYoutube ? 'text-rose-400' : 'text-amber-400'
+                          }`}
+                        >
+                          {item.display_name}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          {item.last_active_at
+                            ? `Last active ${new Date(item.last_active_at).toLocaleTimeString([], {
+                                hour12: false,
+                              })}`
+                            : 'No recent activity'}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="block text-[10px] text-slate-500">
+                            Active Time
+                          </span>
+                          <span
+                            data-testid={`overview-app-minutes-${appKey}`}
+                            className="font-mono text-sm font-bold text-slate-100"
+                          >
+                            {formatActiveMinutes(item.active_minutes)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-500">
+                            DNS Queries
+                          </span>
+                          <span className="font-mono text-sm font-semibold text-sky-300">
+                            {(item.dns_queries ?? 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-500">
+                            Bandwidth
+                          </span>
+                          <span className="font-mono text-sm font-semibold text-emerald-300">
+                            {formatBytes(item.bytes ?? 0)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Network Activity Timeline */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow">
               <div className="flex items-center justify-between mb-4">

@@ -156,6 +156,7 @@ export interface DeviceItem {
   is_online: boolean
   is_blocked: boolean
   is_manually_blocked?: boolean
+  is_youtube_blocked?: boolean
   is_protected: boolean
   protection_reason: string | null
   notes: string
@@ -188,7 +189,7 @@ export interface DeviceUpdatePayload {
 
 export interface DeviceActionResponse {
   device: DeviceItem
-  action: 'block' | 'unblock'
+  action: 'block' | 'unblock' | 'youtube_block' | 'youtube_unblock'
   states_killed: boolean
   warning: string | null
 }
@@ -200,6 +201,8 @@ export interface GroupItem {
   color_badge: string
   icon: string
   access_status: GroupAccessStatus
+  youtube_status?: GroupAccessStatus
+  youtube_blocked_devices?: number
   total_devices: number
   online_devices: number
   blocked_devices: number
@@ -235,13 +238,77 @@ export interface GroupUpdatePayload {
 
 export interface GroupBulkActionResponse {
   group: GroupItem
-  action: 'block' | 'unblock'
+  action: 'block' | 'unblock' | 'youtube_block' | 'youtube_unblock'
   affected_device_ids: number[]
   affected_ips: string[]
   skipped_protected_names: string[]
   skipped_no_ip_names: string[]
   states_killed_ips: string[]
   warnings: string[]
+}
+
+export interface AppUsageItem {
+  app_key: 'youtube' | 'plex'
+  display_name: string
+  active_minutes: number
+  event_count: number
+  dns_queries: number
+  bytes: number
+  last_active_at: string | null
+}
+
+export interface AuditLogItem {
+  id: number
+  actor: string
+  action: string
+  target: string
+  status: string
+  details: string
+  created_at: string
+}
+
+export interface AuditLogListResponse {
+  total_count: number
+  items: AuditLogItem[]
+}
+
+export interface ConfigBackupPayload {
+  schema_version: string
+  exported_at: string
+  devices: Array<{
+    mac_address: string
+    display_name?: string | null
+    notes?: string
+    is_protected?: boolean
+    is_manually_blocked?: boolean
+    is_youtube_blocked?: boolean
+  }>
+  groups: Array<{
+    name: string
+    description?: string
+    color_badge?: string
+    icon?: string
+    member_macs?: string[]
+  }>
+  schedules: Array<{
+    name: string
+    description?: string
+    target_type: 'device' | 'group'
+    device_mac?: string | null
+    group_name?: string | null
+    days_of_week: number[]
+    start_time: string
+    end_time: string
+    timezone?: string
+    is_enabled?: boolean
+  }>
+}
+
+export interface ConfigRestoreSummary {
+  devices_updated: number
+  groups_upserted: number
+  schedules_upserted: number
+  restored_at: string
 }
 
 export interface TimelineBucketItem {
@@ -301,6 +368,7 @@ export interface NetworkOverviewResponse {
   top_domains: TopDomainItem[]
   top_registered_domains: TopDomainItem[]
   top_organizations: TopOrganizationItem[]
+  application_usage?: AppUsageItem[]
 }
 
 export interface HourlyAccessPoint {
@@ -345,6 +413,7 @@ export interface DeviceAnalyticsResponse {
   top_domains: TopDomainItem[]
   top_registered_domains: TopDomainItem[]
   top_organizations: TopOrganizationItem[]
+  application_usage?: AppUsageItem[]
   recent_queries: RecentDomainQueryItem[]
 }
 
@@ -378,7 +447,19 @@ export interface GroupAnalyticsResponse {
   top_domains: TopDomainItem[]
   top_registered_domains: TopDomainItem[]
   top_organizations: TopOrganizationItem[]
+  application_usage?: AppUsageItem[]
   recent_queries: RecentDomainQueryItem[]
+}
+
+export function formatActiveMinutes(minutes: number): string {
+  const safe = Math.max(0, Math.floor(minutes || 0))
+  if (safe <= 0) return '0m'
+  const hours = Math.floor(safe / 60)
+  const mins = safe % 60
+  if (hours > 0) {
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+  }
+  return `${mins}m`
 }
 
 export function formatBytes(bytes: number): string {
@@ -516,6 +597,18 @@ export const apiClient = {
     })
   },
 
+  blockDeviceYoutube(deviceId: number): Promise<DeviceActionResponse> {
+    return requestJson<DeviceActionResponse>(`/api/v1/devices/${deviceId}/youtube/block`, {
+      method: 'POST',
+    })
+  },
+
+  unblockDeviceYoutube(deviceId: number): Promise<DeviceActionResponse> {
+    return requestJson<DeviceActionResponse>(`/api/v1/devices/${deviceId}/youtube/unblock`, {
+      method: 'POST',
+    })
+  },
+
   getGroups(): Promise<GroupListResponse> {
     return requestJson<GroupListResponse>('/api/v1/groups', {
       method: 'GET',
@@ -550,6 +643,18 @@ export const apiClient = {
 
   unblockGroup(groupId: number): Promise<GroupBulkActionResponse> {
     return requestJson<GroupBulkActionResponse>(`/api/v1/groups/${groupId}/unblock`, {
+      method: 'POST',
+    })
+  },
+
+  blockGroupYoutube(groupId: number): Promise<GroupBulkActionResponse> {
+    return requestJson<GroupBulkActionResponse>(`/api/v1/groups/${groupId}/youtube/block`, {
+      method: 'POST',
+    })
+  },
+
+  unblockGroupYoutube(groupId: number): Promise<GroupBulkActionResponse> {
+    return requestJson<GroupBulkActionResponse>(`/api/v1/groups/${groupId}/youtube/unblock`, {
       method: 'POST',
     })
   },
@@ -645,6 +750,40 @@ export const apiClient = {
   reconcileSchedules(): Promise<ScheduleReconcileResponse> {
     return requestJson<ScheduleReconcileResponse>('/api/v1/schedules/reconcile', {
       method: 'POST',
+    })
+  },
+
+  getAuditLogs(params?: {
+    action?: string
+    search?: string
+    limit?: number
+  }): Promise<AuditLogListResponse> {
+    const query = new URLSearchParams()
+    if (params?.action && params.action !== 'all') {
+      query.set('action', params.action)
+    }
+    if (params?.search && params.search.trim()) {
+      query.set('search', params.search.trim())
+    }
+    if (params?.limit) {
+      query.set('limit', String(params.limit))
+    }
+    const qs = query.toString()
+    return requestJson<AuditLogListResponse>(`/api/v1/audit-logs${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+    })
+  },
+
+  exportConfigBackup(): Promise<ConfigBackupPayload> {
+    return requestJson<ConfigBackupPayload>('/api/v1/system/backup', {
+      method: 'GET',
+    })
+  },
+
+  restoreConfigBackup(payload: ConfigBackupPayload): Promise<ConfigRestoreSummary> {
+    return requestJson<ConfigRestoreSummary>('/api/v1/system/restore', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     })
   },
 
