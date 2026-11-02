@@ -70,6 +70,121 @@ def validate_ipv4_list(ipv4_addresses: list[str]) -> list[str]:
     return cleaned
 
 
+def _build_app_usage_agg(safe_tz: str) -> dict[str, Any]:
+    """Build Elasticsearch filters aggregation for YouTube and Plex 5-minute active windows."""
+    return {
+        "filters": {
+            "filters": {
+                "youtube": {
+                    "bool": {
+                        "should": [
+                            {
+                                "terms": {
+                                    "dns.question.registered_domain": [
+                                        "youtube.com",
+                                        "youtu.be",
+                                        "googlevideo.com",
+                                        "ytimg.com",
+                                        "youtube-nocookie.com",
+                                    ]
+                                }
+                            },
+                            {
+                                "wildcard": {
+                                    "dns.question.name": {
+                                        "value": "*youtube*",
+                                        "case_insensitive": True,
+                                    }
+                                }
+                            },
+                            {
+                                "wildcard": {
+                                    "dns.question.name": {
+                                        "value": "*googlevideo*",
+                                        "case_insensitive": True,
+                                    }
+                                }
+                            },
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                },
+                "plex": {
+                    "bool": {
+                        "should": [
+                            {
+                                "terms": {
+                                    "dns.question.registered_domain": [
+                                        "plex.tv",
+                                        "plex.direct",
+                                        "plexapp.com",
+                                    ]
+                                }
+                            },
+                            {
+                                "wildcard": {
+                                    "dns.question.name": {
+                                        "value": "*plex*",
+                                        "case_insensitive": True,
+                                    }
+                                }
+                            },
+                            {"term": {"destination.port": 32400}},
+                            {"term": {"source.port": 32400}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                },
+            }
+        },
+        "aggs": {
+            "active_slots": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": "5m",
+                    "time_zone": safe_tz,
+                    "min_doc_count": 1,
+                }
+            },
+            "bytes": {"sum": {"field": "network.bytes"}},
+            "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
+            "last_active": {"max": {"field": "@timestamp"}},
+        },
+    }
+
+
+def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract YouTube and Plex active usage time (`active_minutes`), queries, and bytes."""
+    buckets = ((aggs.get("app_usage") or {}).get("buckets")) or {}
+    items: list[dict[str, Any]] = []
+    for app_key, display_name in (("youtube", "YouTube"), ("plex", "Plex")):
+        b = buckets.get(app_key) if isinstance(buckets, dict) else {}
+        if not isinstance(b, dict):
+            b = {}
+        event_count = int(b.get("doc_count") or 0)
+        slot_buckets = ((b.get("active_slots") or {}).get("buckets")) or []
+        active_slots = sum(1 for sb in slot_buckets if int(sb.get("doc_count") or 0) > 0)
+        if active_slots == 0 and event_count > 0:
+            active_minutes = 5
+        else:
+            active_minutes = active_slots * 5
+        dns_queries = int((b.get("dns_queries") or {}).get("doc_count") or 0)
+        bytes_val = int(float((b.get("bytes") or {}).get("value") or 0))
+        last_active_at = (b.get("last_active") or {}).get("value_as_string")
+        items.append(
+            {
+                "app_key": app_key,
+                "display_name": display_name,
+                "active_minutes": active_minutes,
+                "event_count": event_count,
+                "dns_queries": dns_queries,
+                "bytes": bytes_val,
+                "last_active_at": last_active_at,
+            }
+        )
+    return items
+
+
 def build_network_overview_query(
     window: str = "24h",
     tz_name: str = "UTC",
@@ -92,6 +207,7 @@ def build_network_overview_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
+            "app_usage": _build_app_usage_agg(safe_tz),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "timeline": {
@@ -269,6 +385,7 @@ def normalize_network_overview_response(
         "top_domains": top_domains,
         "top_registered_domains": top_registered_domains,
         "top_organizations": top_organizations,
+        "application_usage": _extract_app_usage(aggs),
     }
 
 
@@ -306,6 +423,7 @@ def build_device_analytics_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
+            "app_usage": _build_app_usage_agg(safe_tz),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "first_activity": {"min": {"field": "@timestamp"}},
@@ -552,6 +670,7 @@ def normalize_device_analytics_response(
         "top_domains": top_domains,
         "top_registered_domains": top_registered_domains,
         "top_organizations": top_organizations,
+        "application_usage": _extract_app_usage(aggs),
         "recent_queries": recent_queries,
     }
 
@@ -591,6 +710,7 @@ def build_group_analytics_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
+            "app_usage": _build_app_usage_agg(safe_tz),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "first_activity": {"min": {"field": "@timestamp"}},

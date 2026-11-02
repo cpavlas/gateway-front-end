@@ -1,22 +1,28 @@
-import React from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import React, { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Clock,
   Database,
+  Download,
+  FileText,
   HardDrive,
   Laptop,
   RefreshCw,
   Router,
+  Search,
   ShieldAlert,
   ShieldCheck,
+  Upload,
   Wifi,
   XCircle,
 } from 'lucide-react'
 import {
   apiClient,
+  type ConfigBackupPayload,
+  type ConfigRestoreSummary,
   type DeviceListResponse,
   type HealthLevel,
   type ServiceHealthStatus,
@@ -61,6 +67,13 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
 }) => {
   const status: HealthLevel = health?.status ?? 'unhealthy'
   const details = health?.details ?? {}
+  const isSqlite = testId === 'service-card-sqlite'
+  const storageSizeFormatted =
+    typeof details.storage_size_formatted === 'string'
+      ? details.storage_size_formatted
+      : undefined
+  const totalRecords =
+    typeof details.total_records === 'number' ? details.total_records : undefined
 
   return (
     <div
@@ -93,6 +106,37 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           {health ? health.message : 'Probing service status...'}
         </p>
 
+        {/* FB-P6-003: Highlighted SQLite Storage Size & Record Count stats */}
+        {isSqlite && (storageSizeFormatted !== undefined || totalRecords !== undefined) && (
+          <div
+            data-testid="sqlite-featured-stats"
+            className="grid grid-cols-2 gap-2.5 rounded-lg border border-indigo-500/30 bg-indigo-950/25 p-3"
+          >
+            <div>
+              <span className="block text-[11px] font-medium text-indigo-300">
+                Storage Size
+              </span>
+              <span
+                data-testid="sqlite-storage-size"
+                className="mt-0.5 block font-mono text-base font-bold text-slate-100"
+              >
+                {storageSizeFormatted ?? '0 B'}
+              </span>
+            </div>
+            <div>
+              <span className="block text-[11px] font-medium text-indigo-300">
+                Record Count
+              </span>
+              <span
+                data-testid="sqlite-total-records"
+                className="mt-0.5 block font-mono text-base font-bold text-emerald-300"
+              >
+                {(totalRecords ?? 0).toLocaleString()} records
+              </span>
+            </div>
+          </div>
+        )}
+
         {Object.keys(details).length > 0 && (
           <dl className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800/80 bg-slate-950/60 p-3 text-xs">
             {Object.entries(details).map(([key, value]) => (
@@ -122,6 +166,13 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   onSelectTab,
 }) => {
   const queryClient = useQueryClient()
+  const [auditEnabled, setAuditEnabled] = useState(false)
+  const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [auditSearch, setAuditSearch] = useState('')
+  const [backupMessage, setBackupMessage] = useState<string | null>(null)
+  const [backupError, setBackupError] = useState<string | null>(null)
+  const [restoreSummary, setRestoreSummary] = useState<ConfigRestoreSummary | null>(null)
+
   const {
     data: healthReport,
     isLoading,
@@ -135,8 +186,99 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     refetchInterval: 30_000,
   })
 
+  const {
+    data: auditResponse,
+    isFetching: isFetchingAudit,
+    refetch: refetchAudit,
+  } = useQuery({
+    queryKey: ['auditLogs', auditActionFilter, auditSearch],
+    queryFn: () =>
+      apiClient.getAuditLogs({
+        action: auditActionFilter || undefined,
+        search: auditSearch.trim() || undefined,
+        limit: 50,
+      }),
+    enabled: auditEnabled,
+  })
+
+  const exportMutation = useMutation({
+    mutationFn: () => apiClient.exportConfigBackup(),
+    onSuccess: (payload) => {
+      setBackupError(null)
+      setBackupMessage(
+        `Exported ${payload.devices.length} devices, ${payload.groups.length} groups, and ${payload.schedules.length} schedules.`,
+      )
+      try {
+        if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+          const blob = new Blob([JSON.stringify(payload, null, 2)], {
+            type: 'application/json',
+          })
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `gateway-config-backup-${new Date().toISOString().slice(0, 10)}.json`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(url)
+        }
+      } catch {
+        // Ignore download helper errors in headless test environments
+      }
+    },
+    onError: (err) => {
+      setBackupError(
+        err instanceof Error ? err.message : 'Failed to export configuration backup.',
+      )
+    },
+  })
+
+  const restoreMutation = useMutation({
+    mutationFn: (payload: ConfigBackupPayload) =>
+      apiClient.restoreConfigBackup(payload),
+    onSuccess: (summary) => {
+      setBackupError(null)
+      setRestoreSummary(summary)
+      setBackupMessage(
+        `Restored ${summary.devices_updated} devices, ${summary.groups_upserted} groups, and ${summary.schedules_upserted} schedules.`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['schedules'] })
+    },
+    onError: (err) => {
+      setBackupError(
+        err instanceof Error ? err.message : 'Failed to restore configuration backup.',
+      )
+    },
+  })
+
+  const handleRestoreFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text =
+        typeof file.text === 'function'
+          ? await file.text()
+          : await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result ?? ''))
+              reader.onerror = () => reject(reader.error)
+              reader.readAsText(file)
+            })
+      const parsed = JSON.parse(text) as ConfigBackupPayload
+      restoreMutation.mutate(parsed)
+    } catch {
+      setBackupError('Invalid JSON configuration file.')
+    } finally {
+      e.target.value = ''
+    }
+  }
+
   const deviceList = queryClient.getQueryData<DeviceListResponse>(['devices'])
   const opnsenseDetails = healthReport?.services?.opnsense?.details ?? {}
+  const sqliteDetails = healthReport?.services?.sqlite?.details ?? {}
   const summary = deviceList?.summary
   const totalDevices =
     summary?.total_devices ??
@@ -157,6 +299,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const activeTimerCount = (deviceList?.devices ?? []).filter(
     (d) => d.active_override && d.active_override.is_active,
   ).length
+
+  const auditLogs = auditResponse?.items ?? []
 
   return (
     <AppLayout
@@ -316,6 +460,207 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               </p>
             </div>
           </div>
+        </section>
+
+        {/* Configuration Backup & Restore (Phase 7) */}
+        <section
+          data-testid="status-backup-restore-section"
+          className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-100">
+                Configuration Backup &amp; Restore
+              </h2>
+              <p className="text-xs text-slate-400">
+                Export or restore device labels, group memberships, YouTube &amp; internet policies, and recurring schedules
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                data-testid="export-config-btn"
+                onClick={() => exportMutation.mutate()}
+                disabled={exportMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>
+                  {exportMutation.isPending ? 'Exporting...' : 'Export Configuration JSON'}
+                </span>
+              </button>
+
+              <label
+                data-testid="restore-config-label"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
+              >
+                <Upload className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                <span>
+                  {restoreMutation.isPending ? 'Restoring...' : 'Restore Configuration JSON'}
+                </span>
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  data-testid="restore-config-input"
+                  onChange={(e) => void handleRestoreFileChange(e)}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+          </div>
+
+          {backupMessage && (
+            <div
+              data-testid="backup-status-message"
+              className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200"
+            >
+              {backupMessage}
+              {restoreSummary && (
+                <span className="ml-2 font-mono text-emerald-300">
+                  (restored at {new Date(restoreSummary.restored_at).toLocaleTimeString([], { hour12: false })})
+                </span>
+              )}
+            </div>
+          )}
+
+          {backupError && (
+            <div
+              data-testid="backup-error-message"
+              className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-200"
+            >
+              {backupError}
+            </div>
+          )}
+        </section>
+
+        {/* Audit & Event History (Phase 7) */}
+        <section
+          data-testid="audit-logs-section"
+          className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <FileText className="h-5 w-5 text-indigo-400" aria-hidden="true" />
+              <div>
+                <h2 className="text-base font-semibold text-slate-100">
+                  Audit &amp; Event History
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Chronological log of administrative actions, YouTube &amp; internet blocks, timers, and schedule transitions
+                  {typeof sqliteDetails.audit_logs_count === 'number'
+                    ? ` (${sqliteDetails.audit_logs_count} total stored events)`
+                    : ''}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="load-audit-logs-btn"
+              onClick={() => {
+                if (!auditEnabled) {
+                  setAuditEnabled(true)
+                } else {
+                  void refetchAudit()
+                }
+              }}
+              disabled={isFetchingAudit}
+              className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>
+                {auditEnabled
+                  ? isFetchingAudit
+                    ? 'Refreshing...'
+                    : 'Refresh Audit Logs'
+                  : 'Load Audit Logs'}
+              </span>
+            </button>
+          </div>
+
+          {auditEnabled && (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="text"
+                    data-testid="audit-search-input"
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    placeholder="Search audit events by action, actor, or details..."
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  aria-label="Filter audit logs by action"
+                  data-testid="audit-action-filter"
+                  value={auditActionFilter}
+                  onChange={(e) => setAuditActionFilter(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">All Actions</option>
+                  <option value="device.block">device.block</option>
+                  <option value="device.unblock">device.unblock</option>
+                  <option value="device.youtube_block">device.youtube_block</option>
+                  <option value="device.youtube_unblock">device.youtube_unblock</option>
+                  <option value="group.youtube_block">group.youtube_block</option>
+                  <option value="group.youtube_unblock">group.youtube_unblock</option>
+                  <option value="system.restore">system.restore</option>
+                </select>
+              </div>
+
+              {auditLogs.length === 0 ? (
+                <p
+                  data-testid="audit-logs-empty"
+                  className="py-6 text-center text-xs text-slate-500"
+                >
+                  {isFetchingAudit ? 'Loading audit history...' : 'No matching audit log events found.'}
+                </p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/60">
+                  <table
+                    data-testid="audit-logs-table"
+                    className="w-full text-left border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase text-slate-400">
+                        <th className="py-2 px-3">Timestamp</th>
+                        <th className="py-2 px-3">Action</th>
+                        <th className="py-2 px-3">Actor</th>
+                        <th className="py-2 px-3">Target</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {auditLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-900/50">
+                          <td className="py-2 px-3 font-mono text-slate-400">
+                            {new Date(log.created_at).toLocaleString([], { hour12: false })}
+                          </td>
+                          <td className="py-2 px-3 font-mono font-semibold text-indigo-300">
+                            {log.action}
+                          </td>
+                          <td className="py-2 px-3 text-slate-300">{log.actor}</td>
+                          <td className="py-2 px-3 font-mono text-slate-400">
+                            {log.target} ({log.status})
+
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </div>
     </AppLayout>

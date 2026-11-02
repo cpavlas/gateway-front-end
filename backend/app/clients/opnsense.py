@@ -12,6 +12,19 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings
 
+YOUTUBE_BLOCK_DOMAINS: tuple[str, ...] = (
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+    "googlevideo.com",
+    "ytimg.com",
+    "i.ytimg.com",
+    "s.ytimg.com",
+    "youtubei.googleapis.com",
+    "youtube-nocookie.com",
+)
+
 
 def validate_ipv4_address(ip: str) -> str:
     """Validate that `ip` is a single canonical IPv4 address (no CIDR, wildcards, or IPv6)."""
@@ -66,6 +79,12 @@ class OPNsenseClient:
         self._settings = settings
         self._base_url = settings.opnsense_base_url
         self._alias_name = settings.opnsense_block_alias
+        self._youtube_block_alias = getattr(
+            settings, "opnsense_youtube_block_alias", "gateway_youtube_blocked_devices"
+        )
+        self._youtube_domains_alias = getattr(
+            settings, "opnsense_youtube_domains_alias", "gateway_youtube_domains"
+        )
         self._auth = (
             settings.opnsense_api_key.get_secret_value(),
             settings.opnsense_api_secret.get_secret_value(),
@@ -289,6 +308,92 @@ class OPNsenseClient:
             self._raise_for_status(resp, "diagnostics/firewall/kill_states")
             data = resp.json()
             return data if isinstance(data, dict) else {"result": "ok"}
+
+    async def ensure_youtube_aliases_exist(self) -> dict[str, Any]:
+        """Ensure `gateway_youtube_domains` and `gateway_youtube_blocked_devices` exist."""
+        created_aliases: list[str] = []
+        async with self._create_http_client() as client:
+            for alias_name, content, description in (
+                (
+                    self._youtube_domains_alias,
+                    "\n".join(YOUTUBE_BLOCK_DOMAINS),
+                    "YouTube destination domains managed by Gateway Controller",
+                ),
+                (
+                    self._youtube_block_alias,
+                    "",
+                    "YouTube blocked client IPs managed by Gateway Controller",
+                ),
+            ):
+                uuid_resp = await client.get(
+                    f"/api/firewall/alias/get_alias_uuid/{alias_name}"
+                )
+                uuid_val: str | None = None
+                if uuid_resp.status_code == 200:
+                    payload = uuid_resp.json()
+                    if isinstance(payload, dict) and payload.get("uuid"):
+                        uuid_val = str(payload["uuid"])
+                if not uuid_val:
+                    add_resp = await client.post(
+                        "/api/firewall/alias/add_item",
+                        json={
+                            "alias": {
+                                "enabled": "1",
+                                "name": alias_name,
+                                "type": "host",
+                                "content": content,
+                                "description": description,
+                            }
+                        },
+                    )
+                    self._raise_for_status(add_resp, f"alias/add_item/{alias_name}")
+                    created_aliases.append(alias_name)
+            if created_aliases:
+                reconf_resp = await client.post(
+                    "/api/firewall/alias/reconfigure", json={}
+                )
+                self._raise_for_status(reconf_resp, "alias/reconfigure")
+        return {
+            "youtube_block_alias": self._youtube_block_alias,
+            "youtube_domains_alias": self._youtube_domains_alias,
+            "created_aliases": created_aliases,
+        }
+
+    async def list_youtube_blocked_ips(self) -> list[str]:
+        """List IPv4 addresses currently in `gateway_youtube_blocked_devices`."""
+        try:
+            return await self.list_blocked_alias_ips(self._youtube_block_alias)
+        except OPNsenseClientError as exc:
+            if exc.status_code in (400, 404):
+                return []
+            raise
+
+    async def add_ip_to_youtube_block_alias(self, ip: str) -> list[str]:
+        """Add an IPv4 address to `gateway_youtube_blocked_devices` (auto-creating if missing)."""
+        valid_ip = validate_ipv4_address(ip)
+        try:
+            return await self.add_ip_to_block_alias(
+                valid_ip, alias_name=self._youtube_block_alias
+            )
+        except OPNsenseClientError as exc:
+            if exc.status_code in (400, 404):
+                await self.ensure_youtube_aliases_exist()
+                return await self.add_ip_to_block_alias(
+                    valid_ip, alias_name=self._youtube_block_alias
+                )
+            raise
+
+    async def remove_ip_from_youtube_block_alias(self, ip: str) -> list[str]:
+        """Remove an IPv4 address from `gateway_youtube_blocked_devices`."""
+        valid_ip = validate_ipv4_address(ip)
+        try:
+            return await self.remove_ip_from_block_alias(
+                valid_ip, alias_name=self._youtube_block_alias
+            )
+        except OPNsenseClientError as exc:
+            if exc.status_code in (400, 404):
+                return []
+            raise
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response, endpoint_label: str) -> None:

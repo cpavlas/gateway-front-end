@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -36,6 +36,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   children,
 }) => {
   const { user, logout } = useAuth()
+  const [systemClock, setSystemClock] = useState<string>(() =>
+    new Date().toLocaleTimeString('en-GB', { hour12: false }),
+  )
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setSystemClock(new Date().toLocaleTimeString('en-GB', { hour12: false }))
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [])
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -188,14 +198,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
-            >
-              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Logout</span>
-            </button>
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
+              >
+                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Logout</span>
+              </button>
+              <span
+                data-testid="header-system-clock"
+                className="font-mono text-[11px] tracking-wider text-slate-400"
+              >
+                {systemClock}
+              </span>
+            </div>
           </div>
         </div>
       </header>

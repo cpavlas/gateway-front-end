@@ -28,13 +28,16 @@ from app.models import (
     utc_now,
 )
 from app.services.analytics_service import (
+    AppUsageItem,
     DeviceAnalyticsSummary,
     HourlyAccessPoint,
     RecentDomainQueryItem,
     TimelineBucketItem,
     TopDomainItem,
     TopOrganizationItem,
+    _build_zero_app_usage,
     _build_zero_hourly_profile,
+    _parse_app_usage_items,
     get_analytics_cache,
 )
 from app.services.device_service import (
@@ -92,9 +95,11 @@ class GroupResponse(BaseModel):
     color_badge: str
     icon: str
     access_status: GroupStatusLiteral
+    youtube_status: GroupStatusLiteral = "empty"
     total_devices: int
     online_devices: int
     blocked_devices: int
+    youtube_blocked_devices: int = 0
     protected_devices: int
     blockable_devices: int
     member_device_ids: list[int]
@@ -115,7 +120,7 @@ class GroupBulkActionResponse(BaseModel):
     """Response payload for POST /api/v1/groups/{group_id}/block and /unblock."""
 
     group: GroupResponse
-    action: Literal["block", "unblock"]
+    action: Literal["block", "unblock", "youtube_block", "youtube_unblock"]
     affected_device_ids: list[int]
     affected_ips: list[str]
     skipped_protected_names: list[str]
@@ -159,6 +164,7 @@ class GroupAnalyticsResponse(BaseModel):
     top_registered_domains: list[TopDomainItem]
     top_organizations: list[TopOrganizationItem]
     recent_queries: list[RecentDomainQueryItem]
+    application_usage: list[AppUsageItem] = Field(default_factory=_build_zero_app_usage)
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +209,25 @@ def compute_group_access_status(members: list[DeviceResponse]) -> GroupStatusLit
         return "allowed"
     if blocked_count == len(blockable):
         return "blocked"
+    if blocked_count == len(blockable):
+        return "blocked"
+    return "partially_blocked"
+
+
+def compute_group_youtube_status(members: list[DeviceResponse]) -> GroupStatusLiteral:
+    """Compute real-time group YouTube block state across non-protected blockable member devices."""
+    if not members:
+        return "empty"
+    blockable = [m for m in members if not m.is_protected and m.ipv4_address]
+    if not blockable:
+        if any(m.is_youtube_blocked for m in members):
+            return "blocked"
+        return "empty"
+    blocked_count = sum(1 for m in blockable if m.is_youtube_blocked)
+    if blocked_count == 0:
+        return "allowed"
+    if blocked_count == len(blockable):
+        return "blocked"
     return "partially_blocked"
 
 
@@ -229,9 +254,11 @@ def build_group_response(
         color_badge=group.color_badge,
         icon=group.icon,
         access_status=compute_group_access_status(sorted_members),
+        youtube_status=compute_group_youtube_status(sorted_members),
         total_devices=len(sorted_members),
         online_devices=sum(1 for m in sorted_members if m.is_online),
         blocked_devices=sum(1 for m in sorted_members if m.is_blocked),
+        youtube_blocked_devices=sum(1 for m in sorted_members if m.is_youtube_blocked),
         protected_devices=sum(1 for m in sorted_members if m.is_protected),
         blockable_devices=len(blockable),
         member_device_ids=[m.id for m in sorted_members],
@@ -291,7 +318,7 @@ def assemble_group_responses(
 
 def plan_group_bulk_action(
     members: list[DeviceResponse],
-    action: Literal["block", "unblock"],
+    action: Literal["block", "unblock", "youtube_block", "youtube_unblock"],
 ) -> dict[str, Any]:
     """Determine eligible device IDs/IPs and skipped devices for a bulk group block/unblock."""
     eligible_device_ids: list[int] = []
@@ -468,6 +495,7 @@ def _assemble_group_analytics_response(
             TopOrganizationItem(**o) for o in (es_data.get("top_organizations") or [])
         ],
         recent_queries=recent_queries,
+        application_usage=_parse_app_usage_items(es_data),
     )
 
 
@@ -928,6 +956,175 @@ async def unblock_group_internet(
     return GroupBulkActionResponse(
         group=updated_group,
         action="unblock",
+        affected_device_ids=eligible_ids,
+        affected_ips=eligible_ips,
+        skipped_protected_names=[],
+        skipped_no_ip_names=skipped_no_ip,
+        states_killed_ips=[],
+        warnings=warnings,
+    )
+
+
+async def block_group_youtube(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    group_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> GroupBulkActionResponse:
+    """Block YouTube access for all non-protected member devices in a group."""
+    grp_resp = await get_group_by_id(db, settings, group_id, client_ip=client_ip)
+    plan = plan_group_bulk_action(grp_resp.members, action="block")
+    eligible_ids: list[int] = plan["eligible_device_ids"]
+    eligible_ips: list[str] = plan["eligible_ips"]
+    skipped_protected: list[str] = plan["skipped_protected_names"]
+    skipped_no_ip: list[str] = plan["skipped_no_ip_names"]
+
+    if not eligible_ips:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Group '{grp_resp.name}' has no blockable devices with an IPv4 address "
+                f"(protected={len(skipped_protected)}, without IP={len(skipped_no_ip)})."
+            ),
+        )
+
+    try:
+        for ip in eligible_ips:
+            await opnsense.add_ip_to_youtube_block_alias(ip)
+    except (OPNsenseClientError, httpx.HTTPError) as exc:
+        db.add(
+            AuditLog(
+                actor=actor,
+                action="group.youtube_block",
+                target=grp_resp.name,
+                status="failed",
+                details=f"Bulk YouTube block alias update failed: {exc}",
+            )
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Failed to update OPNsense YouTube block alias "
+                f"for group '{grp_resp.name}': {exc}"
+            ),
+        ) from exc
+
+    warnings: list[str] = []
+    if skipped_protected:
+        warnings.append(f"Skipped protected device(s): {', '.join(skipped_protected)}")
+    if skipped_no_ip:
+        warnings.append(f"Skipped device(s) without IPv4: {', '.join(skipped_no_ip)}")
+
+    now = utc_now()
+    devs = list(
+        (await db.execute(select(Device).where(Device.id.in_(eligible_ids)))).scalars().all()
+    )
+    for d in devs:
+        d.is_youtube_blocked = True
+        d.updated_at = now
+
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="group.youtube_block",
+            target=f"{grp_resp.name} ({len(eligible_ips)} IPs)",
+            status="warning" if warnings else "success",
+            details=(
+                f"Blocked YouTube for {len(eligible_ips)} IPs ({', '.join(eligible_ips)}). "
+                + ("; ".join(warnings) if warnings else "Plex and general internet remain allowed.")
+            ),
+        )
+    )
+    await db.commit()
+
+    updated_group = await get_group_by_id(db, settings, group_id, client_ip=client_ip)
+    return GroupBulkActionResponse(
+        group=updated_group,
+        action="youtube_block",
+        affected_device_ids=eligible_ids,
+        affected_ips=eligible_ips,
+        skipped_protected_names=skipped_protected,
+        skipped_no_ip_names=skipped_no_ip,
+        states_killed_ips=[],
+        warnings=warnings,
+    )
+
+
+async def unblock_group_youtube(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    group_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> GroupBulkActionResponse:
+    """Restore YouTube access for all member devices in a group."""
+    grp_resp = await get_group_by_id(db, settings, group_id, client_ip=client_ip)
+    plan = plan_group_bulk_action(grp_resp.members, action="unblock")
+    eligible_ids: list[int] = plan["eligible_device_ids"]
+    eligible_ips: list[str] = plan["eligible_ips"]
+    skipped_no_ip: list[str] = plan["skipped_no_ip_names"]
+
+    if not eligible_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Group '{grp_resp.name}' has no member devices to unblock.",
+        )
+
+    try:
+        for ip in eligible_ips:
+            await opnsense.remove_ip_from_youtube_block_alias(ip)
+    except (OPNsenseClientError, httpx.HTTPError) as exc:
+        db.add(
+            AuditLog(
+                actor=actor,
+                action="group.youtube_unblock",
+                target=grp_resp.name,
+                status="failed",
+                details=f"Bulk YouTube unblock alias update failed: {exc}",
+            )
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Failed to remove IPs from OPNsense YouTube block alias "
+                f"for '{grp_resp.name}': {exc}"
+            ),
+        ) from exc
+
+    warnings: list[str] = []
+    if skipped_no_ip:
+        warnings.append(f"Device(s) had no IPv4 address: {', '.join(skipped_no_ip)}")
+
+    now = utc_now()
+    devs = list(
+        (await db.execute(select(Device).where(Device.id.in_(eligible_ids)))).scalars().all()
+    )
+    for d in devs:
+        d.is_youtube_blocked = False
+        d.updated_at = now
+
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="group.youtube_unblock",
+            target=f"{grp_resp.name} ({len(eligible_ips)} IPs)",
+            status="success",
+            details=f"Unblocked YouTube for {len(eligible_ips)} IPs ({', '.join(eligible_ips)}).",
+        )
+    )
+    await db.commit()
+
+    updated_group = await get_group_by_id(db, settings, group_id, client_ip=client_ip)
+    return GroupBulkActionResponse(
+        group=updated_group,
+        action="youtube_unblock",
         affected_device_ids=eligible_ids,
         affected_ips=eligible_ips,
         skipped_protected_names=[],

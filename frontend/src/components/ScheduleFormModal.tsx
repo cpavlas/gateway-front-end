@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Laptop, Moon, Trash2, Users, X } from 'lucide-react'
+import { CalendarClock, Laptop, Moon, Search, Trash2, Users, X } from 'lucide-react'
 import {
   apiClient,
   type DeviceItem,
@@ -60,6 +60,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
   const [targetType, setTargetType] = useState<OverrideTargetType>('group')
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('')
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | ''>('')
+  const [deviceSearch, setDeviceSearch] = useState('')
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 6])
   const [startTime, setStartTime] = useState('21:00')
   const [endTime, setEndTime] = useState('07:00')
@@ -67,10 +68,23 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const blockableDevices = devices.filter((d) => !d.is_protected)
+  const normalizedDeviceQuery = deviceSearch.trim().toLowerCase()
+  const filteredBlockableDevices = normalizedDeviceQuery
+    ? blockableDevices.filter(
+        (d) =>
+          d.effective_name.toLowerCase().includes(normalizedDeviceQuery) ||
+          (d.hostname ?? '').toLowerCase().includes(normalizedDeviceQuery) ||
+          (d.display_name ?? '').toLowerCase().includes(normalizedDeviceQuery) ||
+          (d.ipv4_address ?? '').toLowerCase().includes(normalizedDeviceQuery) ||
+          d.mac_address.toLowerCase().includes(normalizedDeviceQuery) ||
+          (d.vendor ?? '').toLowerCase().includes(normalizedDeviceQuery),
+      )
+    : blockableDevices
 
   useEffect(() => {
     if (!isOpen) return
     setErrorMsg(null)
+    setDeviceSearch('')
     if (editingSchedule) {
       setName(editingSchedule.name)
       setDescription(editingSchedule.description ?? '')
@@ -345,6 +359,48 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
                     htmlFor="schedule-device-select"
                     className="block text-[11px] font-medium text-slate-400"
                   >
+                    Search &amp; Select Target Device
+                  </label>
+                  <div className="relative mt-1 mb-2">
+                    <Search
+                      className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500"
+                      aria-hidden="true"
+                    />
+                    <input
+                      type="text"
+                      data-testid="schedule-device-search"
+                      aria-label="Search target device"
+                      value={deviceSearch}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setDeviceSearch(val)
+                        const q = val.trim().toLowerCase()
+                        if (q) {
+                          const matches = blockableDevices.filter(
+                            (d) =>
+                              d.effective_name.toLowerCase().includes(q) ||
+                              (d.hostname ?? '').toLowerCase().includes(q) ||
+                              (d.display_name ?? '').toLowerCase().includes(q) ||
+                              (d.ipv4_address ?? '').toLowerCase().includes(q) ||
+                              d.mac_address.toLowerCase().includes(q) ||
+                              (d.vendor ?? '').toLowerCase().includes(q),
+                          )
+                          if (
+                            matches.length > 0 &&
+                            !matches.some((m) => m.id === selectedDeviceId)
+                          ) {
+                            setSelectedDeviceId(matches[0].id)
+                          }
+                        }
+                      }}
+                      placeholder="Search device by name, IP, hostname, or MAC..."
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <label
+                    htmlFor="schedule-device-select"
+                    className="block text-[11px] font-medium text-slate-400"
+                  >
                     Target Device
                   </label>
                   <select
@@ -357,7 +413,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
                     className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="">Select a device...</option>
-                    {blockableDevices.map((dev) => (
+                    {filteredBlockableDevices.map((dev) => (
                       <option key={dev.id} value={dev.id}>
                         {dev.effective_name} ({dev.ipv4_address ?? dev.mac_address})
                       </option>

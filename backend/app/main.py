@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +17,7 @@ from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.groups import router as groups_router
 from app.api.schedules import router as schedules_router
+from app.api.system import audit_router
 from app.api.system import router as system_router
 from app.api.timers import router as timers_router
 from app.clients.opnsense import OPNsenseClient
@@ -94,8 +95,20 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.middleware("http")
+    async def add_security_headers(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+
     app.include_router(auth_router)
     app.include_router(system_router)
+    app.include_router(audit_router)
     app.include_router(devices_router)
     app.include_router(groups_router)
     app.include_router(timers_router)

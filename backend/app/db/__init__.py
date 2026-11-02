@@ -69,7 +69,7 @@ def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[
 
 
 async def init_db(settings: Settings | None = None) -> None:
-    """Ensure all database tables exist."""
+    """Ensure all database tables and non-destructive column migrations exist."""
     engine = get_engine(settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -84,6 +84,13 @@ async def init_db(settings: Settings | None = None) -> None:
             )
             await conn.execute(
                 text("UPDATE devices SET is_manually_blocked = is_blocked")
+            )
+        if existing_cols and "is_youtube_blocked" not in existing_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE devices ADD COLUMN is_youtube_blocked "
+                    "BOOLEAN NOT NULL DEFAULT 0"
+                )
             )
 
 

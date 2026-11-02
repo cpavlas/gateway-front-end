@@ -260,3 +260,40 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   1. Keep `is_youtube_blocked` independent of `is_blocked` and `is_manually_blocked` so full-internet schedules/timers and selective YouTube app blocks never overwrite each other.
   2. Deliver all 5 Phase 6 feedback items (`FB-P6-001` through `FB-P6-005`) alongside Phase 7's Audit Log & Settings Backup (`v1.0.0`).
 
+---
+
+## Phase 7 Exit Report: Audit Log UI, Settings Backup, Selective Application Blocking (YouTube vs. Plex), Application Usage Telemetry & `v1.0.0` Production Hardening
+
+- **Phase Status:** `COMPLETE` (`v1.0.0` — Final Release)
+- **Completed Date:** `2026-11-02`
+- **Git Branch / Tag:** `phase7` merged (`--no-ff`) into `main`, tagged `v1.0.0`
+
+### 1. Test & Coverage Metrics (`v1.0.0`)
+- **Backend (`Python 3.12.15`, `pytest`, `ruff`, `mypy`):**
+  - **Unit Tests:** `112 passed` (`100%` pass rate across 18 test suites)
+  - **Code Coverage:** `86%` total statement coverage (`3,338` statements, exceeding the `>= 85%` gate)
+  - **Static Analysis:** `ruff check backend` (`0` errors) and `mypy backend/app` (`0` issues in 25 source files)
+- **Frontend (`Node 22`, `Vitest`, `TypeScript`, `Vite`):**
+  - **Unit Tests:** `23 passed` across 7 test suites (`100%` pass rate)
+  - **Code Coverage:** `91.28%` statement/line coverage (`83.1%` branch coverage, exceeding the `>= 85%` gate)
+  - **Production Bundle:** `tsc -b && vite build` (`0` errors)
+
+### 2. Delivered Phase 7 Scope & Phase 6 Backlog Batch (`FB-P6-001` – `FB-P6-005`)
+1. **`FB-P6-001` (`ScheduleFormModal.tsx`):** Added real-time single-device search input (`data-testid="schedule-device-search"`) above the Target Device selector when creating a recurring schedule for a single device.
+2. **`FB-P6-002` (`AppLayout.tsx`):** Added live 24-hour system clock (`HH:MM:SS` monospace, `data-testid="header-system-clock"`) directly below the `Logout` button in the top-right header, updating every 1 second.
+3. **`FB-P6-003` (`system.py`, `StatusPage.tsx`):** Added on-disk SQLite **Storage Size** (`storage_bytes`, `storage_size_formatted`) and **Record Count** telemetry (`total_records` + per-table breakdown for `devices`, `groups`, `timers`, `schedules`, `audit_logs`) on the `Local SQLite Store` service card.
+4. **`FB-P6-004` (`elasticsearch.py`, `analytics_service.py`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):** Added **Application Usage Stats (YouTube & Plex)** computing active usage duration (`active_minutes` from 5-minute activity buckets), DNS query counts, bandwidth, and `last_active_at` across network overview, device analytics, and group analytics.
+5. **`FB-P6-005` (`opnsense.py`, `device_service.py`, `group_service.py`, `DevicesPage.tsx`, `docs/API_KEYS_SETUP.md`):** Added **Selective Application Blocking for YouTube** (`Device.is_youtube_blocked`, `GroupResponse.youtube_status`, `POST /api/v1/devices/{id}/youtube/{block,unblock}`, `POST /api/v1/groups/{id}/youtube/{block,unblock}`), automatically provisioning and managing `gateway_youtube_blocked_devices` and `gateway_youtube_domains` on OPNsense `26.7.7-amd64` while keeping Plex and general internet access allowed. Documented the one-time OPNsense LAN Reject rule in [`docs/API_KEYS_SETUP.md` Step 1D](API_KEYS_SETUP.md#step-1d-enable-selective-youtube-blocking-on-opnsense-fb-p6-005--keep-plex--general-internet-allowed).
+6. **Core Phase 7 Deliverables:**
+   - Filterable & searchable **Audit & Event History** (`GET /api/v1/audit-logs`) with automatic 90-day retention pruning.
+   - **Configuration Backup & Restore** (`GET /api/v1/system/backup` & `POST /api/v1/system/restore`) exporting and restoring device nicknames/protection/YouTube blocks, groups, and schedules as portable JSON without exposing `.env` secrets.
+   - Security response headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`), comprehensive [`README.md`](../README.md) runbook, and semantic version bump to `v1.0.0`.
+
+### 3. Unplanned Information Audit & Final Project Retrospective
+- **What unplanned technical details surfaced during Phase 7?**
+  1. *OPNsense `filterdns` Domain Alias Pair (`gateway_youtube_blocked_devices` + `gateway_youtube_domains`):*
+     - While the backend automatically creates and updates both `gateway_youtube_blocked_devices` (host IPs) and `gateway_youtube_domains` (YouTube FQDNs) via `/api/firewall/alias/*` and `/api/firewall/alias_util/*`, OPNsense requires a one-time LAN `Reject` firewall rule (`Source: gateway_youtube_blocked_devices` → `Destination: gateway_youtube_domains`, `Protocol: any` to cover both TCP `80/443` and UDP `443` QUIC) above the general LAN pass rule. We documented this step-by-step in [`docs/API_KEYS_SETUP.md` Step 1D](API_KEYS_SETUP.md#step-1d-enable-selective-youtube-blocking-on-opnsense-fb-p6-005--keep-plex--general-internet-allowed).
+  2. *Browser vs. `jsdom` File Upload API (`BUG-P7-002`):*
+     - `StatusPage.tsx`'s JSON configuration restore handler initially called `await file.text()`, which is standard in modern browsers but unimplemented on `jsdom`'s `File` prototype during `Vitest` runs. Adding a `FileReader.readAsText(file)` fallback ensured identical behavior across both headless test runners and production browsers.
+
+
