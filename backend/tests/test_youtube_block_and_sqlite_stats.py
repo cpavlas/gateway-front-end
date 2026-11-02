@@ -259,3 +259,101 @@ async def test_device_and_group_youtube_blocking_and_sqlite_health(
     assert sqlite_details["devices_count"] == 3
     assert sqlite_details["groups_count"] == 1
     assert sqlite_details["total_records"] >= 4
+
+
+def test_v101_sqlite_permission_fallback_and_entrypoint_helpers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify v1.0.1 Proxmox Linux bind-mount permission handling and entrypoint privilege drop."""
+    import sqlite3
+
+    from app.config import Settings
+    from app.db import _ensure_sqlite_parent_dir, extract_sqlite_file_path
+    from app.entrypoint import (
+        drop_privileges_if_root,
+        main,
+        prepare_sqlite_directories,
+        resolve_target_data_dirs,
+    )
+
+    # 1. Settings normalizes 3-slash /app/data/ URL to 4-slash absolute URL
+    s = Settings(
+        app_secret_key="a" * 64,  # type: ignore[arg-type]
+        admin_password="strong-password-123",  # type: ignore[arg-type]
+        opnsense_api_key="k",  # type: ignore[arg-type]
+        opnsense_api_secret="s",  # type: ignore[arg-type]
+        elasticsearch_api_key="e",  # type: ignore[arg-type]
+        database_url='"sqlite+aiosqlite:///app/data/gateway.db"',
+    )
+    assert s.database_url == "sqlite+aiosqlite:////app/data/gateway.db"
+
+    # 2. extract_sqlite_file_path handles memory and file URLs
+    assert extract_sqlite_file_path("sqlite+aiosqlite:///:memory:") is None
+    extracted = extract_sqlite_file_path("sqlite+aiosqlite:////app/data/gateway.db")
+    assert extracted is not None
+    assert extracted.name == "gateway.db"
+
+    # 3. _ensure_sqlite_parent_dir falls back to writable temp path on OperationalError
+    original_connect = sqlite3.connect
+
+    def _mock_unwritable_connect(path: str, *args: object, **kwargs: object) -> sqlite3.Connection:
+        if "unwritable_dir" in str(path):
+            raise sqlite3.OperationalError("unable to open database file")
+        return original_connect(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sqlite3, "connect", _mock_unwritable_connect)
+    bad_url = f"sqlite+aiosqlite:///{(tmp_path / 'unwritable_dir' / 'gateway.db').as_posix()}"
+    fallback_url = _ensure_sqlite_parent_dir(bad_url)
+    assert fallback_url != bad_url
+    assert "gateway-data/gateway.db" in fallback_url
+
+    # 4. entrypoint resolve_target_data_dirs & prepare_sqlite_directories
+    custom_db = tmp_path / "proxmox_data" / "gateway.db"
+    dirs = resolve_target_data_dirs(
+        {
+            "SQLITE_DB_PATH": str(custom_db),
+            "DATABASE_URL": "sqlite+aiosqlite:///app/data/gateway.db",
+        }
+    )
+    assert custom_db.parent in dirs
+
+    chown_calls: list[tuple[Path, int, int]] = []
+    ( custom_db.parent ).mkdir(parents=True, exist_ok=True)
+    ( custom_db.parent / "gateway.db" ).write_bytes(b"test")
+
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(
+        "os.chown",
+        lambda p, u, g: chown_calls.append((Path(p), u, g)),
+        raising=False,
+    )
+    prepared = prepare_sqlite_directories([custom_db.parent], uid=10001, gid=10001)
+    assert custom_db.parent in prepared
+    assert len(chown_calls) >= 2
+
+    # 5. drop_privileges_if_root & main execvp
+    uid_set: list[int] = []
+    gid_set: list[int] = []
+    exec_calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr("os.initgroups", lambda u, g: None, raising=False)
+    monkeypatch.setattr("os.setgid", lambda g: gid_set.append(g), raising=False)
+    monkeypatch.setattr("os.setuid", lambda u: uid_set.append(u), raising=False)
+    monkeypatch.setattr(
+        "os.execvp",
+        lambda file, args: exec_calls.append((file, list(args))),
+    )
+    monkeypatch.setattr(
+        "app.entrypoint.resolve_target_data_dirs",
+        lambda env=None: [custom_db.parent],
+    )
+
+    main(["uvicorn", "app.main:app", "--port", "8000"])
+    assert gid_set == [10001]
+    assert uid_set == [10001]
+    assert exec_calls == [("uvicorn", ["uvicorn", "app.main:app", "--port", "8000"])]
+
+    # When not root, drop_privileges_if_root returns False
+    monkeypatch.setattr("os.geteuid", lambda: 10001, raising=False)
+    assert drop_privileges_if_root() is False
+
