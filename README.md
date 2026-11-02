@@ -1,4 +1,4 @@
-# Sparkle-Pony Gateway Control & Analytics Portal (`v1.0.0`)
+# Sparkle-Pony Gateway Control & Analytics Portal (`v1.0.1`)
 
 Self-hosted, single-container Dockerized web application (`http://localhost:8080`) for managing LAN device internet & application access via **OPNsense (`26.7.7-amd64`)** and visualizing live network, DNS, group, and application usage telemetry from **Elasticsearch (`9.4.3` — `logs-pfsense.log*` / Elastic `pfSense` Integration `1.25.4`)**.
 
@@ -71,3 +71,4 @@ Self-hosted, single-container Dockerized web application (`http://localhost:8080
 - [`docs/TEST_AND_BUG_LOG.md`](docs/TEST_AND_BUG_LOG.md) — Cumulative test cycle and bug resolution ledger (`BUG-P1-*` through `BUG-P7-*`).
 - [`docs/PHASE_EXIT_REPORTS.md`](docs/PHASE_EXIT_REPORTS.md) — End-of-phase retrospectives and unplanned-information audits across all 7 phases.
 - [`docs/PHASE_1_TRACKING.md`](docs/PHASE_1_TRACKING.md) .. [`docs/PHASE_7_TRACKING.md`](docs/PHASE_7_TRACKING.md) — Step-by-step phase execution trackers.
+

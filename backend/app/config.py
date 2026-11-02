@@ -111,7 +111,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def resolve_sqlite_db_path(self) -> Settings:
         """If SQLITE_DB_PATH is set and database_url uses the default, bind to SQLITE_DB_PATH."""
-        cleaned_path = self.sqlite_db_path.strip()
+        cleaned_url = self.database_url.strip().strip("\"'")
+        if cleaned_url.startswith("sqlite+aiosqlite:///app/"):
+            cleaned_url = "sqlite+aiosqlite:////" + cleaned_url[len("sqlite+aiosqlite:///") :]
+        self.database_url = cleaned_url
+        cleaned_path = self.sqlite_db_path.strip().strip("\"'")
         if cleaned_path and self.database_url == DEFAULT_DATABASE_URL:
             posix_path = Path(cleaned_path).as_posix()
             self.database_url = f"sqlite+aiosqlite:///{posix_path}"
