@@ -4,7 +4,6 @@
 > **Branch:** `phase7`  
 > **Complexity Rating:** **4 / 5 (Medium–High)**  
 > **Status:** `COMPLETE (v1.0.0 Released)`  
-> **Master Plan Reference:** [../PLAN.md](../PLAN.md) | [../AGENTS.md](../AGENTS.md) | [PHASE_EXIT_REPORTS.md](PHASE_EXIT_REPORTS.md) | [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md)
 
 ---
 
@@ -12,24 +11,24 @@
 
 ### 1.1 Scheduled Phase 6 User Feedback & Feature Requests (`docs/FEATURE_BACKLOG.md` — Waterfall Update 7A)
 1. **`FB-P6-001` (Single-Device Search Input in New Schedule Modal):**
-   - In [`frontend/src/components/ScheduleFormModal.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/ScheduleFormModal.tsx), when `Apply Schedule To` is set to **Single Device**, render a live search field (`Search device by name, IP, hostname, or MAC...`) directly above the Target Device selector that filters the device list in real time and auto-selects the first matching device.
+   - In [`frontend/src/components/ScheduleFormModal.tsx`](frontend/src/components/ScheduleFormModal.tsx), when `Apply Schedule To` is set to **Single Device**, render a live search field (`Search device by name, IP, hostname, or MAC...`) directly above the Target Device selector that filters the device list in real time and auto-selects the first matching device.
 2. **`FB-P6-002` (Per-Second Live System Clock Below `Logout` Button in Top Header):**
-   - In [`frontend/src/components/AppLayout.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx), add a live 1-second updating system clock (`HH:MM:SS` 24-hour monospace) positioned directly underneath the `Logout` button in the top-right header.
+   - In [`frontend/src/components/AppLayout.tsx`](frontend/src/components/AppLayout.tsx), add a live 1-second updating system clock (`HH:MM:SS` 24-hour monospace) positioned directly underneath the `Logout` button in the top-right header.
 3. **`FB-P6-003` (System Connectivity Tab — `Local SQLite Store` Storage Size & Record Count Stats):**
-   - Enhance `/api/v1/system/health` (`sqlite.details`) in [`backend/app/api/system.py`](file:///d:/source/gateway-front-end/backend/app/api/system.py) to report on-disk SQLite storage size (`storage_bytes` & `storage_size_formatted`, summing `gateway.db` + `-wal` + `-shm`) and total/per-table record counts (`total_records`, `devices_count`, `groups_count`, `timers_count`, `schedules_count`, `audit_logs_count`).
-   - Display **Storage Size** and **Total Records** inside the `Local SQLite Store` service card on [`frontend/src/pages/StatusPage.tsx`](file:///d:/source/gateway-front-end/frontend/src/pages/StatusPage.tsx).
+   - Enhance `/api/v1/system/health` (`sqlite.details`) in [`backend/app/api/system.py`](backend/app/api/system.py) to report on-disk SQLite storage size (`storage_bytes` & `storage_size_formatted`, summing `gateway.db` + `-wal` + `-shm`) and total/per-table record counts (`total_records`, `devices_count`, `groups_count`, `timers_count`, `schedules_count`, `audit_logs_count`).
+   - Display **Storage Size** and **Total Records** inside the `Local SQLite Store` service card on [`frontend/src/pages/StatusPage.tsx`](frontend/src/pages/StatusPage.tsx).
 4. **`FB-P6-004` (Application Usage Stats — Active Usage Time Tracking for YouTube & Plex):**
-   - Extend [`backend/app/clients/elasticsearch.py`](file:///d:/source/gateway-front-end/backend/app/clients/elasticsearch.py) and [`backend/app/services/analytics_service.py`](file:///d:/source/gateway-front-end/backend/app/services/analytics_service.py) with an **Application Usage Aggregator** over `logs-pfsense.log*`:
+   - Extend [`backend/app/clients/elasticsearch.py`](backend/app/clients/elasticsearch.py) and [`backend/app/services/analytics_service.py`](backend/app/services/analytics_service.py) with an **Application Usage Aggregator** over `logs-pfsense.log*`:
      - **YouTube Signature:** DNS queries (`event.dataset: "pfsense.unbound"`) matching `youtube.com`, `*.youtube.com`, `googlevideo.com`, `*.googlevideo.com`, `ytimg.com`, `*.ytimg.com`, `youtu.be`, `youtubei.googleapis.com`, `youtube-nocookie.com`.
      - **Plex Signature:** DNS queries matching `plex.tv`, `*.plex.tv`, `plex.direct`, `*.plex.direct`, `plex.bz`, `plexapp.com`, `*.plexapp.com` plus firewall events (`event.dataset: "pfsense.filterlog"`) on port `32400`.
      - **Active Time Calculation (`active_minutes`):** Bucket activity into 5-minute intervals (`fixed_interval: "5m"`) so each active 5m bucket contributes 5 minutes of active usage (`active_minutes = active_buckets * 5`), alongside `event_count`, `bytes`, and `last_active_at`.
    - Render **Application Usage (YouTube & Plex)** cards showing active usage time (e.g., `1h 20m` / `35m`), event counts, and bandwidth in:
-     - [`DeviceAnalyticsDrawer.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/DeviceAnalyticsDrawer.tsx)
-     - [`GroupAnalyticsDrawer.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/GroupAnalyticsDrawer.tsx)
-     - [`AnalyticsPage.tsx`](file:///d:/source/gateway-front-end/frontend/src/pages/AnalyticsPage.tsx)
+     - [`DeviceAnalyticsDrawer.tsx`](frontend/src/components/DeviceAnalyticsDrawer.tsx)
+     - [`GroupAnalyticsDrawer.tsx`](frontend/src/components/GroupAnalyticsDrawer.tsx)
+     - [`AnalyticsPage.tsx`](frontend/src/pages/AnalyticsPage.tsx)
 5. **`FB-P6-005` (Selective Application Blocking — Block YouTube While Allowing Plex & Everything Else):**
-   - Add `is_youtube_blocked: Mapped[bool]` (default `False`) to `Device` in [`backend/app/models/__init__.py`](file:///d:/source/gateway-front-end/backend/app/models/__init__.py) (and non-destructive startup column migration in [`backend/app/db/__init__.py`](file:///d:/source/gateway-front-end/backend/app/db/__init__.py) + Alembic migration `0006_phase7_youtube_block.py`).
-   - Extend [`OPNsenseClient`](file:///d:/source/gateway-front-end/backend/app/clients/opnsense.py) to manage OPNsense's selective YouTube block aliases:
+   - Add `is_youtube_blocked: Mapped[bool]` (default `False`) to `Device` in [`backend/app/models/__init__.py`](backend/app/models/__init__.py) (and non-destructive startup column migration in [`backend/app/db/__init__.py`](backend/app/db/__init__.py) + Alembic migration `0006_phase7_youtube_block.py`).
+   - Extend [`OPNsenseClient`](backend/app/clients/opnsense.py) to manage OPNsense's selective YouTube block aliases:
      - `gateway_youtube_blocked_devices` (`host` alias containing IPv4s of devices with YouTube blocked)
      - `gateway_youtube_domains` (`host` alias containing YouTube FQDNs `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be`, `googlevideo.com`, `ytimg.com`, `i.ytimg.com`, `s.ytimg.com`, `youtubei.googleapis.com`, `youtube-nocookie.com`)
      - Auto-ensures both aliases exist on OPNsense via `/api/firewall/alias/*` and adds/removes device IPs in `gateway_youtube_blocked_devices` via `/api/firewall/alias_util/*` + `kill_states`, leaving **Plex** (`plex.tv`, `plex.direct`, `:32400`) and all other internet traffic completely allowed!

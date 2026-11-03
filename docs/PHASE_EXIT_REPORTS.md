@@ -14,7 +14,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Backend Static Analysis (`ruff` + `mypy`):** `0 errors` across all 15 source files and test suites.
 - **Frontend Unit Tests (`Vitest`):** `4 / 4 passed` in `1.33s` — **98.78% line/statement coverage**, **92.85% branch coverage**, **100% function coverage**.
 - **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.49s` with `0 errors`.
-- **Full-Stack Live Smoke Test:** Passed against live `https://gateway.sparkle-pony.com` (`373.01 ms`), `https://es1.sparkle-pony.com` (`39.53 ms`, `6,689,623` docs in `logs-pfsense.log*`), and local SQLite (`54.11 ms`).
+- **Full-Stack Live Smoke Test:** Passed against live `https://opnsense.example.local` (`373.01 ms`), `https://elasticsearch.example.local:9200` (`39.53 ms`, `6,689,623` docs in `logs-pfsense.log*`), and local SQLite (`54.11 ms`).
 - **Bugs Resolved in Phase 1:** `5` (`BUG-P1-001` through `BUG-P1-005` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `3` live environment schema discoveries waterfalled into Phases 2 and 3 of [PLAN.md](../PLAN.md).
 
@@ -26,14 +26,13 @@ At the completion of every phase (before Git check-in and unlocking the next pha
    - **Update 2B — Dual-Path Alias Mutation (`alias_util` + `/api/firewall/alias/*` Config Fallback):** Because `Firewall: Aliases` (`page-firewall-aliases`) grants access to `/api/firewall/alias/*` (`get_alias_uuid`, `get_item`, `set_item`, `reconfigure`) whereas `/api/firewall/alias_util/*` requires `Diagnostics: PF Table IP addresses` (`page-diagnostics-table`), Phase 2's `block_ip()` and `unblock_ip()` methods in `OPNsenseClient` will support `alias_util/add` & `alias_util/delete` with an automatic fallback to `get_alias_uuid` → `get_item` → `set_item` → `reconfigure` so blocking works with or without `page-diagnostics-table`.
    - **Phase 2 Complexity Impact:** Remains **3 / 5 (Medium)** (risk reduced because exact ARP/Dnsmasq JSON schemas and alias UUID `7eb9bc75-bcba-42f9-8193-f5b14090488a` are already verified).
 2. **Waterfalled into Phase 3 (Elasticsearch `9.4.3` Analytics):**
-   - **Update 3A — Verified `filterlog` & `unbound` ECS Field Paths:** Live inspection (`docs/ES_SCHEMA_DISCOVERY.md`) confirmed that OPNsense uses **Unbound** for DNS resolution (`event.provider: "unbound"`, `3.02M+` docs) and that `dns.question.name`, `dns.question.registered_domain`, `dns.question.subdomain`, `source.ip`, and `client.ip` are already populated without needing any custom ingest pipeline changes. Bandwidth/connection queries will filter by `event.provider: "filterlog"` (`network.bytes`, `event.action: pass | block`, `destination.as.organization.name`).
    - **Phase 3 Complexity Impact:** Confirmed at **3.5 / 5 (Medium–High)** (down from original `4 / 5`).
 
 ---
 
 ### 3. Unplanned Information Audit & Feed-Forward Learnings for Phase 2
 - **What information or configuration was needed that we did not originally plan for?**
-  - *Finding 1 (Host & TLS Setup):* OPNsense is accessed via FQDN `https://gateway.sparkle-pony.com` (`192.168.50.1`) and Elasticsearch via `https://es1.sparkle-pony.com`, both with valid TLS certificates (`VERIFY_SSL=true`).
+  - *Finding 1 (Host & TLS Setup):* OPNsense is accessed via FQDN `https://opnsense.example.local` (`192.168.1.1`) and Elasticsearch via `https://elasticsearch.example.local:9200`, both with valid TLS certificates (`VERIFY_SSL=true`).
   - *Finding 2 (OPNsense `26.7.7-amd64` GUI & `ACL.xml` Exact Naming):*
     1. Dnsmasq only exposes `Services: Dnsmasq DNS/DHCP: Settings` and `Services: Dnsmasq DNS/DHCP: Logfile` (`Settings` maps to `api/dnsmasq/*`, which covers `/api/dnsmasq/leases/search`).
     2. `Diagnostics: ARP Table` (`page-diagnostics-arptable`) maps strictly to `snake_case` `api/diagnostics/interface/get_arp*` and `api/diagnostics/interface/search_arp*` — camelCase `getArp` would fail with `403` for a non-root user.
@@ -44,10 +43,9 @@ At the completion of every phase (before Git check-in and unlocking the next pha
     2. Unbound DNS queries (`3.02M+` docs) and filterlog packet records (`3.63M+` docs) are already parsed into ECS fields (`dns.question.name`, `dns.question.registered_domain`, `network.bytes`, `destination.as.organization.name`).
   - *Finding 4 (Local Windows Dev Environment Tooling & Docker Desktop Path):*
     1. Neither Python nor Node.js were on the global system `PATH`; we provisioned portable CPython `3.12.15` and Node.js `v22.14.0` inside `.uv/` (git-ignored and docker-ignored).
-    2. Docker Desktop (`v29.9.2`, Compose `v5.6.1`) is installed in the per-user directory `C:\Users\cpavl\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe` (rather than `C:\Program Files\Docker`) and should be prepended to `$env:PATH` in tool sessions.
+    2. Docker Desktop (`v29.9.2`, Compose `v5.6.1`) is installed in the per-user directory `Docker Desktop (`docker.exe`)` (rather than `C:\Program Files\Docker`) and should be prepended to `$env:PATH` in tool sessions.
     3. `coverage.py`'s legacy C-tracer (`ctrace`) deadlocks with `aiosqlite` worker threads on Windows Python 3.12; setting `core = "sysmon"` (PEP 669) in `backend/pyproject.toml` resolved it permanently (`BUG-P1-001`).
 - **How we will apply these learnings to Phase 2:**
-  1. Use the real (redacted) ARP and Dnsmasq lease JSON structures from [docs/ES_SCHEMA_DISCOVERY.md](ES_SCHEMA_DISCOVERY.md) directly in Phase 2 `respx` test fixtures.
   2. Implement both `alias_util` (`add`/`delete`) and `/api/firewall/alias/*` (`set_item` + `reconfigure`) fallback in `OPNsenseClient` so device blocking works reliably under your current `svc_gateway_ui` privileges.
 
 ---
@@ -60,8 +58,8 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Frontend Unit Tests (`Vitest`):** `7 / 7 passed` in `3.56s` — **96.59% line/statement coverage**, **87.15% branch coverage**, **90.16% function coverage**.
 - **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.57s` with `0 errors`.
 - **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
-  - Reconciled **`69` total network devices** (`57` online in ARP, `0` literal `"*"` hostnames remaining, `192.168.50.1` automatically locked as Protected).
-  - Verified live single-click **Block** and **Allow (Unblock)** end-to-end against `https://gateway.sparkle-pony.com` (`OPNsense 26.7.7-amd64`).
+  - Reconciled **`69` total network devices** (`57` online in ARP, `0` literal `"*"` hostnames remaining, `192.168.1.1` automatically locked as Protected).
+  - Verified live single-click **Block** and **Allow (Unblock)** end-to-end against `https://opnsense.example.local` (`OPNsense 26.7.7-amd64`).
 - **Bugs Resolved in Phase 2:** `4` (`BUG-P2-001` through `BUG-P2-004` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `1` enrichment update waterfalled into Phase 3 of [PLAN.md](../PLAN.md).
 
@@ -85,7 +83,6 @@ At the completion of every phase (before Git check-in and unlocking the next pha
     - When `coverage.py` uses `core = "sysmon"` on Python 3.12, `greenlet` C-stack switches inside `await db.execute(...)` cause `sys.monitoring` to stop emitting `LINE` events for the remainder of that coroutine frame. Placing post-query synchronous business logic in dedicated helper functions ensures fresh stack frames that `sys.monitoring` traces at 100%.
 - **How we will apply these learnings to Phase 3:**
   1. Structure Phase 3's `backend/app/services/analytics_service.py` with clean synchronous query-builder and response-normalizer helper functions around async Elasticsearch calls so unit tests stay fast, deterministic, and 100% traced by `sys.monitoring`.
-  2. Use the verified `filterlog` (`3.63M+` docs) and `unbound` (`3.02M+` docs) ECS field paths (`network.bytes`, `event.action`, `dns.question.name`, `dns.question.registered_domain`, `destination.as.organization.name`) from [docs/ES_SCHEMA_DISCOVERY.md](ES_SCHEMA_DISCOVERY.md).
 
 ---
 
@@ -137,7 +134,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Frontend Unit Tests (`Vitest`):** `12 / 12 passed` in `3.92s` — **94.06% line/statement coverage**, **84.22% branch coverage**, **89.70% function coverage**.
 - **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.59s` with `0 errors`.
 - **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
-  - Verified live Group creation, member assignment, one-click Group Block/Unblock against `https://gateway.sparkle-pony.com`, and multi-IP Group Analytics (`108,822` events / `37.65 MB` / `32,692` DNS queries with per-member contribution breakdown) against `https://es1.sparkle-pony.com`.
+  - Verified live Group creation, member assignment, one-click Group Block/Unblock against `https://opnsense.example.local`, and multi-IP Group Analytics (`108,822` events / `37.65 MB` / `32,692` DNS queries with per-member contribution breakdown) against `https://elasticsearch.example.local:9200`.
   - User confirmed manual verification: *"Buttons are working; Block / Unblock works, including with created groups"*, and provided 11 structured UI & feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md).
 - **Bugs Resolved in Phase 4:** `1` (`BUG-P4-001` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `11` user UI/feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and waterfalled into Phases 5–7 of [PLAN.md](../PLAN.md).
@@ -234,7 +231,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
     - Confirmed header displays `v0.6.0`, `Logout` (`FB-P5-006`), and the new **`Schedules & Bedtime`** navigation tab.
     - Confirmed `Devices & Access Control` header description cleanup (`FB-P5-008`), 24-hour `Synced: HH:MM:SS` clock beneath `Sync from OPNsense` (`FB-P5-009`), aligned `Timer` button height (`FB-P5-005`), and fixed-width Group `Filter` button (`FB-P5-007`).
     - Confirmed centered screen modal for Timer controls (`FB-P5-001`), unified active countdown & color inside the `Timer` button (`FB-P5-002`), duration-only preset labels (`FB-P5-003`), and `20m`/`40m`/`60m` Bonus Access presets (`FB-P5-004`).
-    - Confirmed `Schedules & Bedtime` tab (`SchedulesPage.tsx` & `ScheduleFormModal.tsx`) and host SQLite persistence at `d:\source\gateway-front-end\data\gateway.db` (`FB-P5-010`).
+    - Confirmed `Schedules & Bedtime` tab (`SchedulesPage.tsx` & `ScheduleFormModal.tsx`) and host SQLite persistence at `<repo-root>\data\gateway.db` (`FB-P5-010`).
 
 ---
 

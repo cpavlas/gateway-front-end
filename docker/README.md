@@ -1,6 +1,6 @@
 # Docker Packaging & Deployment Guide (`gateway-front-end`)
 
-This directory contains all Docker-specific build and orchestration files for running the **Sparkle-Pony Gateway Access Control & Telemetry Portal** as a single, self-hosted container.
+This directory contains all Docker-specific build and orchestration files for running the **Gateway Access Control & Telemetry Portal** as a single, self-hosted container.
 
 ---
 
@@ -18,7 +18,7 @@ flowchart LR
     subgraph Stage2["Stage 2: runtime (python:3.12-slim)"]
         B1["backend/pyproject.toml<br/>backend/app + alembic"] --> B2["pip install ."]
         F3 -->|COPY --from=frontend-builder| B3["/app/frontend/dist"]
-        B2 --> B4["Uvicorn (app.main:app)<br/>Non-root user: gateway (10001)"]
+        B2 --> B4["app.entrypoint -> Uvicorn (app.main:app)<br/>Non-root user: gateway (10001)"]
         B3 --> B4
     end
 ```
@@ -30,7 +30,7 @@ flowchart LR
    - Creates a dedicated non-root system user and group (`gateway`, `UID=10001`, `GID=10001`).
    - Installs the FastAPI backend (`uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `aiosqlite`, `httpx`, `elasticsearch[async]`, `argon2-cffi`, `PyJWT`, `APScheduler`).
    - Copies only the compiled static assets (`/build/frontend/dist` → `/app/frontend/dist`), keeping Node.js and `node_modules` out of the final runtime image.
-   - Runs `uvicorn app.main:app --host 0.0.0.0 --port 8000` serving both:
+   - Runs `python -m app.entrypoint`, which ensures `/app/data` ownership for `gateway` (`10001:10001`), drops root privileges, and launches `uvicorn app.main:app --host 0.0.0.0 --port 8000` serving both:
      - REST API endpoints under `/api/v1/*`
      - Compiled React Single-Page Application (SPA) at `/` with client-side route fallback.
 
@@ -58,9 +58,9 @@ Before building or starting the container, ensure the hidden **`.env`** file exi
 2. Populate all required secrets in `../.env` (see [`../docs/API_KEYS_SETUP.md`](../docs/API_KEYS_SETUP.md) for step-by-step instructions):
    - `APP_SECRET_KEY` — 64-character hex string (`32+` bytes) used to sign `HttpOnly` JWT session cookies.
    - `ADMIN_USERNAME` & `ADMIN_PASSWORD` — Built-in web administrator credentials (plaintext or `$argon2id$...` hash).
-   - `OPNSENSE_BASE_URL` — `https://gateway.sparkle-pony.com`
+   - `OPNSENSE_BASE_URL` — Base URL of your OPNsense firewall (e.g., `https://opnsense.example.local`).
    - `OPNSENSE_API_KEY` & `OPNSENSE_API_SECRET` — Scoped `svc_gateway_ui` credentials.
-   - `ELASTICSEARCH_HOSTS` — `https://es1.sparkle-pony.com`
+   - `ELASTICSEARCH_URL` — Base URL of your Elasticsearch cluster (e.g., `https://elasticsearch.example.local:9200`).
    - `ELASTICSEARCH_API_KEY` — Read-only Base64-encoded API key scoped to `logs-pfsense.log*`.
 
 > **Security Note:** The root `.env` file is excluded from Git via `../.gitignore` and excluded from the Docker build context via [`Dockerfile.dockerignore`](Dockerfile.dockerignore). Secrets are injected solely at container runtime via `env_file`.
@@ -71,13 +71,13 @@ Before building or starting the container, ensure the hidden **`.env`** file exi
 
 You can run Docker Compose either from inside the `docker/` folder or from the repository root.
 
-### Option A: Run from inside the `docker/` directory (Recommended)
+### Option A: Run from inside the `docker/` directory
 ```bash
 cd docker
 docker compose up -d --build
 ```
 
-### Option B: Run from the repository root directory
+### Option B: Run from the repository root directory (Recommended)
 ```bash
 docker compose -f docker/docker-compose.yml --env-file .env up -d --build
 ```
@@ -94,12 +94,12 @@ docker run -d \
   --restart unless-stopped \
   --env-file .env \
   -e SQLITE_DB_PATH=/app/data/gateway.db \
-  -p 8000:8000 \
+  -p 8080:8000 \
   -v "$(pwd)/data:/app/data" \
   gateway-front-end:latest
 ```
 
-Once running, open **`http://localhost:8000`** (or the host's LAN IP/hostname on port `8000`) in your browser.
+Once running, open **`http://localhost:8080`** (or the host's LAN IP/hostname on the configured `APP_PORT`) in your browser.
 
 ---
 
@@ -107,19 +107,13 @@ Once running, open **`http://localhost:8000`** (or the host's LAN IP/hostname on
 
 ### 5.1 SQLite Volume Persistence (`../data:/app/data`)
 - The container stores its SQLite database at `/app/data/gateway.db` (mounted from `<repo-root>/data` on the host).
-- Because the container runs as non-root user `gateway` (`UID=10001`, `GID=10001`), on **Linux hosts** ensure the host `./data` directory is writable by `10001:10001`:
-  ```bash
-  mkdir -p data
-  sudo chown -R 10001:10001 data
-  ```
+- On container startup, `app.entrypoint` automatically ensures `/app/data` is owned by `gateway` (`10001:10001`) before dropping root privileges.
 
-### 5.2 Hostname Resolution (`gateway.sparkle-pony.com` & `es1.sparkle-pony.com`)
-- The container connects outbound to `https://gateway.sparkle-pony.com` and `https://es1.sparkle-pony.com`.
-- If your Docker host uses OPNsense (`192.168.50.1`) as its DNS server, Docker containers will resolve `*.sparkle-pony.com` automatically.
-- If your Docker daemon uses external DNS (e.g., `1.1.1.1` or `8.8.8.8`) and cannot resolve internal `.sparkle-pony.com` records, uncomment or add `dns` / `extra_hosts` in [`docker-compose.yml`](docker-compose.yml):
+### 5.2 Internal DNS Resolution (Optional)
+- If your Docker daemon uses external DNS (e.g., `1.1.1.1` or `8.8.8.8`) and cannot resolve internal LAN hostnames for OPNsense or Elasticsearch, add `dns` or `extra_hosts` in [`docker-compose.yml`](docker-compose.yml):
   ```yaml
     dns:
-      - 192.168.50.1
+      - 192.168.1.1
   ```
 
 ### 5.3 Custom Internal CA Certificates (Optional)
@@ -128,9 +122,9 @@ Once running, open **`http://localhost:8000`** (or the host's LAN IP/hostname on
      ```yaml
      volumes:
        - ../data:/app/data
-       - ../certs/sparkle-pony-ca.crt:/app/certs/sparkle-pony-ca.crt:ro
+       - ../certs/internal-ca.crt:/app/certs/internal-ca.crt:ro
      ```
-  2. Set `OPNSENSE_CA_CERT_PATH=/app/certs/sparkle-pony-ca.crt` and/or `ELASTICSEARCH_CA_CERT_PATH=/app/certs/sparkle-pony-ca.crt` in `../.env`.
+  2. Set `OPNSENSE_CA_CERT_PATH=/app/certs/internal-ca.crt` and/or `ELASTICSEARCH_CA_CERT_PATH=/app/certs/internal-ca.crt` in `../.env`.
 
 ---
 
@@ -139,24 +133,17 @@ Once running, open **`http://localhost:8000`** (or the host's LAN IP/hostname on
 ### Built-in Container Healthcheck
 The container executes a lightweight liveness probe every `30s`:
 - **Endpoint:** `GET http://127.0.0.1:8000/api/v1/system/ping`
-- **Expected Response:** `200 OK` (`{"status": "ok", "version": "0.1.0"}`)
+- **Expected Response:** `200 OK` (`{"status": "ok", "version": "1.0.1"}`)
 - **Deep Connectivity Health (Authenticated):** `GET /api/v1/system/health` (verifies SQLite, OPNsense API credentials/ARP/leases/block-alias, and Elasticsearch `9.4.3` `logs-pfsense.log*` status).
 
-### Common Commands (from `docker/` directory)
+### Common Commands
 ```bash
 # Check container status and healthcheck state
-docker compose ps
+docker compose -f docker/docker-compose.yml --env-file .env ps
 
 # Follow live application logs
-docker compose logs -f gateway-front-end
+docker compose -f docker/docker-compose.yml --env-file .env logs -f gateway-front-end
 
-# Restart the container after editing ../.env
-docker compose up -d --force-recreate
-
-# Rebuild after pulling new backend/frontend code
-docker compose up -d --build
-
-# Stop and remove the container (preserves ../data/gateway.db)
-docker compose down
+# Rebuild and restart after pulling updates
+docker compose -f docker/docker-compose.yml --env-file .env up -d --build
 ```
-

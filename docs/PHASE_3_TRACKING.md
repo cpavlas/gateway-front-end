@@ -4,7 +4,6 @@
 > **Branch:** `phase3`  
 > **Complexity Rating:** **3.5 / 5 (Medium–High)**  
 > **Status:** `COMPLETE (Ready for Git Check-in)`  
-> **Master Plan Reference:** [PLAN.md](PLAN.md) | [docs/ES_SCHEMA_DISCOVERY.md](docs/ES_SCHEMA_DISCOVERY.md)
 
 ---
 
@@ -104,7 +103,7 @@ flowchart LR
 ### Step 3.4 — Docker Container Rebuild & Live Elasticsearch `9.4.3` Smoke Verification
 - **Tasks:**
   - [x] Rebuild and restart the Docker container (`docker compose -f docker/docker-compose.yml --env-file .env up -d --build`).
-  - [x] Verify `/api/v1/analytics/overview` and `/api/v1/devices/{id}/analytics` inside the running container at `http://localhost:8080` against live Elasticsearch `9.4.3` (`https://es1.sparkle-pony.com`, `logs-pfsense.log*`).
+  - [x] Verify `/api/v1/analytics/overview` and `/api/v1/devices/{id}/analytics` inside the running container at `http://localhost:8080` against live Elasticsearch `9.4.3` (`https://elasticsearch.example.local:9200`, `logs-pfsense.log*`).
 - **Checkpoint `CP-3.4` Verification Criteria:**
   - [x] Container reaches `healthy` status and user confirms live Usage Stats, Access Time charts, and Visited Domains at `http://localhost:8080`.
 

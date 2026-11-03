@@ -48,7 +48,7 @@
 #### `FB-P4-001` — Remove `SYSTEM:` Prefix from Header Health Status Pill
 - **User Feedback:** *"Remove the word SYSTEM: from SYSTEM: HEALTHY and instead just show the health status (HEALTHY, DOWN, etc)"*
 - **Current Implementation:**
-  - In [frontend/src/components/AppLayout.tsx](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx#L140-L149), the top navigation status badge renders:
+  - In [frontend/src/components/AppLayout.tsx](frontend/src/components/AppLayout.tsx#L140-L149), the top navigation status badge renders:
     ```tsx
     <span>System: {overallStatus}</span>
     ```
@@ -63,8 +63,8 @@
 #### `FB-P4-002` — Application Version Incrementing Across Phase Pushes
 - **User Feedback:** *"Version still shows v0.1.0 even after multiple updates. Ensure this increments after each push to match the current version in GitHub"*
 - **Current Implementation:**
-  - [backend/app/__init__.py](file:///d:/source/gateway-front-end/backend/app/__init__.py#L3) hardcodes `__version__ = "0.1.0"`, which is returned by `/api/v1/system/health` (`app_version`) and rendered in [frontend/src/components/AppLayout.tsx](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx#L151) (`v{health?.app_version || '0.1.0'}`).
-  - [backend/pyproject.toml](file:///d:/source/gateway-front-end/backend/pyproject.toml#L7) and [frontend/package.json](file:///d:/source/gateway-front-end/frontend/package.json#L4) also declare `"0.1.0"`.
+  - [backend/app/__init__.py](backend/app/__init__.py#L3) hardcodes `__version__ = "0.1.0"`, which is returned by `/api/v1/system/health` (`app_version`) and rendered in [frontend/src/components/AppLayout.tsx](frontend/src/components/AppLayout.tsx#L151) (`v{health?.app_version || '0.1.0'}`).
+  - [backend/pyproject.toml](backend/pyproject.toml#L7) and [frontend/package.json](frontend/package.json#L4) also declare `"0.1.0"`.
 - **Planned Change & Governance Rule:**
   - Synchronize version numbers across `backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json`, and the fallback string in `frontend/src/components/AppLayout.tsx` (plus `backend/tests/test_health.py` assertions) using semantic phase versioning:
     - **Phase 4 check-in:** `0.4.0`
@@ -81,7 +81,7 @@
 #### `FB-P4-003` — Change Telemetry Column Button Label to `Analytics`
 - **User Feedback:** *"For items in Telemetry column, change label to Analytics instead of Usage & Domains"*
 - **Current Implementation:**
-  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L535), the Telemetry button on each row renders `Usage & Domains`.
+  - In [frontend/src/pages/DevicesPage.tsx](frontend/src/pages/DevicesPage.tsx#L535), the Telemetry button on each row renders `Usage & Domains`.
 - **Planned Change:**
   - Change the button label from `Usage & Domains` to `Analytics` in `DevicesPage.tsx` and update matching queries in `frontend/src/__tests__/DeviceAnalytics.test.tsx`.
 - **Complexity:** `1 / 5` (Low).
@@ -91,7 +91,7 @@
 #### `FB-P4-004` — Internet Access Column Button: Show Only Current State (`Blocked` / `Allowed`)
 - **User Feedback:** *"For internet access column, remove the -- Click to block and instead just show the current state. Clicking will still change the state appropriately"*
 - **Current Implementation:**
-  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L563-L578), the toggle button displays `Blocked — Click to Allow` when blocked and `Allowed — Click to Block` when allowed.
+  - In [frontend/src/pages/DevicesPage.tsx](frontend/src/pages/DevicesPage.tsx#L563-L578), the toggle button displays `Blocked — Click to Allow` when blocked and `Allowed — Click to Block` when allowed.
 - **Planned Change:**
   - Simplify the visible button text to `Blocked` (when `device.is_blocked === true`) and `Allowed` (when `device.is_blocked === false`), preserving the click handler, hover styling, `title` tooltip, and `aria-label` accessibility attributes.
   - Update matching button text assertions in `frontend/src/__tests__/DevicesPage.test.tsx`.
@@ -102,7 +102,7 @@
 #### `FB-P4-005` — Remove ``(`dns.question.name`)`` from `Top Visited Domains` Label in Analytics Drawer
 - **User Feedback:** *"Analytics pop out drawer, remove ('dns.question.name') from Top Visited Domains label"*
 - **Current Implementation:**
-  - In [frontend/src/components/DeviceAnalyticsDrawer.tsx](file:///d:/source/gateway-front-end/frontend/src/components/DeviceAnalyticsDrawer.tsx#L431-L435), the card header reads:
+  - In [frontend/src/components/DeviceAnalyticsDrawer.tsx](frontend/src/components/DeviceAnalyticsDrawer.tsx#L431-L435), the card header reads:
     `Top Visited Domains (dns.question.name)`.
 - **Planned Change:**
   - Change the header to `Top Visited Domains` (matching `GroupAnalyticsDrawer.tsx`).
@@ -113,7 +113,7 @@
 #### `FB-P4-006` — Stacked Usage & Activity Timeline Bar Graph with Color Key & Hover Breakdown
 - **User Feedback:** *"Analytics pop out drawer, For Usage & Activity Timeline graph, change graph to a stacked graph that shows different colors for DNS and Firewall Events stacked on the bar. Show the key for the colors as a label in the graph and have it reflected in the pop up when mouse over for details"*
 - **Current Implementation:**
-  - In [frontend/src/components/DeviceAnalyticsDrawer.tsx](file:///d:/source/gateway-front-end/frontend/src/components/DeviceAnalyticsDrawer.tsx#L330-L371) (and [frontend/src/components/GroupAnalyticsDrawer.tsx](file:///d:/source/gateway-front-end/frontend/src/components/GroupAnalyticsDrawer.tsx#L382-L414)), each timeline bucket already receives `total_events`, `dns_queries`, `allowed_events`, `blocked_events`, and `bytes_total` from the backend, but renders a single solid cyan bar sized by `total_events`.
+  - In [frontend/src/components/DeviceAnalyticsDrawer.tsx](frontend/src/components/DeviceAnalyticsDrawer.tsx#L330-L371) (and [frontend/src/components/GroupAnalyticsDrawer.tsx](frontend/src/components/GroupAnalyticsDrawer.tsx#L382-L414)), each timeline bucket already receives `total_events`, `dns_queries`, `allowed_events`, `blocked_events`, and `bytes_total` from the backend, but renders a single solid cyan bar sized by `total_events`.
 - **Planned Change:**
   - Compute for each bucket:
     - `dnsEvents = bucket.dns_queries`
@@ -168,9 +168,9 @@
   - *"Remove ('logs-pfsense.log*') from title label"*
   - *"In Top Active LAN Devices list, change the button for the Inspect column to be Inspect instead of Inspect Device"*
 - **Current Implementation:**
-  - In [frontend/src/pages/AnalyticsPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/AnalyticsPage.tsx#L91), the page `<h2>` reads:
+  - In [frontend/src/pages/AnalyticsPage.tsx](frontend/src/pages/AnalyticsPage.tsx#L91), the page `<h2>` reads:
     `Network Traffic & DNS Analytics (logs-pfsense.log*)`.
-  - In [frontend/src/pages/AnalyticsPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/AnalyticsPage.tsx#L285), the action button in the `Inspect` column of `Top Active LAN Devices` reads `Inspect Device`.
+  - In [frontend/src/pages/AnalyticsPage.tsx](frontend/src/pages/AnalyticsPage.tsx#L285), the action button in the `Inspect` column of `Top Active LAN Devices` reads `Inspect Device`.
 - **Planned Change:**
   - Change the page title to `Network Traffic & DNS Analytics`.
   - Change the button label from `Inspect Device` to `Inspect` (and update `frontend/src/__tests__/AnalyticsPage.test.tsx`).
@@ -184,7 +184,7 @@
 - **User Feedback:** *"Network Device Inventory & Internet Access Control table is still not present but was planned initially for Phase 2. Review design documents to complete table and move to new phase for implementation and evaluate if it is still needed, or makes sense, to have."*
 - **Design & Historical Root-Cause Evaluation:**
   1. **Why That Box Exists in `StatusPage.tsx`:**
-     - In **Phase 1**, before any tabs existed, `StatusPage.tsx` was the *only* page in the app. At the bottom of [frontend/src/pages/StatusPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/StatusPage.tsx#L203-L218), we placed a dashed placeholder card titled `Network Device Inventory & Internet Access Control` with a badge saying `"Phase 1 Foundation Ready"` and copy stating *"Phase 2 connects live ARP & Dnsmasq DHCP leases from OPNsense to populate the interactive device control table here."*
+     - In **Phase 1**, before any tabs existed, `StatusPage.tsx` was the *only* page in the app. At the bottom of [frontend/src/pages/StatusPage.tsx](frontend/src/pages/StatusPage.tsx#L203-L218), we placed a dashed placeholder card titled `Network Device Inventory & Internet Access Control` with a badge saying `"Phase 1 Foundation Ready"` and copy stating *"Phase 2 connects live ARP & Dnsmasq DHCP leases from OPNsense to populate the interactive device control table here."*
   2. **What Happened in Phase 2:**
      - When we built **Phase 2**, instead of cramming the 69-device control table underneath the 3 health cards on `StatusPage.tsx`, we introduced the top navigation bar in `AppLayout.tsx` with dedicated tabs:
        - **Tab 1 (Default Home View): `Devices & Access Control`** (`DevicesPage.tsx`) — containing the full KPI bar, Device Groups & Profiles, and the complete searchable/sortable **Network Device Inventory & Internet Access Control** table.
@@ -251,20 +251,20 @@
 #### `FB-P5-006` — Change Header `Sign Out` Button Label to `Logout`
 - **User Feedback:** *"Change the Sign Out button to simply say Logout"*
 - **Planned Change:**
-  - In [frontend/src/components/AppLayout.tsx](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx#L166), change `Sign Out` to `Logout` (keep `aria-label="Logout"` / update unit tests in `App.test.tsx`).
+  - In [frontend/src/components/AppLayout.tsx](frontend/src/components/AppLayout.tsx#L166), change `Sign Out` to `Logout` (keep `aria-label="Logout"` / update unit tests in `App.test.tsx`).
 - **Complexity:** `1 / 5` (Low).
 
 #### `FB-P5-007` — Keep Group Card Button Layout Fixed When `Filter` Is Clicked
 - **User Feedback:** *"When clicking filter, the window reorganizes the buttons and stacks them. Update to instead only highlight the Filtered Button but not change the layout at all"*
 - **Root Cause & Planned Change:**
-  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L288-L300), clicking `Filter` currently changes the button label from `Filter` to `Filtered` (widening the button) AND wraps the flex row on narrower cards.
+  - In [frontend/src/pages/DevicesPage.tsx](frontend/src/pages/DevicesPage.tsx#L288-L300), clicking `Filter` currently changes the button label from `Filter` to `Filtered` (widening the button) AND wraps the flex row on narrower cards.
   - Keep the button text constant as `Filter` (with `whitespace-nowrap`) and only toggle the highlighted visual state (`border-indigo-400 bg-indigo-500/25 text-indigo-100 ring-1 ring-indigo-400/40` vs. default slate), so zero width or layout shift occurs when toggling a group filter.
 - **Complexity:** `1 / 5` (Low).
 
 #### `FB-P5-008` — Remove ``(`gateway_blocked_devices`)`` from Devices Page Header Description
 - **User Feedback:** *"In the page header for the view, remove (`gateway_blocked_services`) from the description"*
 - **Planned Change:**
-  - In [frontend/src/pages/DevicesPage.tsx](file:///d:/source/gateway-front-end/frontend/src/pages/DevicesPage.tsx#L162-L166), change the subtitle from:
+  - In [frontend/src/pages/DevicesPage.tsx](frontend/src/pages/DevicesPage.tsx#L162-L166), change the subtitle from:
     `Live OPNsense ARP & Dnsmasq DHCP inventory with instant firewall alias enforcement (gateway_blocked_devices)`
     to:
     `Live OPNsense ARP & Dnsmasq DHCP inventory with instant firewall enforcement`.
@@ -288,7 +288,7 @@
     - `docker/docker-compose.yml` mounts host `../data:/app/data` and sets `SQLITE_DB_PATH=/app/data/gateway.db`.
     - However, `docker/Dockerfile` sets `WORKDIR /app/backend`, and `Settings.database_url` in `backend/app/config.py` defaults to `sqlite+aiosqlite:///./data/gateway.db` (without reading `SQLITE_DB_PATH`), which resolved to `/app/backend/data/gateway.db` *inside the ephemeral container filesystem* instead of `/app/data/gateway.db` on the mounted host volume!
   - **Planned Fix (Scheduled for Phase 6 Step 6.1):**
-    1. Update `Settings` in `backend/app/config.py` (and `docker/Dockerfile` + `docker/docker-compose.yml`) so that when `SQLITE_DB_PATH` is set (or in container defaults), `database_url` resolves to `sqlite+aiosqlite:////app/data/gateway.db` (the host-mounted `d:\source\gateway-front-end\data\gateway.db` volume).
+    1. Update `Settings` in `backend/app/config.py` (and `docker/Dockerfile` + `docker/docker-compose.yml`) so that when `SQLITE_DB_PATH` is set (or in container defaults), `database_url` resolves to `sqlite+aiosqlite:////app/data/gateway.db` (the host-mounted `<repo-root>\data\gateway.db` volume).
     2. Ensure startup initialization (`init_db()` / Alembic migrations) non-destructively creates/upgrades tables in `/app/data/gateway.db` so device nicknames, protection flags, groups, active timers, and recurring schedules all survive container restarts, rebuilds, and version upgrades.
 - **Complexity:** `1.5 / 5` (Low–Medium).
 
@@ -299,23 +299,23 @@
 #### `FB-P6-001` — Single-Device Search Field in New Schedule Modal (`ScheduleFormModal.tsx`)
 - **User Feedback:** *"When creating a new schedule for a single device, add a search field above the target device box to allow for quick searching of devices"*
 - **Planned Change:**
-  - In [`frontend/src/components/ScheduleFormModal.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/ScheduleFormModal.tsx), when `targetType === 'device'`, render a search input (`Search device by name, IP, hostname, or MAC...`, `data-testid="schedule-device-search"`) directly above the `Target Device` selector.
+  - In [`frontend/src/components/ScheduleFormModal.tsx`](frontend/src/components/ScheduleFormModal.tsx), when `targetType === 'device'`, render a search input (`Search device by name, IP, hostname, or MAC...`, `data-testid="schedule-device-search"`) directly above the `Target Device` selector.
   - Filter `blockableDevices` in real time by matching against `effective_name`, `display_name`, `hostname`, `ipv4_address`, `mac_address`, and `vendor`, and automatically select the first matching device when the current selection is filtered out.
 - **Complexity:** `1 / 5` (Low).
 
 #### `FB-P6-002` — Live Per-Second System Clock Below `Logout` Button in Top Header (`AppLayout.tsx`)
 - **User Feedback:** *"Add system time to the top of the page below the logout button that does per second updates."*
 - **Planned Change:**
-  - In [`frontend/src/components/AppLayout.tsx`](file:///d:/source/gateway-front-end/frontend/src/components/AppLayout.tsx), wrap the `Logout` button in a right-aligned vertical column (`flex flex-col items-end gap-1`) and render a live 1-second updating clock (`data-testid="header-system-clock"`, formatted in 24-hour `HH:MM:SS` monospace) directly beneath the `Logout` button.
+  - In [`frontend/src/components/AppLayout.tsx`](frontend/src/components/AppLayout.tsx), wrap the `Logout` button in a right-aligned vertical column (`flex flex-col items-end gap-1`) and render a live 1-second updating clock (`data-testid="header-system-clock"`, formatted in 24-hour `HH:MM:SS` monospace) directly beneath the `Logout` button.
 - **Complexity:** `1 / 5` (Low).
 
 #### `FB-P6-003` — Local SQLite Store Storage Size & Record Count Stats (`system.py`, `StatusPage.tsx`)
 - **User Feedback:** *"In system connectivity tab, for Local SQLite Store, add storage size and record count stat."*
 - **Planned Change:**
-  - In [`backend/app/api/system.py`](file:///d:/source/gateway-front-end/backend/app/api/system.py) (`_probe_sqlite()`), compute:
+  - In [`backend/app/api/system.py`](backend/app/api/system.py) (`_probe_sqlite()`), compute:
     - `storage_bytes` and `storage_size_formatted` (summing the on-disk size of `gateway.db`, `gateway.db-wal`, and `gateway.db-shm`, with fallback to `PRAGMA page_count * PRAGMA page_size` for in-memory test DBs).
     - `total_records` and per-table counts (`devices_count`, `groups_count`, `timers_count`, `schedules_count`, `audit_logs_count`).
-  - In [`frontend/src/pages/StatusPage.tsx`](file:///d:/source/gateway-front-end/frontend/src/pages/StatusPage.tsx), display **Storage Size** (e.g., `140.0 KB`) and **Total Records** (with table breakdown) inside the `Local SQLite Store` service card (`data-testid="service-card-sqlite"`).
+  - In [`frontend/src/pages/StatusPage.tsx`](frontend/src/pages/StatusPage.tsx), display **Storage Size** (e.g., `140.0 KB`) and **Total Records** (with table breakdown) inside the `Local SQLite Store` service card (`data-testid="service-card-sqlite"`).
 - **Complexity:** `1.5 / 5` (Low–Medium).
 
 #### `FB-P6-004` — Application Usage Stats (`YouTube` & `Plex` Active Usage Time Tracking)

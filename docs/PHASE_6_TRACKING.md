@@ -4,7 +4,6 @@
 > **Branch:** `phase6`  
 > **Complexity Rating:** **4.5 / 5 (High)**  
 > **Status:** `COMPLETE (v0.6.0)`  
-> **Master Plan Reference:** [../PLAN.md](../PLAN.md) | [AGENTS.md](../AGENTS.md) | [PHASE_EXIT_REPORTS.md](PHASE_EXIT_REPORTS.md) | [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md)
 
 ---
 
@@ -30,7 +29,7 @@
 9. **`FB-P5-009` (24-Hour `Synced: HH:MM:SS` Clock Under `Sync from OPNsense` Button):**
    - Format `Synced: HH:MM:SS` using a 24-hour clock (`hour12: false`, single line, no `AM`/`PM`) and position it directly underneath the `Sync from OPNsense` button in the `DevicesPage.tsx` header.
 10. **`FB-P5-010` (Persistent SQLite Volume Across Container Restarts & Rebuilds):**
-    - Wire `SQLITE_DB_PATH` (`/app/data/gateway.db`) into `Settings.database_url` in `backend/app/config.py` (and set `DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db` in `docker/Dockerfile` and `docker/docker-compose.yml`) so SQLite writes to the host-mounted `d:\source\gateway-front-end\data\gateway.db` volume rather than `/app/backend/data/gateway.db`.
+    - Wire `SQLITE_DB_PATH` (`/app/data/gateway.db`) into `Settings.database_url` in `backend/app/config.py` (and set `DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db` in `docker/Dockerfile` and `docker/docker-compose.yml`) so SQLite writes to the host-mounted `<repo-root>\data\gateway.db` volume rather than `/app/backend/data/gateway.db`.
     - Add non-destructive startup schema migration helper in `backend/app/db/__init__.py` so adding columns/tables across phases preserves all existing devices, nicknames, groups, timers, and schedules.
 
 ---
@@ -89,7 +88,6 @@ flowchart LR
 
 | Step | Checkpoint | Description | Status | Verified Date |
 | :--- | :--- | :--- | :---: | :---: |
-| **Gate 1** | `GATE-6.0` | **Pre-Phase User Review Gate:** Review `docs/PHASE_6_TRACKING.md` and `AGENTS.md` before starting Phase 6 implementation | `[x] Complete` | 2026-11-01 |
 | **Step 6.1** | `CP-6.1` | Fix `SQLITE_DB_PATH` Persistence (`FB-P5-010`), `RecurringSchedule` Model, Migration `0005`, and `ScheduleService` 5-Tier Policy & Overnight Evaluator + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 6.2** | `CP-6.2` | `/api/v1/schedules` CRUD & Reconcile Endpoints, 60s Unified Policy/IP-Drift Loop, and `20m`/`40m`/`60m` Bonus Presets (`FB-P5-004`) + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 6.3** | `CP-6.3` | React `SchedulesPage`, `ScheduleFormModal`, Active Schedule Badges, and Phase 5 UI Backlog Batch (`FB-P5-001`..`009`) + Unit Tests | `[x] Complete` | 2026-11-01 |
@@ -174,7 +172,7 @@ flowchart LR
 - **Tasks:**
   - [x] Bump version from `0.5.0` to `0.6.0` across `backend/app/__init__.py`, `backend/pyproject.toml`, and `frontend/package.json`.
   - [x] Rebuild and restart the Docker container (`docker compose -f docker/docker-compose.yml --env-file .env up -d --build`).
-  - [x] Verify `/app/data/gateway.db` persists on host `d:\source\gateway-front-end\data\gateway.db` across a `docker compose restart` (`FB-P5-010`).
+  - [x] Verify `/app/data/gateway.db` persists on host `<repo-root>\data\gateway.db` across a `docker compose restart` (`FB-P5-010`).
   - [x] **STOP & PROMPT USER** for live UI validation and feedback at `http://localhost:8080`.
 
 ---

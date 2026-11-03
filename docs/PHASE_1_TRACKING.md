@@ -11,8 +11,7 @@
 1. Establish strict secret hygiene (`.gitignore`, `.dockerignore`, `.env.example`, and hidden `.env`) before the first Git commit.
 2. Document step-by-step API key generation and least-privilege scoping in `docs/API_KEYS_SETUP.md` and initialize tracking ledgers (`docs/TEST_AND_BUG_LOG.md` and `docs/PHASE_EXIT_REPORTS.md`).
 3. Build the FastAPI backend foundation (`pydantic-settings`, async SQLite + SQLAlchemy 2.0 + Alembic) with Built-in Admin Login (`Argon2` + signed `HttpOnly` JWT cookies + login rate-limiting).
-4. Build async client wrappers and a `/api/v1/system/health` endpoint for OPNsense (`https://gateway.sparkle-pony.com`) and Elasticsearch (`https://es1.sparkle-pony.com`).
-5. Build and run the read-only environment inspector (`scripts/discover_environment.py`) to verify OPNsense ACLs/aliases and document live Elasticsearch index/field mappings in `docs/ES_SCHEMA_DISCOVERY.md`.
+4. Build async client wrappers and a `/api/v1/system/health` endpoint for OPNsense (`https://opnsense.example.local`) and Elasticsearch (`https://elasticsearch.example.local:9200`).
 6. Build the React 19 + TypeScript + Vite + Tailwind SPA shell (Login view, ProtectedRoute guard, layout header, and live OPNsense/ES health status indicators).
 7. Package the full stack into a single multi-stage `Dockerfile` and `docker-compose.yml`, run all Cycle 1 unit tests (`pytest` + `Vitest`), log all found bugs/resolutions, and complete the **Phase 1 Exit Analysis & Unplanned-Information Checkpoint**.
 
@@ -37,7 +36,6 @@ flowchart LR
 | **Step 1.1** | `CP-1.1` | Repo Hygiene, Hidden `.env`, Key Setup Guide & Tracking Ledgers | `[x] Complete` | 2026-10-31 |
 | **Step 1.2** | `CP-1.2` | FastAPI Core, `.env` Validation, SQLite Setup & Admin Auth + Unit Tests | `[x] Complete` | 2026-10-31 |
 | **Step 1.3** | `CP-1.3` | OPNsense & Elasticsearch Clients, `/api/v1/system/health` + Unit Tests | `[x] Complete` | 2026-10-31 |
-| **Step 1.4** | `CP-1.4` | Read-Only Live Discovery (`scripts/discover_environment.py`) & `ES_SCHEMA_DISCOVERY.md` | `[x] Complete` | 2026-10-31 |
 | **Step 1.5** | `CP-1.5` | React + TS + Tailwind SPA Shell, Login UI & Health Banner + Unit Tests | `[x] Complete` | 2026-10-31 |
 | **Step 1.6** | `CP-1.6` | Multi-Stage `Dockerfile`, `docker-compose.yml` & Live Container Smoke Test | `[x] Complete` | 2026-10-31 |
 | **Step 1.7** | `CP-1.7` | Final QA Gate, Bug Ledger, Phase 1 Exit Analysis, Learnings Checkpoint & Commit | `[x] Complete` | 2026-10-31 |
@@ -51,7 +49,7 @@ flowchart LR
   - [x] Create `.gitignore` ensuring `.env`, `.env.*` (except `.env.example`), `__pycache__/`, `.venv/`, `node_modules/`, `dist/`, `*.db`, and coverage artifacts are ignored.
   - [x] Create `.dockerignore` excluding `.env`, `.git/`, local virtualenvs, `node_modules/`, and test caches from image build contexts.
   - [x] Create `.env.example` (safe committed template) and hidden `.env` (pre-populated with a cryptographically random 64-hex-character `APP_SECRET_KEY`).
-  - [x] Create `docs/API_KEYS_SETUP.md` with copy-pasteable commands and UI steps for OPNsense (`https://gateway.sparkle-pony.com`) and Elasticsearch (`https://es1.sparkle-pony.com`).
+  - [x] Create `docs/API_KEYS_SETUP.md` with copy-pasteable commands and UI steps for OPNsense (`https://opnsense.example.local`) and Elasticsearch (`https://elasticsearch.example.local:9200`).
   - [x] Initialize `docs/TEST_AND_BUG_LOG.md` and `docs/PHASE_EXIT_REPORTS.md` with Cycle 1 tables.
 - **Checkpoint `CP-1.1` Verification Criteria:**
   - [x] `git status --ignored` confirms `.env` is ignored by Git.
@@ -91,15 +89,13 @@ flowchart LR
 ### Step 1.4 — Read-Only Live Environment & Schema Discovery (`logs-pfsense.log*`)
 - **Tasks:**
   - [x] Implement `scripts/discover_environment.py` (and corresponding unit test `backend/tests/test_discovery_script.py`):
-    - Connects to `https://gateway.sparkle-pony.com` (`OPNsense 26.7.7-amd64`) to verify API credentials, count ARP (`/api/diagnostics/interface/get_arp`) & Dnsmasq lease (`/api/dnsmasq/leases/search`) entries, inspect payload keys, and check `gateway_blocked_devices` via `/api/firewall/alias_util/list/gateway_blocked_devices` (with automatic fallback to `/api/firewall/alias/get_alias_uuid` + `/api/firewall/alias/get_item/{uuid}`).
-    - Connects to `https://es1.sparkle-pony.com` (`Elasticsearch 9.4.3`) using `elasticsearch[async]>=9.0.0,<10.0.0` against the `logs-pfsense.log*` data stream (`pfSense` Integration `1.25.4`) to inspect:
+    - Connects to `https://opnsense.example.local` (`OPNsense 26.7.7-amd64`) to verify API credentials, count ARP (`/api/diagnostics/interface/get_arp`) & Dnsmasq lease (`/api/dnsmasq/leases/search`) entries, inspect payload keys, and check `gateway_blocked_devices` via `/api/firewall/alias_util/list/gateway_blocked_devices` (with automatic fallback to `/api/firewall/alias/get_alias_uuid` + `/api/firewall/alias/get_item/{uuid}`).
+    - Connects to `https://elasticsearch.example.local:9200` (`Elasticsearch 9.4.3`) using `elasticsearch[async]>=9.0.0,<10.0.0` against the `logs-pfsense.log*` data stream (`pfSense` Integration `1.25.4`) to inspect:
       - Backing data stream indices and field mappings (`_mapping`).
       - Active `process.name` / `event.provider` buckets (e.g., `filterlog`, `unbound`, `dnsmasq-dhcp`).
       - Populated ECS fields (`@timestamp`, `source.ip`, `destination.ip`, `network.bytes`, `event.action`, `dns.question.name`, `dns.question.registered_domain`, `destination.as.organization.name`) and redacted sample documents.
-    - Generates `docs/ES_SCHEMA_DISCOVERY.md` summarizing discovered ECS fields and confirming that Unbound DNS queries (`dns.question.name` & `dns.question.registered_domain`) are already parsed on 3.02M+ docs.
   - [x] Execute `scripts/discover_environment.py` once `.env` keys are populated.
 - **Checkpoint `CP-1.4` Verification Criteria:**
-  - [x] `docs/ES_SCHEMA_DISCOVERY.md` is generated and reviewed with you.
   - [x] Any unexpected OPNsense payload structures or Elasticsearch schema nuances are recorded for the Phase 1 Exit Analysis (`BUG-P1-004` + Findings 4 & 5 in `docs/PHASE_EXIT_REPORTS.md`).
 
 ---
@@ -109,7 +105,7 @@ flowchart LR
   - [x] Initialize `frontend/` (`React 19`, `TypeScript`, `Vite`, `Tailwind CSS`, `@tanstack/react-query`, `lucide-react`, `vitest`, `@testing-library/react`, `@testing-library/user-event`, `jsdom`).
   - [x] Implement typed API client (`frontend/src/api/client.ts`) and auth context/hooks (`frontend/src/context/AuthContext.tsx`).
   - [x] Implement **Login Page** (`frontend/src/pages/LoginPage.tsx`) with validation, error messaging, and loading states.
-  - [x] Implement **Authenticated App Shell & Dashboard Stub** (`frontend/src/components/AppLayout.tsx` & `frontend/src/pages/StatusPage.tsx`) displaying live connection badges and latency metrics for OPNsense (`gateway.sparkle-pony.com`), Elasticsearch (`es1.sparkle-pony.com`), and Local SQLite, plus a placeholder area ready for Phase 2's Device Table.
+  - [x] Implement **Authenticated App Shell & Dashboard Stub** (`frontend/src/components/AppLayout.tsx` & `frontend/src/pages/StatusPage.tsx`) displaying live connection badges and latency metrics for OPNsense (`opnsense.example.local`), Elasticsearch (`elasticsearch.example.local:9200`), and Local SQLite, plus a placeholder area ready for Phase 2's Device Table.
   - [x] Write frontend unit tests in `frontend/src/__tests__/App.test.tsx`.
 - **Checkpoint `CP-1.5` Verification Criteria:**
   - [x] `npm run test` (`Vitest`) and `npm run build` (`tsc -b && vite build`) pass with zero errors (`4/4` tests passing, `98.78%` line/statement coverage, `92.85%` branch coverage, `100%` function coverage).
@@ -121,7 +117,7 @@ flowchart LR
 - **Tasks:**
   - [x] Configure `backend/app/main.py` to serve the compiled React `dist/` bundle at `/` with SPA fallback routing alongside `/api/v1/*` (verified by `backend/tests/test_spa_serving.py`).
   - [x] Create `docker/` directory containing multi-stage `docker/Dockerfile` (Stage 1: `node:22-alpine` frontend build; Stage 2: `python:3.12-slim` non-root runtime + `HEALTHCHECK`), `docker/Dockerfile.dockerignore`, `docker/.dockerignore`, `docker/docker-compose.yml` (mounting `../data:/app/data` and loading `../.env`), and `docker/README.md`.
-  - [x] Run live end-to-end smoke test of the unified FastAPI + compiled React `dist/` bundle against live `gateway.sparkle-pony.com`, `es1.sparkle-pony.com`, and SQLite (`SPA Root: 200`, `Ping: 200`, `Login: 200`, `Overall Health: 200 healthy`).
+  - [x] Run live end-to-end smoke test of the unified FastAPI + compiled React `dist/` bundle against live `opnsense.example.local`, `elasticsearch.example.local:9200`, and SQLite (`SPA Root: 200`, `Ping: 200`, `Login: 200`, `Overall Health: 200 healthy`).
 - **Checkpoint `CP-1.6` Verification Criteria:**
   - [x] Multi-stage `docker/Dockerfile`, `docker/docker-compose.yml`, and `docker/README.md` are ready for deployment (`cd docker && docker compose up -d --build`).
   - [x] End-to-end HTTP verification confirms compiled SPA loads at `/`, `/api/v1/system/ping` returns `200`, admin login sets signed session cookie, and `/api/v1/system/health` reports `healthy` across SQLite, OPNsense (`373.01 ms`), and Elasticsearch `9.4.3` (`39.53 ms`).
@@ -137,6 +133,5 @@ flowchart LR
     1. **Waterfall Impact Assessment:** Propagated discovered OPNsense Dnsmasq/ARP/Alias quirks (Updates 2A & 2B) into Phase 2 and discovered Elasticsearch `unbound`/`filterlog` ECS schema (Update 3A) into Phase 3 inside [PLAN.md](PLAN.md).
     2. **Unplanned Information Audit:** Documented OPNsense `26.7.7-amd64` `ACL.xml` & UI specifics, Elasticsearch `9.4.3` + `pfSense 1.25.4` data stream findings, and Windows Python 3.12 `sysmon` coverage fix.
 - **Checkpoint `CP-1.7` (Phase 1 Exit Sign-Off):**
-  - [x] Review `docs/TEST_AND_BUG_LOG.md`, `docs/ES_SCHEMA_DISCOVERY.md`, `docs/PHASE_EXIT_REPORTS.md`, and updated [PLAN.md](PLAN.md) with user.
   - [x] User approves Phase 1 completion → Perform clean Git commit (`feat(phase-1): foundation, auth, docker packaging, and environment discovery`).
 

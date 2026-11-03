@@ -15,7 +15,7 @@
    - **Waterfall Update 2A (Dnsmasq Schema Normalization):** Map Dnsmasq's `address` → IPv4, `hwaddr` → MAC, `mac_info` → vendor, and `if_descr` → interface alongside ARP's `ip`, `mac`, `manufacturer`, and `intf_description`, and strip Dnsmasq's literal `"*"` placeholder when `hostname` or `client_id` is unknown.
    - Persist user-assigned friendly names (`display_name`), `notes`, and `is_protected` flags across DHCP IP changes.
 2. **Control Feature #1 — Instant Single-Device Block / Unblock:**
-   - Implement `POST /api/v1/devices/{device_id}/block` and `POST /api/v1/devices/{device_id}/unblock` with strict self-lockout guardrails (`OPNSENSE_PROTECTED_IPS`, `192.168.50.1`, requesting admin IP, and `is_protected` devices cannot be blocked).
+   - Implement `POST /api/v1/devices/{device_id}/block` and `POST /api/v1/devices/{device_id}/unblock` with strict self-lockout guardrails (`OPNSENSE_PROTECTED_IPS`, `192.168.1.1`, requesting admin IP, and `is_protected` devices cannot be blocked).
    - **Waterfall Update 2B (Dual-Path Alias Mutation):** Support `/api/firewall/alias_util/add` & `delete` with automatic fallback to `/api/firewall/alias/get_alias_uuid` → `get_item` → `set_item` → `reconfigure` when `alias_util` returns `HTTP 403`.
    - Execute `/api/diagnostics/firewall/kill_states` (`{"filter": "<ip>"}`) immediately upon blocking to sever existing active connections, and record every action in `audit_logs`.
 3. **React Device Dashboard (v1):**
@@ -80,7 +80,7 @@ flowchart LR
   - [x] Implement `backend/app/services/device_service.py`:
     - Reconcile `/api/dnsmasq/leases/search` + `/api/diagnostics/interface/get_arp` + `list_blocked_alias_ips()` into SQLite `devices`.
     - Handle **Waterfall Update 2A** (`address`/`hwaddr`/`mac_info` mapping and stripping `"*"` placeholders for `hostname`/`client_id`).
-    - Enforce self-lockout protection (`OPNSENSE_PROTECTED_IPS`, `192.168.50.1`, client request IP, and `device.is_protected`).
+    - Enforce self-lockout protection (`OPNSENSE_PROTECTED_IPS`, `192.168.1.1`, client request IP, and `device.is_protected`).
     - Implement `block_device_internet()` and `unblock_device_internet()` with audit log entries (`device.block`, `device.unblock`) and graceful handling if `kill_states` times out after alias update succeeds.
   - [x] Implement `backend/app/api/devices.py` (`GET /api/v1/devices`, `POST /api/v1/devices/sync`, `PATCH /api/v1/devices/{device_id}`, `POST /api/v1/devices/{device_id}/block`, `POST /api/v1/devices/{device_id}/unblock`) and register router in `backend/app/main.py`.
   - [x] Also update session cookie `secure` flag in `backend/app/api/auth.py` to check `request.url.scheme == "https"` or `X-Forwarded-Proto == "https"` so LAN HTTP container access works across all browsers.
@@ -98,7 +98,7 @@ flowchart LR
   - [x] Implement `frontend/src/pages/DevicesPage.tsx`:
     - Summary KPI cards (`Total Devices`, `Online Now`, `Internet Blocked`, `Protected`).
     - Search input (filters by display name, hostname, IP, MAC, vendor) + filter pills (`All`, `Online`, `Blocked`, `Protected`) + `Sync Now` button.
-    - Device table with inline nickname editing (`display_name`), Protected shield toggle (`192.168.50.1` locked), and one-click **Internet Access (`Allowed` / `Blocked`)** toggle button with optimistic/loading states.
+    - Device table with inline nickname editing (`display_name`), Protected shield toggle (`192.168.1.1` locked), and one-click **Internet Access (`Allowed` / `Blocked`)** toggle button with optimistic/loading states.
   - [x] Write frontend unit tests in `frontend/src/__tests__/DevicesPage.test.tsx`.
 - **Checkpoint `CP-2.4` Verification Criteria:**
   - [x] `npm run test` (`Vitest --coverage`) and `npm run build` (`tsc -b && vite build`) pass with zero errors and `>= 85%` coverage (`7/7` frontend tests passing, `96.59%` statement/line coverage, `0` TypeScript/Vite build errors).
@@ -109,7 +109,7 @@ flowchart LR
 ### Step 2.5 — Docker Container Rebuild & Live OPNsense Smoke Verification
 - **Tasks:**
   - [x] Rebuild and restart the Docker container (`docker compose -f docker/docker-compose.yml --env-file .env up -d --build`).
-  - [x] Verify live device sync at `http://localhost:8080` against `https://gateway.sparkle-pony.com` and confirm that ARP & Dnsmasq devices populate cleanly with `"*"` hostnames stripped and `192.168.50.1` marked Protected (`69` total devices discovered, `57` online in ARP, `0` blocked, `1` protected gateway `192.168.50.1`, `0` literal `"*"` hostnames).
+  - [x] Verify live device sync at `http://localhost:8080` against `https://opnsense.example.local` and confirm that ARP & Dnsmasq devices populate cleanly with `"*"` hostnames stripped and `192.168.1.1` marked Protected (`69` total devices discovered, `57` online in ARP, `0` blocked, `1` protected gateway `192.168.1.1`, `0` literal `"*"` hostnames).
 - **Checkpoint `CP-2.5` Verification Criteria:**
   - [x] Container reaches `healthy` status and user confirms the live Device Dashboard UI at `http://localhost:8080`.
 

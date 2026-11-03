@@ -64,3 +64,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# ==============================================================================
+# Local Development Governance & Environment Discovery Docs (Keep Local Only)
+# ==============================================================================
+AGENTS.md
+docs/ES_SCHEMA_DISCOVERY.md
+*.code-workspace
+

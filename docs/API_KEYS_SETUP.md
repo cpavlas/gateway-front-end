@@ -1,17 +1,17 @@
 # API Key Generation, Firewall Rule & Least-Privilege Scoping Guide
 
 This guide walks through setting up the required firewall aliases, LAN enforcement rules (for both full-internet blocking and selective YouTube blocking), service accounts, and least-privilege API keys for:
-1. **OPNsense (`https://gateway.sparkle-pony.com` / `192.168.50.1` — Validated for `OPNsense 26.7.7-amd64`)**
-2. **Elasticsearch (`https://es1.sparkle-pony.com` — Validated for `Elasticsearch 9.4.3` & `pfSense` Integration `1.25.4` / `logs-pfsense.log*`)**
+1. **OPNsense** *(developed and validated for `OPNsense 26.7.7-amd64`)*
+2. **Elasticsearch** *(developed and validated for `Elasticsearch 9.4.3` & Elastic `pfSense` Integration `1.25.4` / `logs-pfsense.log*`)*
 
 All generated secrets belong exclusively in the root `.env` file (which is ignored by Git and excluded from Docker build layers).
 
 ---
 
-## 1. OPNsense Setup (`https://gateway.sparkle-pony.com` — `OPNsense 26.7.7-amd64`)
+## 1. OPNsense Setup (`OPNsense 26.7.7-amd64`)
 
 ### Step 1A: Create the `gateway_blocked_devices` Firewall Alias (Full Internet Block)
-1. Log into OPNsense at `https://gateway.sparkle-pony.com`.
+1. Log into your OPNsense web interface.
 2. Navigate to **Firewall → Aliases** and click **+** (Add).
 3. Configure the alias:
    - **Enabled:** Checked
@@ -39,7 +39,7 @@ All generated secrets belong exclusively in the root `.env` file (which is ignor
 ---
 
 ### Step 1C: Create the Least-Privilege API Group & Service User (`OPNsense 26.7.7-amd64`)
-Never use the `root` API key. Instead, create a dedicated non-login service user restricted to the exact 4 MVC controllers needed by this application:
+Never use the `root` API key. Instead, create a dedicated non-login service user restricted to the exact MVC controllers needed by this application:
 
 1. **Create Group (`System → Access → Groups`):**
    - Click **+** (Add), set **Group name** to `gateway_controller`, and click **Save**.
@@ -71,16 +71,16 @@ Never use the `root` API key. Instead, create a dedicated non-login service user
      ```
    - Copy `key` into `OPNSENSE_API_KEY` and `secret` into `OPNSENSE_API_SECRET` in `.env`, then delete the downloaded `.txt` file.
 
-> **OPNsense 26.7.7-amd64 Endpoint Note:** Beginning in OPNsense 25.7/26.x, MVC ACL patterns enforce `snake_case` endpoint paths for non-root API keys (for example, `/api/diagnostics/interface/get_arp` or `/api/diagnostics/interface/search_arp` instead of legacy camelCase `getArp`). Our `OPNsenseClient` and discovery script use the 26.7 `snake_case` endpoints natively.
+> **OPNsense 26.7.7-amd64 Endpoint Note:** Beginning in OPNsense 25.7/26.x, MVC ACL patterns enforce `snake_case` endpoint paths for non-root API keys (for example, `/api/diagnostics/interface/get_arp` or `/api/diagnostics/interface/search_arp` instead of legacy camelCase `getArp`). The backend `OPNsenseClient` uses these 26.7 `snake_case` endpoints natively.
 
 ---
 
-### Step 1D: Enable Selective YouTube Blocking on OPNsense (`FB-P6-005` — Keep Plex & General Internet Allowed)
+### Step 1D: Enable Selective YouTube Blocking on OPNsense (Keep Plex & General Internet Allowed)
 
-Phase 7 (`v1.0.0`) adds per-device and per-group **YT Allowed / YT Blocked** controls so you can block **YouTube** on specific devices or groups while keeping **Plex** (`plex.tv`, `plex.direct`, `:32400`) and all other websites/Google services working normally.
+The application supports per-device and per-group **YT Allowed / YT Blocked** controls so you can block **YouTube** on specific devices or groups while keeping **Plex** (`plex.tv`, `plex.direct`, `:32400`) and all other websites/Google services working normally.
 
 #### 1. Verify (or Create) the Two YouTube Aliases (`Firewall → Aliases`)
-Using the `Firewall: Alias: Edit` privilege configured in Step 1C, the Gateway Front-End backend **automatically provisions and updates** both aliases on OPNsense whenever you toggle **YT Blocked / YT Allowed**:
+Using the `Firewall: Alias: Edit` privilege configured in Step 1C, the backend **automatically provisions and updates** both aliases on OPNsense whenever you toggle **YT Blocked / YT Allowed**:
 
 | Alias Name (Default `.env`) | Type | Purpose & Managed Content |
 | :--- | :---: | :--- |
@@ -108,23 +108,23 @@ For OPNsense to drop traffic matching those two aliases, add a single **Reject**
    - **Description:** `Reject YouTube traffic for devices in gateway_youtube_blocked_devices (Plex & general internet allowed)`
 3. **Rule Ordering (`Firewall → Rules → LAN`):**
    - Place this rule **near the top of your LAN rule list**, right above or below your `gateway_blocked_devices` rule and **above** your general `LAN net -> any` allow rule:
-     1. Anti-Lockout / Local Gateway DNS & DHCP rules (`192.168.50.1`)
+     1. Anti-Lockout / Local Gateway DNS & DHCP rules
      2. **`Reject` — Source: `gateway_blocked_devices` → Destination: `!RFC1918_Private_Networks`** *(Full Internet Block)*
      3. **`Reject` — Source: `gateway_youtube_blocked_devices` → Destination: `gateway_youtube_domains`** *(Selective YouTube Block)*
      4. Default `Allow` — Source: `LAN net` → Destination: `any` *(Allows Plex & all other internet traffic)*
 4. Click **Save**, then click **Apply Changes**.
 
 #### 3. Recommended OPNsense DNS & Client Cache Considerations
-- **Ensure LAN Clients Use OPNsense Unbound DNS (`192.168.50.1`):**
-  - OPNsense's `filterdns` daemon resolves the hostnames in `gateway_youtube_domains` through OPNsense's local DNS resolver (`Unbound`) and populates the `gateway_youtube_domains` PF table with the returned A/AAAA records. Having LAN clients use `192.168.50.1` for DNS ensures clients resolve the exact same Google/YouTube edge IPs that `filterdns` loads into PF.
+- **Ensure LAN Clients Use OPNsense Unbound DNS:**
+  - OPNsense's `filterdns` daemon resolves the hostnames in `gateway_youtube_domains` through OPNsense's local DNS resolver (`Unbound`) and populates the `gateway_youtube_domains` PF table with the returned A/AAAA records. Having LAN clients use your OPNsense gateway for DNS ensures clients resolve the exact same Google/YouTube edge IPs that `filterdns` loads into PF.
 - **Immediate State Termination (`kill_states`):**
   - Whenever you click **`YT Blocked`** on a device or group in the Gateway UI, the backend adds the device IP(s) to `gateway_youtube_blocked_devices` and immediately invokes `/api/diagnostics/firewall/kill_states` for that device IP so existing open TCP/QUIC streams are severed without waiting for connection timeouts.
 
 ---
 
-## 2. Elasticsearch Setup (`https://es1.sparkle-pony.com` — `Elasticsearch 9.4.3`)
+## 2. Elasticsearch Setup (`Elasticsearch 9.4.3`)
 
-Because your OPNsense logs are shipped via the **Elastic `pfSense` Integration (`v1.25.4`)** into the **`logs-pfsense.log*`** data stream (`logs-pfsense.log-default`), we can scope your read-only API key directly to `logs-pfsense.log*` right away.
+When OPNsense firewall (`filterlog`) and DNS (`unbound`) logs are ingested via the **Elastic `pfSense` Integration (`v1.25.4`)** into the **`logs-pfsense.log*`** data stream (`logs-pfsense.log-default`), scope your read-only API key directly to `logs-pfsense.log*`.
 
 ### Step 2A — Create the Scoped Read-Only API Key for `logs-pfsense.log*`
 In **Kibana (`v9.4.3`) → Management → Dev Tools → Console** (or via **Stack Management → Security → API Keys**), run:
@@ -148,14 +148,9 @@ POST /_security/api_key
 ```
 
 - **Why `"cluster": ["monitor"]`?** Allows `/api/v1/system/health` (`client.info()` / `client.ping()`) to verify cluster reachability and report Elasticsearch `9.4.3` health without granting any write or administrative permissions.
-- **Why `"names": ["logs-pfsense.log*"]`?** Restricts document searches (`read`) and field mapping checks (`view_index_metadata`) strictly to your `logs-pfsense.log` data stream and its backing `.ds-logs-pfsense.log-*` indices.
+- **Why `"names": ["logs-pfsense.log*"]`?** Restricts document searches (`read`) and field mapping checks (`view_index_metadata`) strictly to the `logs-pfsense.log` data stream and its backing `.ds-logs-pfsense.log-*` indices.
 - Copy the **`encoded`** value from the JSON response (Base64-encoded `id:api_key`) and set it in `.env`:
   ```dotenv
   ELASTICSEARCH_API_KEY=PASTE_ENCODED_STRING_HERE
   ELASTICSEARCH_INDEX_PATTERNS=logs-pfsense.log*
   ```
-
-### Step 2B — Optional Discovery Note for Step 1.4 (`scripts/discover_environment.py`)
-In **Step 1.4**, our read-only discovery script queries `logs-pfsense.log*` using this exact key to verify:
-1. **Active `event.provider` / `process.name` values** ingested by `pfSense` integration `1.25.4` (e.g., `filterlog` for firewall traffic/bytes, `unbound` or `dnsmasq` for DNS domain lookups).
-2. **Populated ECS fields** (`@timestamp`, `source.ip`, `destination.ip`, `network.bytes`, `event.action`, `dns.question.name`, `destination.as.organization.name`, etc.) so analytics queries (including Phase 7's **YouTube & Plex Active Usage Time** aggregations) are 100% tailored to your live `logs-pfsense.log` data.
