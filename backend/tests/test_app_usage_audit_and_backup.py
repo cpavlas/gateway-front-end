@@ -39,8 +39,8 @@ def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction() -> No
     assert "plex" in agg_dsl["filters"]["filters"]
 
     overview_q = build_network_overview_query("24h", "UTC")
-    device_q = build_device_analytics_query("192.168.50.60", "24h", "UTC")
-    group_q = build_group_analytics_query(["192.168.50.60", "192.168.50.61"], "24h", "UTC")
+    device_q = build_device_analytics_query("192.168.1.60", "24h", "UTC")
+    group_q = build_group_analytics_query(["192.168.1.60", "192.168.1.61"], "24h", "UTC")
     assert "app_usage" in overview_q["aggs"]
     assert "app_usage" in device_q["aggs"]
     assert "app_usage" in group_q["aggs"]
@@ -167,7 +167,7 @@ async def test_audit_logs_pruning_backup_restore_and_security_headers(
             200,
             json=[
                 {
-                    "ip": "192.168.50.60",
+                    "ip": "192.168.1.60",
                     "mac": "AA:BB:CC:DD:EE:60",
                     "hostname": "livingroom-appletv",
                     "intf_description": "LAN",

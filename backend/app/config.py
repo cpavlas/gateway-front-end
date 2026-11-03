@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_GATEWAY_IP = "192.168.50.1"
+DEFAULT_GATEWAY_IP = "192.168.1.1"
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/gateway.db"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     database_url: str = DEFAULT_DATABASE_URL
     sqlite_db_path: str = ""
 
-    # 2. OPNsense Integration (https://gateway.sparkle-pony.com / 192.168.50.1)
-    opnsense_base_url: str = "https://gateway.sparkle-pony.com"
+    # 2. OPNsense Integration (OPNsense 26.7.7-amd64)
+    opnsense_base_url: str = "https://opnsense.example.local"
     opnsense_api_key: SecretStr
     opnsense_api_secret: SecretStr
     opnsense_verify_ssl: bool = True
@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     )
     opnsense_protected_ips: str = DEFAULT_GATEWAY_IP
 
-    # 3. Elasticsearch 9.4.3 Integration (https://es1.sparkle-pony.com)
-    elasticsearch_url: str = "https://es1.sparkle-pony.com"
+    # 3. Elasticsearch 9.4.3 Integration (Elastic pfSense Integration 1.25.4)
+    elasticsearch_url: str = "https://elasticsearch.example.local:9200"
     elasticsearch_api_key: SecretStr
     elasticsearch_verify_ssl: bool = True
     elasticsearch_ca_cert_path: str = ""
@@ -123,7 +123,7 @@ class Settings(BaseSettings):
 
     @property
     def protected_ip_set(self) -> frozenset[str]:
-        """Return immutable set of protected IPs (always includes 192.168.50.1)."""
+        """Return immutable set of protected IPs (always includes DEFAULT_GATEWAY_IP)."""
         items = [ip.strip() for ip in self.opnsense_protected_ips.split(",") if ip.strip()]
         items.append(DEFAULT_GATEWAY_IP)
         return frozenset(items)

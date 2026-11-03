@@ -42,7 +42,7 @@ def test_analytics_cache_ttl_and_synchronous_helpers(test_settings: Settings) ->
     dev = Device(
         id=10,
         mac_address="aa:bb:cc:dd:ee:10",
-        ipv4_address="192.168.50.10",
+        ipv4_address="192.168.1.10",
         hostname="ipad-air",
         display_name="Kids iPad Air",
         vendor="Apple",
@@ -60,7 +60,7 @@ def test_analytics_cache_ttl_and_synchronous_helpers(test_settings: Settings) ->
     enriched = _enrich_top_devices_with_sqlite(
         raw_top_devices=[
             {
-                "ipv4_address": "192.168.50.10",
+                "ipv4_address": "192.168.1.10",
                 "total_events": 1500,
                 "bytes": 64000,
                 "dns_queries": 1400,
@@ -69,7 +69,7 @@ def test_analytics_cache_ttl_and_synchronous_helpers(test_settings: Settings) ->
                 "last_seen_at": "2026-10-31T23:00:00Z",
             },
             {
-                "ipv4_address": "192.168.50.199",
+                "ipv4_address": "192.168.1.199",
                 "total_events": 200,
                 "bytes": 4096,
                 "dns_queries": 180,
@@ -86,7 +86,7 @@ def test_analytics_cache_ttl_and_synchronous_helpers(test_settings: Settings) ->
     assert enriched[0].device_id == 10
     assert enriched[0].effective_name == "Kids iPad Air"
     assert enriched[1].device_id is None
-    assert enriched[1].effective_name == "192.168.50.199"
+    assert enriched[1].effective_name == "192.168.1.199"
 
     overview = _assemble_network_overview_response(
         es_data={
@@ -108,7 +108,7 @@ def test_analytics_cache_ttl_and_synchronous_helpers(test_settings: Settings) ->
                     "blocked_packets": 10,
                 }
             ],
-            "top_devices": [{"ipv4_address": "192.168.50.10", "total_events": 1500}],
+            "top_devices": [{"ipv4_address": "192.168.1.10", "total_events": 1500}],
             "top_domains": [{"domain": "discord.com", "query_count": 400}],
             "top_registered_domains": [{"domain": "discord.com", "query_count": 400}],
             "top_organizations": [
@@ -199,7 +199,7 @@ async def test_analytics_api_endpoints_enrichment_cache_and_fallback(
     async with session_factory() as session:
         d1 = Device(
             mac_address="aa:bb:cc:00:11:22",
-            ipv4_address="192.168.50.134",
+            ipv4_address="192.168.1.134",
             hostname="workstation",
             display_name="Office Workstation",
             vendor="Intel",
@@ -271,7 +271,7 @@ async def test_analytics_api_endpoints_enrichment_cache_and_fallback(
             ],
             "top_devices": [
                 {
-                    "ipv4_address": "192.168.50.134",
+                    "ipv4_address": "192.168.1.134",
                     "total_events": 30000,
                     "bytes": 524288,
                     "dns_queries": 28000,

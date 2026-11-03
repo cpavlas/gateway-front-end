@@ -26,27 +26,27 @@ async def _login_admin(client: AsyncClient, settings: Settings) -> None:
 
 def _mock_opnsense_discovery_endpoints(
     *,
-    kids_ip: str = "192.168.50.55",
+    kids_ip: str = "192.168.1.55",
     blocked_ips: list[str] | None = None,
 ) -> None:
     """Mock OPNsense ARP, Dnsmasq leases, and block alias with realistic payloads."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(
             200,
             json=[
                 {
                     "mac": "00:11:22:33:44:01",
-                    "ip": "192.168.50.1",
+                    "ip": "192.168.1.1",
                     "intf": "vtnet1",
                     "intf_description": "LAN",
                     "expired": False,
                     "permanent": True,
-                    "hostname": "gateway.sparkle-pony.com",
+                    "hostname": "opnsense.example.local",
                     "manufacturer": "Protectli",
                 },
                 {
                     "mac": "00:11:22:33:44:25",
-                    "ip": "192.168.50.25",
+                    "ip": "192.168.1.25",
                     "intf": "vtnet1",
                     "intf_description": "LAN",
                     "expired": False,
@@ -67,7 +67,7 @@ def _mock_opnsense_discovery_endpoints(
             ],
         )
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -83,7 +83,7 @@ def _mock_opnsense_discovery_endpoints(
                     },
                     {
                         "hwaddr": "aa:bb:cc:dd:ee:99",
-                        "address": "192.168.50.99",
+                        "address": "192.168.1.99",
                         "hostname": "*",
                         "client_id": "*",
                         "if_descr": "LAN",
@@ -95,7 +95,7 @@ def _mock_opnsense_discovery_endpoints(
         )
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -124,7 +124,7 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
 ) -> None:
     """Verify initial auto-sync, '*' stripping, vendor merging, filtering, and DHCP IP drift."""
     await _login_admin(async_client, test_settings)
-    _mock_opnsense_discovery_endpoints(kids_ip="192.168.50.55", blocked_ips=[])
+    _mock_opnsense_discovery_endpoints(kids_ip="192.168.1.55", blocked_ips=[])
 
     resp = await async_client.get("/api/v1/devices")
     assert resp.status_code == 200
@@ -134,7 +134,7 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
         "total_devices": 4,
         "online_devices": 3,
         "blocked_devices": 0,
-        "protected_devices": 2,  # 192.168.50.1 (gateway) + 192.168.50.25 (admin session IP)
+        "protected_devices": 2,  # 192.168.1.1 (gateway) + 192.168.1.25 (admin session IP)
     }
     assert body["last_synced_at"] is not None
 
@@ -145,7 +145,7 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
     assert gw["is_protected"] is True
     assert "OPNSENSE_PROTECTED_IPS" in gw["protection_reason"]
 
-    # 2. Admin session IP (192.168.50.25) is protected dynamically
+    # 2. Admin session IP (192.168.1.25) is protected dynamically
     admin_dev = by_mac["00:11:22:33:44:25"]
     assert admin_dev["is_protected"] is True
     assert "administrator session IP" in admin_dev["protection_reason"]
@@ -159,7 +159,7 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
     # 4. Offline Dnsmasq device had '*' hostname stripped to None
     offline_ps5 = by_mac["aa:bb:cc:dd:ee:99"]
     assert offline_ps5["hostname"] is None
-    assert offline_ps5["effective_name"] == "192.168.50.99"
+    assert offline_ps5["effective_name"] == "192.168.1.99"
     assert offline_ps5["is_online"] is False
 
     # 5. Filter by status=online and search query
@@ -179,13 +179,13 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
     assert patch_resp.json()["effective_name"] == "Living Room iPad"
 
     _mock_opnsense_discovery_endpoints(
-        kids_ip="192.168.50.77", blocked_ips=["192.168.50.77"]
+        kids_ip="192.168.1.77", blocked_ips=["192.168.1.77"]
     )
     sync_resp = await async_client.post("/api/v1/devices/sync")
     assert sync_resp.status_code == 200
     synced_by_mac = {d["mac_address"]: d for d in sync_resp.json()["devices"]}
     updated_kids = synced_by_mac["aa:bb:cc:dd:ee:55"]
-    assert updated_kids["ipv4_address"] == "192.168.50.77"
+    assert updated_kids["ipv4_address"] == "192.168.1.77"
     assert updated_kids["display_name"] == "Living Room iPad"
     assert updated_kids["is_blocked"] is True
 
@@ -198,7 +198,7 @@ async def test_block_unblock_self_lockout_guardrails_and_partial_kill_states_war
 ) -> None:
     """Verify protected IP/device 403 guardrails, block/unblock flow, and kill_states warning."""
     await _login_admin(async_client, test_settings)
-    _mock_opnsense_discovery_endpoints(kids_ip="192.168.50.55", blocked_ips=[])
+    _mock_opnsense_discovery_endpoints(kids_ip="192.168.1.55", blocked_ips=[])
 
     initial = (await async_client.get("/api/v1/devices")).json()
     by_mac = {d["mac_address"]: d for d in initial["devices"]}
@@ -212,12 +212,12 @@ async def test_block_unblock_self_lockout_guardrails_and_partial_kill_states_war
     )
     assert unprot_gw.status_code == 403
 
-    # 2. Cannot block gateway IP (192.168.50.1)
+    # 2. Cannot block gateway IP (192.168.1.1)
     block_gw = await async_client.post(f"/api/v1/devices/{gw_id}/block")
     assert block_gw.status_code == 403
     assert "protected gateway" in block_gw.json()["detail"].lower()
 
-    # 3. Cannot block active admin session IP (192.168.50.25)
+    # 3. Cannot block active admin session IP (192.168.1.25)
     block_admin = await async_client.post(f"/api/v1/devices/{admin_id}/block")
     assert block_admin.status_code == 403
     assert "active administrator session ip" in block_admin.json()["detail"].lower()
@@ -230,13 +230,13 @@ async def test_block_unblock_self_lockout_guardrails_and_partial_kill_states_war
 
     # 5. Block kids_id -> succeeds with kill_states
     respx.post(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/add/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/add/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"status": "done"}))
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
-    ).mock(return_value=httpx.Response(200, json={"rows": [{"ip": "192.168.50.55"}]}))
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
+    ).mock(return_value=httpx.Response(200, json={"rows": [{"ip": "192.168.1.55"}]}))
     kill_route = respx.post(
-        "https://gateway.sparkle-pony.com/api/diagnostics/firewall/kill_states"
+        "https://opnsense.example.local/api/diagnostics/firewall/kill_states"
     ).mock(
         side_effect=[
             httpx.Response(200, json={"result": "ok", "dropped_states": 5}),
@@ -263,10 +263,10 @@ async def test_block_unblock_self_lockout_guardrails_and_partial_kill_states_war
 
     # 7. Unblock kids_id -> removes from alias and sets is_blocked=False
     respx.post(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/delete/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/delete/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"status": "done"}))
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     unblock_ok = await async_client.post(f"/api/v1/devices/{kids_id}/unblock")
@@ -319,7 +319,7 @@ async def test_device_not_found_missing_ip_and_opnsense_502_errors(
     assert "without a known ipv4" in no_ip_block.json()["detail"].lower()
 
     # 3. 502 Bad Gateway when OPNsense fails during POST /api/v1/devices/sync
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(500, json={"error": "OPNsense error"})
     )
     sync_err = await async_client.post("/api/v1/devices/sync")

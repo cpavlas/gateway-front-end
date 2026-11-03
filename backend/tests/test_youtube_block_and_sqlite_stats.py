@@ -74,7 +74,7 @@ async def test_opnsense_youtube_alias_auto_provisioning(
         if path.endswith("/alias_util/list/gateway_youtube_blocked_devices"):
             if not alias_created:
                 return httpx.Response(404, json={"status": "not_found"})
-            return httpx.Response(200, json={"rows": [{"ip": "192.168.50.60"}]})
+            return httpx.Response(200, json={"rows": [{"ip": "192.168.1.60"}]})
         if "/api/firewall/alias/get_alias_uuid/" in path:
             return httpx.Response(200, json={})
         if path == "/api/firewall/alias/add_item":
@@ -98,11 +98,11 @@ async def test_opnsense_youtube_alias_auto_provisioning(
     assert "googlevideo.com" in YOUTUBE_BLOCK_DOMAINS
     assert await client.list_youtube_blocked_ips() == []
 
-    ips = await client.add_ip_to_youtube_block_alias("192.168.50.60")
-    assert ips == ["192.168.50.60"]
+    ips = await client.add_ip_to_youtube_block_alias("192.168.1.60")
+    assert ips == ["192.168.1.60"]
     assert alias_created is True
 
-    await client.remove_ip_from_youtube_block_alias("192.168.50.60")
+    await client.remove_ip_from_youtube_block_alias("192.168.1.60")
 
 
 @respx.mock
@@ -121,21 +121,21 @@ async def test_device_and_group_youtube_blocking_and_sqlite_health(
             200,
             json=[
                 {
-                    "ip": "192.168.50.60",
+                    "ip": "192.168.1.60",
                     "mac": "AA:BB:CC:DD:EE:60",
                     "hostname": "livingroom-appletv",
                     "intf_description": "LAN",
                     "expired": False,
                 },
                 {
-                    "ip": "192.168.50.61",
+                    "ip": "192.168.1.61",
                     "mac": "AA:BB:CC:DD:EE:61",
                     "hostname": "kids-ipad",
                     "intf_description": "LAN",
                     "expired": False,
                 },
                 {
-                    "ip": "192.168.50.1",
+                    "ip": "192.168.1.1",
                     "mac": "AA:BB:CC:DD:EE:01",
                     "hostname": "gateway",
                     "intf_description": "LAN",
@@ -199,8 +199,8 @@ async def test_device_and_group_youtube_blocking_and_sqlite_health(
     sync_resp = await async_client.post("/api/v1/devices/sync")
     assert sync_resp.status_code == 200
     devices = sync_resp.json()["devices"]
-    appletv = next(d for d in devices if d["ipv4_address"] == "192.168.50.60")
-    ipad = next(d for d in devices if d["ipv4_address"] == "192.168.50.61")
+    appletv = next(d for d in devices if d["ipv4_address"] == "192.168.1.60")
+    ipad = next(d for d in devices if d["ipv4_address"] == "192.168.1.61")
     assert appletv["is_youtube_blocked"] is False
     assert appletv["is_blocked"] is False
 
@@ -211,13 +211,13 @@ async def test_device_and_group_youtube_blocking_and_sqlite_health(
     assert body["action"] == "youtube_block"
     assert body["device"]["is_youtube_blocked"] is True
     assert body["device"]["is_blocked"] is False
-    assert "192.168.50.60" in yt_blocked
+    assert "192.168.1.60" in yt_blocked
 
     # 3. Unblock YouTube on AppleTV
     yt_unblock = await async_client.post(f"/api/v1/devices/{appletv['id']}/youtube/unblock")
     assert yt_unblock.status_code == 200
     assert yt_unblock.json()["device"]["is_youtube_blocked"] is False
-    assert "192.168.50.60" not in yt_blocked
+    assert "192.168.1.60" not in yt_blocked
 
     # 4. Create a Group with AppleTV and iPad and test group YouTube block/unblock
     grp_create = await async_client.post(
@@ -242,7 +242,7 @@ async def test_device_and_group_youtube_blocking_and_sqlite_health(
     assert grp_block_data["group"]["youtube_status"] == "blocked"
     assert grp_block_data["group"]["youtube_blocked_devices"] == 2
     assert grp_block_data["group"]["access_status"] == "allowed"
-    assert yt_blocked == {"192.168.50.60", "192.168.50.61"}
+    assert yt_blocked == {"192.168.1.60", "192.168.1.61"}
 
     grp_yt_unblock = await async_client.post(f"/api/v1/groups/{group_id}/youtube/unblock")
     assert grp_yt_unblock.status_code == 200

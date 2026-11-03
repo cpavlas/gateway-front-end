@@ -59,7 +59,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-base font-bold tracking-tight text-slate-100">
-                    Sparkle-Pony Gateway Control
+                    OPNsense Gateway Control
                   </span>
                   {version && (
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-400">

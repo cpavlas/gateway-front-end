@@ -27,7 +27,7 @@ function createTestQueryClient() {
 const MOCK_DEVICE_1: DeviceItem = {
   id: 1,
   mac_address: 'aa:bb:cc:dd:ee:01',
-  ipv4_address: '192.168.50.134',
+  ipv4_address: '192.168.1.134',
   hostname: 'office-pc',
   display_name: 'Office Workstation',
   effective_name: 'Office Workstation',
@@ -177,7 +177,7 @@ const MOCK_OVERVIEW: NetworkOverviewResponse = {
   top_devices: [
     {
       device_id: 1,
-      ipv4_address: '192.168.50.134',
+      ipv4_address: '192.168.1.134',
       effective_name: 'Office Workstation',
       mac_address: 'aa:bb:cc:dd:ee:01',
       vendor: 'Intel Corporate',
@@ -209,11 +209,11 @@ const MOCK_OVERVIEW: NetworkOverviewResponse = {
     },
   ],
   top_domains: [
-    { domain: 'es1.sparkle-pony.com', query_count: 143480 },
+    { domain: 'elasticsearch.example.local', query_count: 143480 },
     { domain: 'discord.com', query_count: 1294 },
   ],
   top_registered_domains: [
-    { domain: 'sparkle-pony.com', query_count: 168217 },
+    { domain: 'example.local', query_count: 168217 },
     { domain: 'google.com', query_count: 27878 },
   ],
   top_organizations: [
@@ -390,10 +390,10 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
 
     // Verify Top Domains, Registered Domains, and ASN Organizations cards
     expect(
-      within(screen.getByTestId('overview-top-domains')).getByText('es1.sparkle-pony.com'),
+      within(screen.getByTestId('overview-top-domains')).getByText('elasticsearch.example.local'),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByTestId('overview-top-reg-domains')).getByText('sparkle-pony.com'),
+      within(screen.getByTestId('overview-top-reg-domains')).getByText('example.local'),
     ).toBeInTheDocument()
     expect(
       within(screen.getByTestId('overview-top-orgs')).getByText('Google LLC'),

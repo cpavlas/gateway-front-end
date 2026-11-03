@@ -15,24 +15,24 @@ def _base_kwargs() -> dict[str, object]:
         "app_secret_key": "a" * 64,
         "admin_username": "admin",
         "admin_password": "ValidAdminPassword!123",
-        "opnsense_base_url": "https://gateway.sparkle-pony.com/",
+        "opnsense_base_url": "https://opnsense.example.local/",
         "opnsense_api_key": "opn_key",
         "opnsense_api_secret": "opn_secret",
-        "opnsense_protected_ips": "192.168.50.5, 192.168.50.10",
-        "elasticsearch_url": "https://es1.sparkle-pony.com/",
+        "opnsense_protected_ips": "192.168.1.5, 192.168.1.10",
+        "elasticsearch_url": "https://elasticsearch.example.local:9200/",
         "elasticsearch_api_key": "ZXNfa2V5",
         "elasticsearch_index_patterns": "logs-pfsense.log*, logs-other*",
     }
 
 
 def test_valid_settings_and_normalization() -> None:
-    """Valid settings normalize URLs, enforce 192.168.50.1 protection, and parse index patterns."""
+    """Valid settings normalize URLs, enforce 192.168.1.1 protection, and parse index patterns."""
     cfg = Settings(**_base_kwargs())
-    assert cfg.opnsense_base_url == "https://gateway.sparkle-pony.com"
-    assert cfg.elasticsearch_url == "https://es1.sparkle-pony.com"
+    assert cfg.opnsense_base_url == "https://opnsense.example.local"
+    assert cfg.elasticsearch_url == "https://elasticsearch.example.local:9200"
     assert DEFAULT_GATEWAY_IP in cfg.protected_ip_set
-    assert "192.168.50.5" in cfg.protected_ip_set
-    assert "192.168.50.10" in cfg.protected_ip_set
+    assert "192.168.1.5" in cfg.protected_ip_set
+    assert "192.168.1.10" in cfg.protected_ip_set
     assert cfg.es_index_pattern_list == ["logs-pfsense.log*", "logs-other*"]
 
 
@@ -81,7 +81,7 @@ def test_rejects_empty_or_placeholder_admin_password(bad_password: str) -> None:
 def test_rejects_invalid_protected_ip() -> None:
     """OPNSENSE_PROTECTED_IPS must reject malformed IP strings."""
     kwargs = _base_kwargs()
-    kwargs["opnsense_protected_ips"] = "192.168.50.1, not-an-ip"
+    kwargs["opnsense_protected_ips"] = "192.168.1.1, not-an-ip"
     with pytest.raises(ValidationError):
         Settings(**kwargs)
 
@@ -89,6 +89,6 @@ def test_rejects_invalid_protected_ip() -> None:
 def test_rejects_invalid_url_scheme() -> None:
     """Base URLs must start with http:// or https://."""
     kwargs = _base_kwargs()
-    kwargs["opnsense_base_url"] = "ftp://gateway.sparkle-pony.com"
+    kwargs["opnsense_base_url"] = "ftp://opnsense.example.local"
     with pytest.raises(ValidationError):
         Settings(**kwargs)

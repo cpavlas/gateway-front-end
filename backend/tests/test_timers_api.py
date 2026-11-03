@@ -24,7 +24,7 @@ async def _seed_devices_and_group(test_settings: Settings) -> tuple[int, int, in
     async with session_factory() as session:
         d1 = Device(
             mac_address="aa:bb:cc:11:22:01",
-            ipv4_address="192.168.50.101",
+            ipv4_address="192.168.1.101",
             hostname="kids-ipad",
             display_name="Kids iPad",
             lease_type="dynamic",
@@ -33,7 +33,7 @@ async def _seed_devices_and_group(test_settings: Settings) -> tuple[int, int, in
         )
         d2 = Device(
             mac_address="aa:bb:cc:11:22:02",
-            ipv4_address="192.168.50.102",
+            ipv4_address="192.168.1.102",
             hostname="kids-switch",
             display_name="Kids Switch",
             lease_type="dynamic",

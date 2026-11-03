@@ -215,7 +215,7 @@ def test_sync_entity_override_helpers() -> None:
     dev = Device(
         id=10,
         mac_address="aa:bb:cc:00:00:10",
-        ipv4_address="192.168.50.10",
+        ipv4_address="192.168.1.10",
         display_name="Tablet",
         lease_type="dynamic",
     )
@@ -224,7 +224,7 @@ def test_sync_entity_override_helpers() -> None:
         target_type="device",
         device_id=10,
         group_id=None,
-        target_label="Tablet (192.168.50.10)",
+        target_label="Tablet (192.168.1.10)",
         mode="pause",
         minutes=30,
         actor="admin",
@@ -264,7 +264,7 @@ async def test_temporary_override_orm_cascade_delete(
     async with session_factory() as session:
         dev = Device(
             mac_address="aa:bb:cc:00:11:22",
-            ipv4_address="192.168.50.88",
+            ipv4_address="192.168.1.88",
             hostname="gaming-pc",
             lease_type="dynamic",
         )

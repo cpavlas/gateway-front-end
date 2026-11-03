@@ -151,7 +151,7 @@ def test_is_schedule_window_active_same_day_overnight_and_dst() -> None:
 
 def test_five_tier_policy_precedence_matrix() -> None:
     """Verify the complete 5-tier policy precedence matrix across all combinations."""
-    protected_ips = frozenset({"192.168.50.1", "192.168.50.5"})
+    protected_ips = frozenset({"192.168.1.1", "192.168.1.5"})
 
     active_sched = ActiveScheduleInfo(
         schedule_id=1,
@@ -191,7 +191,7 @@ def test_five_tier_policy_precedence_matrix() -> None:
     dev = Device(
         id=1,
         mac_address="aa:bb:cc:dd:ee:01",
-        ipv4_address="192.168.50.101",
+        ipv4_address="192.168.1.101",
         is_blocked=False,
         is_manually_blocked=False,
         is_protected=False,
@@ -237,12 +237,12 @@ def test_five_tier_policy_precedence_matrix() -> None:
 
 def test_plan_policy_and_dhcp_ip_drift_actions() -> None:
     """Verify DHCP IP drift detection swaps old blocked IP for new IP in OPNsense alias."""
-    protected_ips = frozenset({"192.168.50.1"})
-    # Device #1 was blocked at 192.168.50.200, but Dnsmasq gave it a new IP 192.168.50.205
+    protected_ips = frozenset({"192.168.1.1"})
+    # Device #1 was blocked at 192.168.1.200, but Dnsmasq gave it a new IP 192.168.1.205
     dev1 = Device(
         id=1,
         mac_address="aa:bb:cc:dd:ee:10",
-        ipv4_address="192.168.50.205",
+        ipv4_address="192.168.1.205",
         is_blocked=True,
         is_manually_blocked=True,
         is_protected=False,
@@ -251,7 +251,7 @@ def test_plan_policy_and_dhcp_ip_drift_actions() -> None:
     dev2 = Device(
         id=2,
         mac_address="aa:bb:cc:dd:ee:20",
-        ipv4_address="192.168.50.210",
+        ipv4_address="192.168.1.210",
         is_blocked=True,
         is_manually_blocked=False,
         is_protected=False,
@@ -260,14 +260,14 @@ def test_plan_policy_and_dhcp_ip_drift_actions() -> None:
         1: evaluate_device_effective_policy(dev1, protected_ips, None, None),
         2: evaluate_device_effective_policy(dev2, protected_ips, None, None),
     }
-    current_alias_ips = {"192.168.50.200", "192.168.50.210"}
+    current_alias_ips = {"192.168.1.200", "192.168.1.210"}
 
     to_block, to_unblock, drift_ips = plan_policy_and_ip_drift_actions(
         [dev1, dev2], decisions, current_alias_ips, protected_ips
     )
-    assert [d.ipv4_address for d, _ in to_block] == ["192.168.50.205"]
-    assert [d.ipv4_address for d, _ in to_unblock] == ["192.168.50.210"]
-    assert drift_ips == ["192.168.50.200"]
+    assert [d.ipv4_address for d, _ in to_block] == ["192.168.1.205"]
+    assert [d.ipv4_address for d, _ in to_unblock] == ["192.168.1.210"]
+    assert drift_ips == ["192.168.1.200"]
 
 
 async def test_schedule_crud_and_policy_reconciliation_lifecycle(
@@ -279,14 +279,14 @@ async def test_schedule_crud_and_policy_reconciliation_lifecycle(
     factory = get_session_factory(test_settings)
     mock_opnsense = AsyncMock()
     mock_opnsense.list_blocked_alias_ips.return_value = []
-    mock_opnsense.add_ip_to_block_alias.return_value = ["192.168.50.150"]
+    mock_opnsense.add_ip_to_block_alias.return_value = ["192.168.1.150"]
     mock_opnsense.kill_states_for_ip.return_value = {"result": "ok"}
     mock_opnsense.remove_ip_from_block_alias.return_value = []
 
     async with factory() as db:
         dev = Device(
             mac_address="aa:bb:cc:00:11:22",
-            ipv4_address="192.168.50.150",
+            ipv4_address="192.168.1.150",
             display_name="Kids Tablet",
             is_online=True,
             is_blocked=False,
@@ -347,7 +347,7 @@ async def test_schedule_crud_and_policy_reconciliation_lifecycle(
         assert updated.target_name == "Kids Tablet"
 
         # Toggle schedule off -> device should automatically unblock!
-        mock_opnsense.list_blocked_alias_ips.return_value = ["192.168.50.150"]
+        mock_opnsense.list_blocked_alias_ips.return_value = ["192.168.1.150"]
         toggled = await toggle_schedule(
             db, mock_opnsense, test_settings, created.id, is_enabled=False
         )
@@ -397,8 +397,8 @@ async def test_schedule_crud_and_policy_reconciliation_lifecycle(
         assert g_map[grp.id].name == "Group Rule"
 
         # Verify reconcile_schedules_and_policies cleans up drifted IPs
-        mock_opnsense.list_blocked_alias_ips.return_value = ["192.168.50.250"]
+        mock_opnsense.list_blocked_alias_ips.return_value = ["192.168.1.250"]
         rec_summary = await reconcile_schedules_and_policies(
             db, mock_opnsense, test_settings
         )
-        assert rec_summary.ip_drift_swaps == ["192.168.50.250"]
+        assert rec_summary.ip_drift_swaps == ["192.168.1.250"]

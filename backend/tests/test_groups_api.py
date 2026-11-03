@@ -49,7 +49,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
     d_allowed = Device(
         id=1,
         mac_address="aa:bb:cc:00:00:01",
-        ipv4_address="192.168.50.11",
+        ipv4_address="192.168.1.11",
         hostname="ipad-1",
         display_name="Kids iPad",
         is_online=True,
@@ -62,7 +62,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
     d_blocked = Device(
         id=2,
         mac_address="aa:bb:cc:00:00:02",
-        ipv4_address="192.168.50.12",
+        ipv4_address="192.168.1.12",
         hostname="switch-2",
         display_name="Kids Switch",
         is_online=True,
@@ -75,7 +75,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
     d_protected = Device(
         id=3,
         mac_address="aa:bb:cc:00:00:03",
-        ipv4_address="192.168.50.13",
+        ipv4_address="192.168.1.13",
         hostname="proxmox",
         display_name="Proxmox Host",
         is_online=True,
@@ -115,7 +115,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
         action="block",
     )
     assert block_plan["eligible_device_ids"] == [1, 2]
-    assert block_plan["eligible_ips"] == ["192.168.50.11", "192.168.50.12"]
+    assert block_plan["eligible_ips"] == ["192.168.1.11", "192.168.1.12"]
     assert block_plan["skipped_protected_names"] == ["Proxmox Host"]
     assert block_plan["skipped_no_ip_names"] == ["Old Kindle"]
 
@@ -124,7 +124,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
         action="unblock",
     )
     assert unblock_plan["eligible_device_ids"] == [1, 2, 4]
-    assert unblock_plan["eligible_ips"] == ["192.168.50.11", "192.168.50.12"]
+    assert unblock_plan["eligible_ips"] == ["192.168.1.11", "192.168.1.12"]
     assert unblock_plan["skipped_no_ip_names"] == ["Old Kindle"]
 
     grp = DeviceGroup(
@@ -148,7 +148,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
 
     empty_analytics = _build_empty_group_analytics_response(
         grp_resp,
-        tracked_ips=["192.168.50.11", "192.168.50.12"],
+        tracked_ips=["192.168.1.11", "192.168.1.12"],
         window="24h",
         warning="ES offline",
         es_reachable=False,
@@ -158,7 +158,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
 
     full_analytics = _assemble_group_analytics_response(
         grp_resp,
-        tracked_ips=["192.168.50.11", "192.168.50.12"],
+        tracked_ips=["192.168.1.11", "192.168.1.12"],
         es_data={
             "summary": {
                 "total_events": 500,
@@ -173,7 +173,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
             },
             "member_ip_breakdown": [
                 {
-                    "ip": "192.168.50.11",
+                    "ip": "192.168.1.11",
                     "total_events": 400,
                     "bytes": 200000,
                     "dns_query_count": 250,
@@ -194,7 +194,7 @@ def test_synchronous_group_helpers_and_state_calculation(test_settings: Settings
                     "domain": "m.youtube.com",
                     "registered_domain": "youtube.com",
                     "record_type": "AAAA",
-                    "source_ip": "192.168.50.11",
+                    "source_ip": "192.168.1.11",
                 }
             ],
         },
@@ -229,7 +229,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
     async with factory() as session:
         d1 = Device(
             mac_address="aa:bb:cc:11:22:01",
-            ipv4_address="192.168.50.61",
+            ipv4_address="192.168.1.61",
             hostname="kid-tablet",
             display_name="Kid Tablet",
             vendor="Apple",
@@ -244,7 +244,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
         )
         d2 = Device(
             mac_address="aa:bb:cc:11:22:02",
-            ipv4_address="192.168.50.62",
+            ipv4_address="192.168.1.62",
             hostname="kid-laptop",
             display_name="Kid Laptop",
             vendor="Dell",
@@ -259,7 +259,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
         )
         d3_protected = Device(
             mac_address="aa:bb:cc:11:22:03",
-            ipv4_address="192.168.50.63",
+            ipv4_address="192.168.1.63",
             hostname="nas-server",
             display_name="Home NAS",
             vendor="Synology",
@@ -356,7 +356,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
         b_body = block_resp.json()
         assert b_body["action"] == "block"
         assert b_body["group"]["access_status"] == "blocked"
-        assert sorted(b_body["affected_ips"]) == ["192.168.50.61", "192.168.50.62"]
+        assert sorted(b_body["affected_ips"]) == ["192.168.1.61", "192.168.1.62"]
         assert b_body["skipped_protected_names"] == ["Home NAS"]
         assert b_body["skipped_no_ip_names"] == ["Offline Watch"]
 
@@ -371,8 +371,8 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
                 200,
                 json={
                     "rows": [
-                        {"ip": "192.168.50.61"},
-                        {"ip": "192.168.50.62"},
+                        {"ip": "192.168.1.61"},
+                        {"ip": "192.168.1.62"},
                     ]
                 },
             )
@@ -411,7 +411,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
             },
             "member_ip_breakdown": [
                 {
-                    "ip": "192.168.50.61",
+                    "ip": "192.168.1.61",
                     "total_events": 300,
                     "bytes": 70000,
                     "dns_query_count": 200,
@@ -430,7 +430,7 @@ async def test_groups_crud_bulk_block_unblock_and_analytics_endpoints(
                     "domain": "disneyplus.com",
                     "registered_domain": "disneyplus.com",
                     "record_type": "A",
-                    "source_ip": "192.168.50.61",
+                    "source_ip": "192.168.1.61",
                 }
             ],
         }

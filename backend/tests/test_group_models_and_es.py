@@ -40,19 +40,19 @@ def test_normalize_group_color_validation() -> None:
 
 def test_validate_ipv4_list_deduplicates_and_rejects_empty() -> None:
     """Verify validate_ipv4_list deduplicates valid IPs and rejects empty or invalid lists."""
-    ips = validate_ipv4_list(["192.168.50.10", " 192.168.50.20 ", "192.168.50.10", ""])
-    assert ips == ["192.168.50.10", "192.168.50.20"]
+    ips = validate_ipv4_list(["192.168.1.10", " 192.168.1.20 ", "192.168.1.10", ""])
+    assert ips == ["192.168.1.10", "192.168.1.20"]
 
     with pytest.raises(ValueError, match="At least one valid IPv4"):
         validate_ipv4_list(["", "   "])
 
     with pytest.raises(ValueError, match="Invalid IPv4"):
-        validate_ipv4_list(["192.168.50.10", "not-an-ip"])
+        validate_ipv4_list(["192.168.1.10", "not-an-ip"])
 
 
 def test_build_group_analytics_and_recent_domains_queries() -> None:
     """Verify multi-IP terms filters and by_source_ip/by_destination_ip aggregations."""
-    ips = ["192.168.50.10", "192.168.50.20"]
+    ips = ["192.168.1.10", "192.168.1.20"]
     q = build_group_analytics_query(
         ipv4_addresses=ips,
         window="7d",
@@ -117,7 +117,7 @@ def test_normalize_group_analytics_response_computes_member_breakdown() -> None:
             "by_source_ip": {
                 "buckets": [
                     {
-                        "key": "192.168.50.10",
+                        "key": "192.168.1.10",
                         "doc_count": 220,
                         "bytes": {"value": 90000},
                         "dns_queries": {"doc_count": 100},
@@ -125,7 +125,7 @@ def test_normalize_group_analytics_response_computes_member_breakdown() -> None:
                         "blocked_packets": {"doc_count": 10},
                     },
                     {
-                        "key": "192.168.50.20",
+                        "key": "192.168.1.20",
                         "doc_count": 80,
                         "bytes": {"value": 30000},
                         "dns_queries": {"doc_count": 50},
@@ -142,7 +142,7 @@ def test_normalize_group_analytics_response_computes_member_breakdown() -> None:
             "by_destination_ip": {
                 "buckets": [
                     {
-                        "key": "192.168.50.10",
+                        "key": "192.168.1.10",
                         "doc_count": 50,
                         "bytes": {"value": 30000},
                         "allowed_packets": {"doc_count": 50},
@@ -169,7 +169,7 @@ def test_normalize_group_analytics_response_computes_member_breakdown() -> None:
                 {
                     "_source": {
                         "@timestamp": "2026-10-31T17:00:00.000Z",
-                        "source": {"ip": "192.168.50.10"},
+                        "source": {"ip": "192.168.1.10"},
                         "dns": {
                             "question": {
                                 "name": "www.roblox.com",
@@ -186,18 +186,18 @@ def test_normalize_group_analytics_response_computes_member_breakdown() -> None:
     normalized = normalize_group_analytics_response(
         raw_aggs,
         raw_recent,
-        member_ips=["192.168.50.10", "192.168.50.20"],
+        member_ips=["192.168.1.10", "192.168.1.20"],
         window="24h",
     )
     assert normalized["summary"]["total_events"] == 350
     assert normalized["summary"]["total_bytes"] == 150000
     assert len(normalized["member_ip_breakdown"]) == 2
     first_member = normalized["member_ip_breakdown"][0]
-    assert first_member["ip"] == "192.168.50.10"
+    assert first_member["ip"] == "192.168.1.10"
     assert first_member["bytes"] == 120000  # 90000 source + 30000 dest
     assert first_member["total_events"] == 270  # 220 source + 50 dest
     assert first_member["dns_query_count"] == 100
-    assert normalized["recent_queries"][0]["source_ip"] == "192.168.50.10"
+    assert normalized["recent_queries"][0]["source_ip"] == "192.168.1.10"
 
 
 @pytest.mark.asyncio
@@ -217,7 +217,7 @@ async def test_es_service_client_fetch_group_analytics_and_errors(
     mock_es.close = AsyncMock()
     monkeypatch.setattr(client, "create_es_client", lambda: mock_es)
 
-    res = await client.fetch_group_analytics(["192.168.50.10", "192.168.50.20"], window="1h")
+    res = await client.fetch_group_analytics(["192.168.1.10", "192.168.1.20"], window="1h")
     assert res["window"] == "1h"
     assert res["summary"]["total_events"] == 12
     assert len(res["member_ip_breakdown"]) == 2
@@ -230,7 +230,7 @@ async def test_es_service_client_fetch_group_analytics_and_errors(
     mock_es_auth.close = AsyncMock()
     monkeypatch.setattr(client, "create_es_client", lambda: mock_es_auth)
     with pytest.raises(ElasticsearchQueryError) as exc_info:
-        await client.fetch_group_analytics(["192.168.50.10"])
+        await client.fetch_group_analytics(["192.168.1.10"])
     assert exc_info.value.status_code == 403
 
     # Transport error (503)
@@ -239,7 +239,7 @@ async def test_es_service_client_fetch_group_analytics_and_errors(
     mock_es_conn.close = AsyncMock()
     monkeypatch.setattr(client, "create_es_client", lambda: mock_es_conn)
     with pytest.raises(ElasticsearchQueryError) as exc_info2:
-        await client.fetch_group_analytics(["192.168.50.10"])
+        await client.fetch_group_analytics(["192.168.1.10"])
     assert exc_info2.value.status_code == 503
 
 
@@ -250,8 +250,8 @@ async def test_device_group_and_membership_persistence_and_cascade(
     """Verify DeviceGroup and DeviceGroupMembership constraints and ON DELETE CASCADE."""
     factory = get_session_factory(initialized_db)
     async with factory() as session:
-        d1 = Device(mac_address="aa:bb:cc:00:11:01", ipv4_address="192.168.50.101")
-        d2 = Device(mac_address="aa:bb:cc:00:11:02", ipv4_address="192.168.50.102")
+        d1 = Device(mac_address="aa:bb:cc:00:11:01", ipv4_address="192.168.1.101")
+        d2 = Device(mac_address="aa:bb:cc:00:11:02", ipv4_address="192.168.1.102")
         grp = DeviceGroup(
             name="Kids Devices",
             description="Phones and tablets",

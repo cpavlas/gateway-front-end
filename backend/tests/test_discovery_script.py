@@ -22,8 +22,8 @@ from app.services.discovery_probe import (
 def test_redact_sensitive_value_masks_ips_and_macs() -> None:
     """redact_sensitive_value replaces IPv4 and MAC strings while preserving keys."""
     sample = {
-        "source": {"ip": "192.168.50.42", "mac": "aa:bb:cc:11:22:33", "port": 51234},
-        "message": "DHCPACK on 192.168.50.42 to aa:bb:cc:11:22:33 via igb0",
+        "source": {"ip": "192.168.1.42", "mac": "aa:bb:cc:11:22:33", "port": 51234},
+        "message": "DHCPACK on 192.168.1.42 to aa:bb:cc:11:22:33 via igb0",
         "nested": ["10.0.0.1", 123],
     }
     redacted = redact_sensitive_value(sample)
@@ -79,24 +79,24 @@ async def test_run_full_discovery_generates_markdown_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """run_full_discovery probes OPNsense and ES and writes a complete markdown report."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(
             200,
-            json=[{"ip": "192.168.50.10", "mac": "aa:bb:cc:dd:ee:ff", "intf": "lan"}],
+            json=[{"ip": "192.168.1.10", "mac": "aa:bb:cc:dd:ee:ff", "intf": "lan"}],
         )
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(
             200,
             json={
                 "rows": [
-                    {"address": "192.168.50.10", "hwaddr": "aa:bb:cc:dd:ee:ff", "hostname": "tv"}
+                    {"address": "192.168.1.10", "hwaddr": "aa:bb:cc:dd:ee:ff", "hostname": "tv"}
                 ]
             },
         )
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     mock_es = AsyncMock()
@@ -122,7 +122,7 @@ async def test_run_full_discovery_generates_markdown_report(
                 {
                     "_source": {
                         "@timestamp": "2026-10-31T12:00:00Z",
-                        "source": {"ip": "192.168.50.10"},
+                        "source": {"ip": "192.168.1.10"},
                         "process": {"name": "filterlog"},
                     }
                 }
@@ -148,7 +148,7 @@ async def test_run_full_discovery_generates_markdown_report(
     content = report_path.read_text(encoding="utf-8")
     assert "source.ip" in content
     assert "<REDACTED_IP>" in content
-    assert "192.168.50.10" not in content
+    assert "192.168.1.10" not in content
 
 
 def test_render_discovery_markdown_handles_errors() -> None:

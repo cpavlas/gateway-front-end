@@ -80,7 +80,7 @@ def test_build_and_normalize_network_overview() -> None:
                 "top_ips": {
                     "buckets": [
                         {
-                            "key": "192.168.50.134",
+                            "key": "192.168.1.134",
                             "doc_count": 61892,
                             "bytes": {"value": 33604.0},
                             "dns_queries": {"doc_count": 61225},
@@ -96,12 +96,12 @@ def test_build_and_normalize_network_overview() -> None:
                 "top_domains": {
                     "buckets": [
                         {"key": "discord.com", "doc_count": 1294},
-                        {"key": "es1.sparkle-pony.com", "doc_count": 8956},
+                        {"key": "elasticsearch.example.local", "doc_count": 8956},
                     ]
                 },
                 "top_registered_domains": {
                     "buckets": [
-                        {"key": "sparkle-pony.com", "doc_count": 12208},
+                        {"key": "example.local", "doc_count": 12208},
                         {"key": "discord.com", "doc_count": 1294},
                     ]
                 },
@@ -131,7 +131,7 @@ def test_build_and_normalize_network_overview() -> None:
     assert len(norm["timeline"]) == 1
     assert norm["timeline"][0]["bytes"] == 102400
     assert len(norm["top_devices"]) == 1
-    assert norm["top_devices"][0]["ipv4_address"] == "192.168.50.134"
+    assert norm["top_devices"][0]["ipv4_address"] == "192.168.1.134"
     assert norm["top_domains"][0]["domain"] == "discord.com"
     assert norm["top_organizations"][0]["organization"] == "Google LLC"
 
@@ -141,12 +141,12 @@ def test_build_and_normalize_network_overview() -> None:
 
 
 def test_build_and_normalize_device_analytics_and_24h_profile() -> None:
-    aggs_q = build_device_analytics_query("192.168.50.134", window="7d", tz_name="", top_n=12)
+    aggs_q = build_device_analytics_query("192.168.1.134", window="7d", tz_name="", top_n=12)
     assert aggs_q["aggs"]["timeline"]["date_histogram"]["fixed_interval"] == "6h"
     assert aggs_q["aggs"]["timeline"]["date_histogram"]["time_zone"] == "UTC"
 
     recent_q = build_device_recent_domains_query(
-        "192.168.50.134",
+        "192.168.1.134",
         window="24h",
         domain_search="discord",
         limit=25,
@@ -285,7 +285,7 @@ async def test_es_service_client_fetch_methods_and_error_wrapping(
     assert overview["window"] == "1h"
     assert overview["summary"]["total_bytes"] == 512
 
-    dev_analytics = await svc.fetch_device_analytics("192.168.50.134", window="24h")
+    dev_analytics = await svc.fetch_device_analytics("192.168.1.134", window="24h")
     assert dev_analytics["window"] == "24h"
     assert dev_analytics["summary"]["total_bytes"] == 512
 
@@ -298,7 +298,7 @@ async def test_es_service_client_fetch_methods_and_error_wrapping(
     assert exc_info.value.status_code == 403
 
     with pytest.raises(ElasticsearchQueryError) as exc_info2:
-        await svc.fetch_device_analytics("192.168.50.134", "24h")
+        await svc.fetch_device_analytics("192.168.1.134", "24h")
     assert exc_info2.value.status_code == 403
 
     # Test TransportError -> ElasticsearchQueryError(503)
@@ -308,5 +308,5 @@ async def test_es_service_client_fetch_methods_and_error_wrapping(
     assert exc_info3.value.status_code == 503
 
     with pytest.raises(ElasticsearchQueryError) as exc_info4:
-        await svc.fetch_device_analytics("192.168.50.134", "24h")
+        await svc.fetch_device_analytics("192.168.1.134", "24h")
     assert exc_info4.value.status_code == 503

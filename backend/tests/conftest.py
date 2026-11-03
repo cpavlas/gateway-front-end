@@ -38,13 +38,13 @@ def test_settings(tmp_path: Path) -> Settings:
         auth_rate_limit_attempts=3,
         auth_rate_limit_window_seconds=60,
         database_url=f"sqlite+aiosqlite:///{db_file.as_posix()}",
-        opnsense_base_url="https://gateway.sparkle-pony.com",
+        opnsense_base_url="https://opnsense.example.local",
         opnsense_api_key="test_opn_key",
         opnsense_api_secret="test_opn_secret",
         opnsense_verify_ssl=True,
         opnsense_block_alias="gateway_blocked_devices",
-        opnsense_protected_ips="192.168.50.1,192.168.50.10",
-        elasticsearch_url="https://es1.sparkle-pony.com",
+        opnsense_protected_ips="192.168.1.1,192.168.1.10",
+        elasticsearch_url="https://elasticsearch.example.local:9200",
         elasticsearch_api_key="dGVzdF9pZDp0ZXN0X3NlY3JldA==",
         elasticsearch_verify_ssl=True,
         elasticsearch_index_patterns="logs-pfsense.log*",
@@ -68,7 +68,7 @@ async def async_client(test_settings: Settings) -> AsyncGenerator[AsyncClient, N
     app.dependency_overrides[get_settings] = lambda: test_settings
     await init_db(test_settings)
 
-    transport = ASGITransport(app=app, client=("192.168.50.25", 54321))
+    transport = ASGITransport(app=app, client=("192.168.1.25", 54321))
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
 

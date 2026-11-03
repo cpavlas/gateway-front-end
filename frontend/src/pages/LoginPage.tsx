@@ -42,7 +42,7 @@ export const LoginPage: React.FC = () => {
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-100">
-            Sparkle-Pony Gateway Control
+            OPNsense Gateway Control
           </h1>
           <p className="text-sm text-slate-400">
             Sign in with administrator credentials to manage OPNsense device access &amp; telemetry

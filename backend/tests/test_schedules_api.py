@@ -53,7 +53,7 @@ async def test_schedules_api_crud_and_bonus_timer_precedence(
     async with factory() as db:
         dev = Device(
             mac_address="aa:bb:cc:dd:ee:99",
-            ipv4_address="192.168.50.120",
+            ipv4_address="192.168.1.120",
             display_name="Gaming Console",
             is_online=True,
             is_blocked=False,

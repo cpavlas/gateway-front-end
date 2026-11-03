@@ -62,7 +62,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     const user = userEvent.setup()
     render(<App queryClient={createTestQueryClient()} initialTab="status" />)
 
-    expect(await screen.findByRole('heading', { name: /Sparkle-Pony Gateway Control/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /OPNsense Gateway Control/i })).toBeInTheDocument()
 
     // Submit with empty password -> should show client-side validation error without calling fetch
     await user.click(screen.getByRole('button', { name: /Sign In/i }))
@@ -165,7 +165,7 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     expect(await screen.findByTestId('overall-health-badge')).toHaveTextContent('healthy')
 
     const opnsenseCard = screen.getByTestId('service-card-opnsense')
-    expect(within(opnsenseCard).getByText('gateway.sparkle-pony.com')).toBeInTheDocument()
+    expect(within(opnsenseCard).getByText('OPNsense REST API (26.7.7-amd64)')).toBeInTheDocument()
     expect(within(opnsenseCard).getByText('348.3 ms')).toBeInTheDocument()
     expect(within(opnsenseCard).getByText('59')).toBeInTheDocument()
 

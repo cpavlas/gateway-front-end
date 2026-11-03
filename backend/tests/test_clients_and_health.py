@@ -20,22 +20,22 @@ from app.config import Settings
 @respx.mock
 async def test_opnsense_client_healthy_probe(test_settings: Settings) -> None:
     """OPNsenseClient.check_health succeeds when ARP, Dnsmasq leases, and alias_util return 200."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(
             200,
             json=[
-                {"ip": "192.168.50.1", "mac": "aa:bb:cc:dd:ee:01", "intf": "igb0"},
-                {"ip": "192.168.50.101", "mac": "aa:bb:cc:dd:ee:02", "intf": "igb0"},
+                {"ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:01", "intf": "igb0"},
+                {"ip": "192.168.1.101", "mac": "aa:bb:cc:dd:ee:02", "intf": "igb0"},
             ],
         )
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(
             200,
             json={
                 "rows": [
                     {
-                        "address": "192.168.50.101",
+                        "address": "192.168.1.101",
                         "hwaddr": "aa:bb:cc:dd:ee:02",
                         "hostname": "kids-ipad",
                     }
@@ -44,11 +44,11 @@ async def test_opnsense_client_healthy_probe(test_settings: Settings) -> None:
         )
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(
         return_value=httpx.Response(
             200,
-            json={"rows": [{"ip": "192.168.50.200"}]},
+            json={"rows": [{"ip": "192.168.1.200"}]},
         )
     )
 
@@ -64,7 +64,7 @@ async def test_opnsense_client_healthy_probe(test_settings: Settings) -> None:
 @respx.mock
 async def test_opnsense_client_auth_failure(test_settings: Settings) -> None:
     """OPNsenseClient.check_health returns unhealthy when API returns 401/403."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(403, json={"message": "Forbidden"})
     )
 
@@ -79,14 +79,14 @@ async def test_opnsense_client_auth_failure(test_settings: Settings) -> None:
 @respx.mock
 async def test_opnsense_client_missing_alias_returns_degraded(test_settings: Settings) -> None:
     """If ARP and Dnsmasq succeed but block alias returns 404/error, status is degraded."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
-        return_value=httpx.Response(200, json={"rows": [{"ip": "192.168.50.1"}]})
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
+        return_value=httpx.Response(200, json={"rows": [{"ip": "192.168.1.1"}]})
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(200, json=[])
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(404, json={"error": "alias not found"}))
 
     client = OPNsenseClient(test_settings)
@@ -101,20 +101,20 @@ async def test_opnsense_client_alias_util_403_falls_back_to_alias_config_api(
     test_settings: Settings,
 ) -> None:
     """When alias_util/list returns 403, OPNsenseClient falls back to alias config API."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
-        return_value=httpx.Response(200, json=[{"ip": "192.168.50.1"}])
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
+        return_value=httpx.Response(200, json=[{"ip": "192.168.1.1"}])
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(200, json={"rows": []})
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(403, json={"status": 403, "message": "Forbidden"}))
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias/get_alias_uuid/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias/get_alias_uuid/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"uuid": "7eb9bc75-bcba-42f9-8193-f5b14090488a"}))
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias/get_item/7eb9bc75-bcba-42f9-8193-f5b14090488a"
+        "https://opnsense.example.local/api/firewall/alias/get_item/7eb9bc75-bcba-42f9-8193-f5b14090488a"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -124,7 +124,7 @@ async def test_opnsense_client_alias_util_403_falls_back_to_alias_config_api(
                     "name": "gateway_blocked_devices",
                     "content": {
                         "": {"value": "", "selected": 0},
-                        "192.168.50.155": {"value": "192.168.50.155", "selected": 1},
+                        "192.168.1.155": {"value": "192.168.1.155", "selected": 1},
                         "Theater_Room_TV": {"value": "Theater_Room_TV", "selected": 0},
                     },
                 }
@@ -142,8 +142,8 @@ async def test_opnsense_client_alias_util_403_falls_back_to_alias_config_api(
 @respx.mock
 async def test_opnsense_client_timeout_returns_unhealthy(test_settings: Settings) -> None:
     """Network timeout during OPNsense probe returns unhealthy status cleanly."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
-        side_effect=httpx.ConnectTimeout("Timed out connecting to gateway.sparkle-pony.com")
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
+        side_effect=httpx.ConnectTimeout("Timed out connecting to opnsense.example.local")
     )
 
     client = OPNsenseClient(test_settings)
@@ -156,7 +156,7 @@ async def test_opnsense_client_timeout_returns_unhealthy(test_settings: Settings
 @respx.mock
 async def test_opnsense_raise_for_status_500(test_settings: Settings) -> None:
     """HTTP 500 from OPNsense raises OPNsenseClientError with status_code 500."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
         return_value=httpx.Response(500, text="Internal Server Error")
     )
     client = OPNsenseClient(test_settings)
@@ -224,14 +224,14 @@ async def test_system_health_endpoint_authenticated_aggregation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Authenticated GET /api/v1/system/health aggregates SQLite, OPNsense, and ES health."""
-    respx.get("https://gateway.sparkle-pony.com/api/diagnostics/interface/get_arp").mock(
-        return_value=httpx.Response(200, json=[{"ip": "192.168.50.1"}])
+    respx.get("https://opnsense.example.local/api/diagnostics/interface/get_arp").mock(
+        return_value=httpx.Response(200, json=[{"ip": "192.168.1.1"}])
     )
-    respx.get("https://gateway.sparkle-pony.com/api/dnsmasq/leases/search").mock(
+    respx.get("https://opnsense.example.local/api/dnsmasq/leases/search").mock(
         return_value=httpx.Response(200, json={"rows": []})
     )
     respx.get(
-        "https://gateway.sparkle-pony.com/api/firewall/alias_util/list/gateway_blocked_devices"
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_blocked_devices"
     ).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     async def fake_es_health(self: Any) -> ServiceHealthStatus:

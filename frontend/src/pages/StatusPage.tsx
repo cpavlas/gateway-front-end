@@ -356,7 +356,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             <ServiceCard
               testId="service-card-opnsense"
               title="OPNsense Firewall"
-              subtitle="gateway.sparkle-pony.com"
+              subtitle="OPNsense REST API (26.7.7-amd64)"
               icon={<Router className="h-5 w-5" aria-hidden="true" />}
               health={healthReport?.services?.opnsense}
             />
@@ -364,7 +364,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             <ServiceCard
               testId="service-card-elasticsearch"
               title="Elasticsearch 9.4.3"
-              subtitle="es1.sparkle-pony.com (logs-pfsense.log*)"
+              subtitle="Elastic pfSense Integration (logs-pfsense.log*)"
               icon={<Database className="h-5 w-5" aria-hidden="true" />}
               health={healthReport?.services?.elasticsearch}
             />

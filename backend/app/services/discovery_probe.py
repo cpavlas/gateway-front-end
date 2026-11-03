@@ -218,7 +218,7 @@ def render_discovery_markdown(
     es_data: dict[str, Any],
     generated_at: str | None = None,
 ) -> str:
-    """Render the complete docs/ES_SCHEMA_DISCOVERY.md report from discovery probe results."""
+    """Render the complete discovery markdown report from discovery probe results."""
     ts = generated_at or datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     opn_health = opn_data.get("health", {})
     es_health = es_data.get("health", {})
@@ -242,7 +242,7 @@ def render_discovery_markdown(
         "",
         "---",
         "",
-        "## 1. OPNsense `26.7.7-amd64` API Probe (`https://gateway.sparkle-pony.com`)",
+        "## 1. OPNsense `26.7.7-amd64` API Probe",
         "",
         f"- **Status Message:** {opn_health.get('message', 'N/A')}",
         f"- **Live ARP Entries (`/api/diagnostics/interface/get_arp`):** `{arp_count}`",
@@ -356,7 +356,7 @@ def render_discovery_markdown(
 async def run_full_discovery(
     settings: Settings, output_path: Path
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Execute both OPNsense and Elasticsearch probes and write docs/ES_SCHEMA_DISCOVERY.md."""
+    """Execute both OPNsense and Elasticsearch probes and write the discovery report."""
     opn_data = await probe_opnsense_environment(settings)
     es_data = await probe_elasticsearch_environment(settings)
     markdown = render_discovery_markdown(opn_data, es_data)

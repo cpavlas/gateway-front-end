@@ -25,7 +25,7 @@ const MOCK_DEVICES: DeviceItem[] = [
   {
     id: 1,
     mac_address: 'aa:bb:cc:dd:ee:01',
-    ipv4_address: '192.168.50.101',
+    ipv4_address: '192.168.1.101',
     hostname: 'kids-ipad',
     display_name: null,
     effective_name: 'kids-ipad',
@@ -44,7 +44,7 @@ const MOCK_DEVICES: DeviceItem[] = [
   {
     id: 2,
     mac_address: 'aa:bb:cc:dd:ee:02',
-    ipv4_address: '192.168.50.102',
+    ipv4_address: '192.168.1.102',
     hostname: 'livingroom-tv',
     display_name: 'Living Room OLED',
     effective_name: 'Living Room OLED',
@@ -63,7 +63,7 @@ const MOCK_DEVICES: DeviceItem[] = [
   {
     id: 3,
     mac_address: 'aa:bb:cc:dd:ee:03',
-    ipv4_address: '192.168.50.1',
+    ipv4_address: '192.168.1.1',
     hostname: 'gateway',
     display_name: 'OPNsense Gateway',
     effective_name: 'OPNsense Gateway',
@@ -73,7 +73,7 @@ const MOCK_DEVICES: DeviceItem[] = [
     is_blocked: false,
     is_online: true,
     is_protected: true,
-    protection_reason: 'Configured in OPNSENSE_PROTECTED_IPS (192.168.50.1)',
+    protection_reason: 'Configured in OPNSENSE_PROTECTED_IPS (192.168.1.1)',
     notes: '',
     first_seen_at: '2026-10-31T10:00:00Z',
     last_seen_at: '2026-10-31T15:00:00Z',

@@ -57,7 +57,7 @@ const mockDevices: DeviceListResponse = {
     {
       id: 2,
       mac_address: 'aa:bb:cc:00:00:02',
-      ipv4_address: '192.168.50.55',
+      ipv4_address: '192.168.1.55',
       hostname: 'kids-ipad',
       display_name: 'Kids iPad',
       effective_name: 'Kids iPad',

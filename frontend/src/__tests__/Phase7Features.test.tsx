@@ -33,7 +33,7 @@ const SAMPLE_DEVICES: DeviceItem[] = [
   {
     id: 10,
     mac_address: 'AA:BB:CC:DD:EE:10',
-    ipv4_address: '192.168.50.110',
+    ipv4_address: '192.168.1.110',
     hostname: 'livingroom-appletv',
     display_name: 'Living Room Apple TV',
     effective_name: 'Living Room Apple TV',
@@ -55,7 +55,7 @@ const SAMPLE_DEVICES: DeviceItem[] = [
   {
     id: 11,
     mac_address: 'AA:BB:CC:DD:EE:11',
-    ipv4_address: '192.168.50.111',
+    ipv4_address: '192.168.1.111',
     hostname: 'kids-ipad',
     display_name: 'Kids iPad',
     effective_name: 'Kids iPad',
@@ -236,7 +236,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
           id: 501,
           action: 'device.youtube_block',
           actor: 'admin',
-          target: '192.168.50.110',
+          target: '192.168.1.110',
           status: 'success',
           details: 'Blocked YouTube',
           created_at: '2026-11-01T13:55:00Z',
@@ -342,10 +342,10 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
         group: { ...SAMPLE_GROUP, youtube_status: 'blocked', youtube_blocked_devices: 2 },
         action: 'youtube_block',
         affected_device_ids: [10, 11],
-        affected_ips: ['192.168.50.110', '192.168.50.111'],
+        affected_ips: ['192.168.1.110', '192.168.1.111'],
         skipped_protected_names: [],
         skipped_no_ip_names: [],
-        states_killed_ips: ['192.168.50.110', '192.168.50.111'],
+        states_killed_ips: ['192.168.1.110', '192.168.1.111'],
         warnings: [],
       })
     vi.spyOn(apiClient, 'getNetworkOverview').mockResolvedValue({
@@ -475,7 +475,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
 
     vi.spyOn(apiClient, 'getGroupAnalytics').mockResolvedValue({
       group: SAMPLE_GROUP,
-      tracked_ips: ['192.168.50.110', '192.168.50.111'],
+      tracked_ips: ['192.168.1.110', '192.168.1.111'],
       window: '24h',
       generated_at: '2026-11-01T14:00:00Z',
       es_reachable: true,

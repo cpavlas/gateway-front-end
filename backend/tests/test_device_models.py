@@ -79,7 +79,7 @@ async def test_device_model_crud_and_unique_mac_constraint(
     async with factory() as session:
         device = Device(
             mac_address=normalize_mac_address("AA:BB:CC:11:22:33"),
-            ipv4_address="192.168.50.25",
+            ipv4_address="192.168.1.25",
             hostname=clean_discovered_hostname("kids-ipad"),
             display_name="Kids iPad",
             vendor="Apple, Inc.",
@@ -102,7 +102,7 @@ async def test_device_model_crud_and_unique_mac_constraint(
     async with factory() as session:
         duplicate = Device(
             mac_address="aa:bb:cc:11:22:33",
-            ipv4_address="192.168.50.99",
+            ipv4_address="192.168.1.99",
         )
         session.add(duplicate)
         with pytest.raises(IntegrityError):
@@ -113,11 +113,11 @@ async def test_device_model_crud_and_unique_mac_constraint(
     async with factory() as session:
         stmt = select(Device).where(Device.mac_address == "aa:bb:cc:11:22:33")
         fetched = (await session.execute(stmt)).scalar_one()
-        fetched.ipv4_address = "192.168.50.42"
+        fetched.ipv4_address = "192.168.1.42"
         await session.commit()
 
     async with factory() as session:
         stmt = select(Device).where(Device.mac_address == "aa:bb:cc:11:22:33")
         updated = (await session.execute(stmt)).scalar_one()
-        assert updated.ipv4_address == "192.168.50.42"
+        assert updated.ipv4_address == "192.168.1.42"
         assert updated.display_name == "Kids iPad"
