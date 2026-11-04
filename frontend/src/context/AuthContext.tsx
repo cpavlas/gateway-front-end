@@ -1,11 +1,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { apiClient, ApiError, type AuthUserResponse, type LoginPayload } from '../api/client'
+import {
+  apiClient,
+  ApiError,
+  type AuthUserResponse,
+  type LoginPayload,
+  type SetupAdminPayload,
+} from '../api/client'
 
 interface AuthContextValue {
   user: AuthUserResponse | null
   isLoading: boolean
   error: string | null
   login: (payload: LoginPayload) => Promise<boolean>
+  setupInitialAdmin: (payload: SetupAdminPayload) => Promise<boolean>
   logout: () => Promise<void>
   clearError: () => void
 }
@@ -50,6 +57,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [])
 
+  const setupInitialAdmin = useCallback(
+    async (payload: SetupAdminPayload): Promise<boolean> => {
+      setError(null)
+      try {
+        const authenticatedUser = await apiClient.setupInitialAdmin(payload)
+        setUser(authenticatedUser)
+        return true
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setError(err.message)
+        } else {
+          setError('Unable to complete initial administrator setup. Please try again.')
+        }
+        return false
+      }
+    },
+    [],
+  )
+
   const logout = useCallback(async (): Promise<void> => {
     try {
       await apiClient.logout()
@@ -72,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         error,
         login,
+        setupInitialAdmin,
         logout,
         clearError,
       }}

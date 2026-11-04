@@ -20,9 +20,11 @@ from app.api.schedules import router as schedules_router
 from app.api.system import audit_router
 from app.api.system import router as system_router
 from app.api.timers import router as timers_router
+from app.api.users import router as users_router
 from app.clients.opnsense import OPNsenseClient
-from app.config import get_settings
+from app.config import apply_runtime_overrides, get_settings
 from app.db import dispose_db, get_session_factory, init_db
+from app.services.runtime_settings_service import load_runtime_settings_from_db
 from app.services.schedule_service import reconcile_schedules_and_policies
 from app.services.timer_service import reconcile_expired_overrides
 
@@ -31,12 +33,14 @@ DEFAULT_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist
 
 async def run_scheduled_override_reconciliation() -> None:
     """Background task tick: reconcile any expired temporary overrides with OPNsense."""
-    settings = get_settings()
-    session_factory = get_session_factory(settings)
-    opnsense = OPNsenseClient(settings)
+    base_settings = get_settings()
+    session_factory = get_session_factory(base_settings)
     async with session_factory() as session:
-        await reconcile_expired_overrides(session, opnsense, settings)
-        await reconcile_schedules_and_policies(session, opnsense, settings)
+        await load_runtime_settings_from_db(session, base_settings)
+        effective_settings = apply_runtime_overrides(base_settings)
+        opnsense = OPNsenseClient(effective_settings)
+        await reconcile_expired_overrides(session, opnsense, effective_settings)
+        await reconcile_schedules_and_policies(session, opnsense, effective_settings)
 
 
 @asynccontextmanager
@@ -107,6 +111,7 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
         return response
 
     app.include_router(auth_router)
+    app.include_router(users_router)
     app.include_router(system_router)
     app.include_router(audit_router)
     app.include_router(devices_router)

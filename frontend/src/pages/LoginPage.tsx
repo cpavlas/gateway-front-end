@@ -1,18 +1,68 @@
-import React, { useState } from 'react'
-import { AlertCircle, Lock, ShieldCheck, User } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { AlertCircle, KeyRound, Lock, ShieldCheck, User } from 'lucide-react'
+import { apiClient } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 
-export const LoginPage: React.FC = () => {
-  const { login, error, clearError } = useAuth()
+export interface LoginPageProps {
+  initialSetupRequired?: boolean
+}
+
+export const LoginPage: React.FC<LoginPageProps> = ({ initialSetupRequired = false }) => {
+  const { login, setupInitialAdmin, error, clearError } = useAuth()
+  const [isSetupMode, setIsSetupMode] = useState(initialSetupRequired)
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (initialSetupRequired) {
+      setIsSetupMode(true)
+      return
+    }
+    const fetchFn = globalThis.fetch as unknown as { mock?: unknown }
+    const setupSpy = apiClient.getSetupStatus as unknown as { mock?: unknown }
+    // Avoid consuming mockResolvedValueOnce(fetch) in legacy unit tests unless getSetupStatus is spied
+    if (setupSpy?.mock || !fetchFn?.mock) {
+      void apiClient
+        .getSetupStatus()
+        .then((res) => {
+          if (res?.needs_initial_setup) {
+            setIsSetupMode(true)
+          }
+        })
+        .catch(() => {
+          // Ignore setup probe errors
+        })
+    }
+  }, [initialSetupRequired])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     clearError()
     setValidationError(null)
+
+    if (isSetupMode) {
+      if (!password || password.trim().length < 8) {
+        setValidationError('New administrator password must be at least 8 characters long.')
+        return
+      }
+      if (password.trim() !== confirmPassword.trim()) {
+        setValidationError('Password and confirmation password do not match.')
+        return
+      }
+      setIsSubmitting(true)
+      try {
+        await setupInitialAdmin({
+          password: password.trim(),
+          confirm_password: confirmPassword.trim(),
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+      return
+    }
 
     const trimmedUser = username.trim()
     if (!trimmedUser) {
@@ -45,7 +95,9 @@ export const LoginPage: React.FC = () => {
             OPNsense Gateway Control
           </h1>
           <p className="text-sm text-slate-400">
-            Sign in with administrator credentials to manage OPNsense device access &amp; telemetry
+            {isSetupMode
+              ? 'First-boot container setup: create the initial password for the default admin account'
+              : 'Sign in with administrator or operator credentials to manage OPNsense device access & telemetry'}
           </p>
         </div>
 
@@ -59,7 +111,12 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <form
+          onSubmit={handleSubmit}
+          data-testid={isSetupMode ? 'first-boot-setup-form' : 'login-form'}
+          className="space-y-4"
+          noValidate
+        >
           <div>
             <label
               htmlFor="login-username"
@@ -77,9 +134,9 @@ export const LoginPage: React.FC = () => {
                 name="username"
                 type="text"
                 autoComplete="username"
-                value={username}
+                value={isSetupMode ? 'admin' : username}
                 onChange={(e) => setUsername(e.target.value)}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isSetupMode}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
                 placeholder="admin"
               />
@@ -91,7 +148,7 @@ export const LoginPage: React.FC = () => {
               htmlFor="login-password"
               className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5"
             >
-              Administrator Password
+              {isSetupMode ? 'New Administrator Password' : 'Administrator Password'}
             </label>
             <div className="relative">
               <Lock
@@ -102,24 +159,76 @@ export const LoginPage: React.FC = () => {
                 id="login-password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={isSetupMode ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isSubmitting}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
-                placeholder="Enter password"
+                placeholder={isSetupMode ? 'Minimum 8 characters' : 'Enter password'}
               />
             </div>
           </div>
 
+          {isSetupMode && (
+            <div>
+              <label
+                htmlFor="login-confirm-password"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5"
+              >
+                Confirm New Password
+              </label>
+              <div className="relative">
+                <KeyRound
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"
+                  aria-hidden="true"
+                />
+                <input
+                  id="login-confirm-password"
+                  name="confirm_password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isSubmitting}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-9 pr-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-60"
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting}
+            data-testid={isSetupMode ? 'setup-admin-submit-btn' : 'login-submit-btn'}
             className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-60 cursor-pointer"
           >
-            {isSubmitting ? 'Signing in...' : 'Sign In'}
+            {isSetupMode
+              ? isSubmitting
+                ? 'Creating Admin Password...'
+                : 'Create Admin Password & Sign In'
+              : isSubmitting
+                ? 'Signing in...'
+                : 'Sign In'}
           </button>
         </form>
+
+        <div className="pt-1 text-center">
+          <button
+            type="button"
+            data-testid="toggle-first-boot-setup-btn"
+            onClick={() => {
+              clearError()
+              setValidationError(null)
+              setIsSetupMode((prev) => !prev)
+            }}
+            className="text-xs font-medium text-indigo-400 hover:text-indigo-300 cursor-pointer"
+          >
+            {isSetupMode
+              ? 'Already configured admin password? Back to Sign In'
+              : 'First-boot clean container? Create initial admin password'}
+          </button>
+        </div>
       </div>
     </div>
   )

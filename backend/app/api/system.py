@@ -13,10 +13,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
-from app.auth import AuthUserResponse, require_admin_session
+from app.auth import AuthUserResponse, require_admin_role, require_admin_session
 from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.clients.opnsense import OPNsenseClient, ServiceHealthStatus
-from app.config import Settings, get_settings
+from app.config import Settings, apply_runtime_overrides, get_settings
 from app.db import get_db_session
 from app.services.audit_and_backup_service import (
     AuditLogListResponse,
@@ -25,6 +25,16 @@ from app.services.audit_and_backup_service import (
     export_configuration_backup,
     list_audit_logs,
     restore_configuration_backup,
+)
+from app.services.runtime_settings_service import (
+    ConnectivityTestResponse,
+    IntegrationSettingsUpdatePayload,
+    IntegrationSettingsView,
+    get_integration_settings,
+    load_runtime_settings_from_db,
+    reset_integration_settings_to_env,
+    run_connectivity_diagnostic,
+    update_integration_settings,
 )
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -40,15 +50,15 @@ class SystemHealthResponse(BaseModel):
 
 
 def get_opnsense_client(settings: Settings = Depends(get_settings)) -> OPNsenseClient:
-    """FastAPI dependency returning an OPNsenseClient."""
-    return OPNsenseClient(settings)
+    """FastAPI dependency returning an OPNsenseClient with active runtime overrides."""
+    return OPNsenseClient(apply_runtime_overrides(settings))
 
 
 def get_elasticsearch_client(
     settings: Settings = Depends(get_settings),
 ) -> ElasticsearchServiceClient:
-    """FastAPI dependency returning an ElasticsearchServiceClient."""
-    return ElasticsearchServiceClient(settings)
+    """FastAPI dependency returning an ElasticsearchServiceClient with active runtime overrides."""
+    return ElasticsearchServiceClient(apply_runtime_overrides(settings))
 
 
 def format_storage_size(size_bytes: int) -> str:
@@ -190,6 +200,7 @@ async def system_health(
     settings: Settings = Depends(get_settings),
 ) -> SystemHealthResponse:
     """Check live connectivity and credentials for SQLite, OPNsense, and Elasticsearch."""
+    await load_runtime_settings_from_db(db, settings)
     sqlite_status, opnsense_status, es_status = await asyncio.gather(
         check_sqlite_health(db, settings),
         opnsense.check_health(),
@@ -220,13 +231,22 @@ async def system_health(
 @router.get("/audit-logs", response_model=AuditLogListResponse)
 async def get_audit_logs(
     action: str | None = Query(default=None, description="Filter by action prefix/substring."),
+    audit_label: str | None = Query(
+        default=None, description="Filter by audit_label badge category."
+    ),
     search: str | None = Query(default=None, description="Search actor, target, or details."),
     limit: int = Query(default=50, ge=1, le=250),
     _current_user: AuthUserResponse = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db_session),
 ) -> AuditLogListResponse:
-    """List audit history records with optional action/search filter and 90d pruning."""
-    return await list_audit_logs(db, action_filter=action, search=search, limit=limit)
+    """List audit history records with optional action/label/search filter and 90d pruning."""
+    return await list_audit_logs(
+        db,
+        action_filter=action,
+        audit_label_filter=audit_label,
+        search=search,
+        limit=limit,
+    )
 
 
 @router.get("/backup", response_model=ConfigBackupPayload)
@@ -241,12 +261,99 @@ async def get_system_backup(
 @router.post("/restore", response_model=ConfigRestoreSummary)
 async def post_system_restore(
     payload: ConfigBackupPayload,
-    current_user: AuthUserResponse = Depends(require_admin_session),
+    current_user: AuthUserResponse = Depends(require_admin_role),
     db: AsyncSession = Depends(get_db_session),
 ) -> ConfigRestoreSummary:
     """Restore device customizations, groups, and schedules from a backup snapshot."""
     try:
         return await restore_configuration_backup(db, payload, actor=current_user.username)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/settings", response_model=IntegrationSettingsView)
+async def get_runtime_settings(
+    _current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> IntegrationSettingsView:
+    """Return active OPNsense and Elasticsearch integration settings (Admin only)."""
+    return await get_integration_settings(db, settings)
+
+
+@router.put("/settings", response_model=IntegrationSettingsView)
+async def put_runtime_settings(
+    payload: IntegrationSettingsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> IntegrationSettingsView:
+    """Save OPNsense and Elasticsearch runtime settings overrides in SQLite (Admin only)."""
+    try:
+        return await update_integration_settings(
+            db, settings, payload, actor=current_user.username
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.delete("/settings", response_model=IntegrationSettingsView)
+async def delete_runtime_settings(
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> IntegrationSettingsView:
+    """Reset runtime integration settings overrides back to `.env` defaults (Admin only)."""
+    return await reset_integration_settings_to_env(
+        db, settings, actor=current_user.username
+    )
+
+
+@router.post("/settings/test-opnsense", response_model=ConnectivityTestResponse)
+async def post_test_opnsense_connectivity(
+    payload: IntegrationSettingsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> ConnectivityTestResponse:
+    """Test connectivity and API privileges against OPNsense and log diagnostic errors."""
+    try:
+        return await run_connectivity_diagnostic(
+            db,
+            settings,
+            "opnsense",
+            payload,
+            actor=current_user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/settings/test-elasticsearch", response_model=ConnectivityTestResponse)
+async def post_test_elasticsearch_connectivity(
+    payload: IntegrationSettingsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> ConnectivityTestResponse:
+    """Test connectivity and index/cluster access against Elasticsearch and log errors."""
+    try:
+        return await run_connectivity_diagnostic(
+            db,
+            settings,
+            "elasticsearch",
+            payload,
+            actor=current_user.username,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

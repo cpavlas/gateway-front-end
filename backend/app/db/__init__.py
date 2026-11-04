@@ -146,6 +146,34 @@ async def init_db(settings: Settings | None = None) -> None:
                 )
             )
 
+        res_audit = await conn.execute(text("PRAGMA table_info(audit_logs)"))
+        existing_audit_cols = {str(row[1]) for row in res_audit.fetchall()}
+        if existing_audit_cols and "audit_label" not in existing_audit_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE audit_logs ADD COLUMN audit_label "
+                    "VARCHAR(32) NOT NULL DEFAULT 'SYSTEM'"
+                )
+            )
+            await conn.execute(
+                text(
+                    "UPDATE audit_logs SET audit_label = CASE "
+                    "WHEN lower(action) LIKE 'auth.%' OR lower(action) LIKE 'login%' "
+                    "OR lower(action) LIKE 'logout%' THEN 'AUTH_EVENT' "
+                    "WHEN lower(action) LIKE 'user%' THEN 'USER_MGMT' "
+                    "WHEN lower(action) LIKE 'diagnostic%' THEN 'DIAGNOSTIC_ERROR' "
+                    "WHEN lower(action) LIKE 'settings%' THEN 'SETTINGS_CHANGE' "
+                    "WHEN lower(action) LIKE '%youtube%' THEN 'YOUTUBE_CONTROL' "
+                    "WHEN lower(action) LIKE 'device%' THEN 'DEVICE_CONTROL' "
+                    "WHEN lower(action) LIKE 'group%' THEN 'GROUP_CONTROL' "
+                    "WHEN lower(action) LIKE 'timer%' THEN 'TIMER_OVERRIDE' "
+                    "WHEN lower(action) LIKE 'schedule%' THEN 'SCHEDULE_CHANGE' "
+                    "WHEN lower(action) LIKE 'config%' OR lower(action) LIKE 'backup%' "
+                    "OR lower(action) LIKE 'restore%' THEN 'CONFIG_BACKUP' "
+                    "ELSE 'SYSTEM' END"
+                )
+            )
+
 
 async def dispose_db() -> None:
     """Dispose the global engine and reset cached session factory."""

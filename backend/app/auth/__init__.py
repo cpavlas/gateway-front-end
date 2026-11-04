@@ -6,12 +6,13 @@ import hmac
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from app.config import Settings, get_settings
 
@@ -28,12 +29,53 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SetupStatusResponse(BaseModel):
+    """First-boot setup status returned by GET /api/v1/auth/setup-status."""
+
+    needs_initial_setup: bool
+    admin_username: str = "admin"
+
+
+class SetupAdminRequest(BaseModel):
+    """Payload submitted to POST /api/v1/auth/setup-admin on clean container builds."""
+
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str | None = None
+
+
 class AuthUserResponse(BaseModel):
     """Authenticated user session info."""
 
     username: str
+    role: Literal["admin", "operator"] = "admin"
+    theme_preference: str = "default"
     authenticated: bool = True
     expires_at: str
+
+
+def hash_password(password: str) -> str:
+    """Hash a plaintext password using Argon2id."""
+    cleaned = password.strip()
+    if len(cleaned) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+    return str(_ph.hash(cleaned))
+
+
+def verify_password_hash(password: str, stored_hash: str) -> bool:
+    """Verify a plaintext password against a stored Argon2id hash or plaintext secret."""
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("$argon2"):
+        try:
+            return bool(_ph.verify(stored_hash, password))
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    return hmac.compare_digest(password, stored_hash)
+
+
+def is_protected_admin_username(username: str) -> bool:
+    """Return True if the username is the built-in protected 'admin' account."""
+    return username.strip().lower() == "admin"
 
 
 class InMemoryLoginRateLimiter:
@@ -78,31 +120,36 @@ login_rate_limiter = InMemoryLoginRateLimiter()
 
 
 def verify_admin_credentials(username: str, password: str, settings: Settings) -> bool:
-    """Verify username and password against configured admin credentials in constant time."""
-    username_ok = hmac.compare_digest(username.strip(), settings.admin_username.strip())
+    """Verify username and password against configured .env admin credentials in constant time."""
+    if not settings.has_configured_env_admin_password:
+        return False
+    username_ok = hmac.compare_digest(
+        username.strip().lower(), settings.admin_username.strip().lower()
+    )
     raw_secret = settings.admin_password
     configured_secret = (
-        raw_secret.get_secret_value() if isinstance(raw_secret, SecretStr) else str(raw_secret)
+        raw_secret.get_secret_value()
+        if isinstance(raw_secret, SecretStr)
+        else str(raw_secret)
     )
-
-    password_ok = False
-    if configured_secret.startswith("$argon2"):
-        try:
-            password_ok = _ph.verify(configured_secret, password)
-        except (VerifyMismatchError, VerificationError, InvalidHashError):
-            password_ok = False
-    else:
-        password_ok = hmac.compare_digest(password, configured_secret)
-
+    password_ok = verify_password_hash(password, configured_secret)
     return username_ok and password_ok
 
 
-def create_session_token(username: str, settings: Settings) -> tuple[str, datetime]:
+def create_session_token(
+    username: str,
+    settings: Settings,
+    *,
+    role: Literal["admin", "operator"] = "admin",
+    theme_preference: str = "default",
+) -> tuple[str, datetime]:
     """Create a signed JWT session token and return (token, expires_at)."""
     now = datetime.now(UTC)
     expires_at = now + timedelta(minutes=settings.session_expire_minutes)
     payload = {
         "sub": username,
+        "role": role,
+        "theme": theme_preference,
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
         "type": "admin_session",
@@ -138,14 +185,25 @@ def decode_session_token(token: str, settings: Settings) -> AuthUserResponse:
     sub = payload.get("sub")
     token_type = payload.get("type")
     exp = payload.get("exp")
-    if not sub or exp is None or token_type != "admin_session" or sub != settings.admin_username:
+    if not sub or exp is None or token_type != "admin_session":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session subject.",
         )
 
+    raw_role = str(payload.get("role", "admin")).lower()
+    role: Literal["admin", "operator"] = (
+        "operator" if raw_role == "operator" else "admin"
+    )
+    theme_pref = str(payload.get("theme", "default") or "default")
     expires_iso = datetime.fromtimestamp(int(exp), tz=UTC).isoformat()
-    return AuthUserResponse(username=str(sub), authenticated=True, expires_at=expires_iso)
+    return AuthUserResponse(
+        username=str(sub),
+        role=role,
+        theme_preference=theme_pref,
+        authenticated=True,
+        expires_at=expires_iso,
+    )
 
 
 def get_client_ip(request: Request) -> str:
@@ -159,10 +217,22 @@ async def require_admin_session(
     gateway_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     settings: Settings = Depends(get_settings),
 ) -> AuthUserResponse:
-    """FastAPI dependency enforcing a valid signed admin session cookie."""
+    """FastAPI dependency enforcing a valid signed user session cookie."""
     if not gateway_session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
         )
     return decode_session_token(gateway_session, settings)
+
+
+async def require_admin_role(
+    current_user: AuthUserResponse = Depends(require_admin_session),
+) -> AuthUserResponse:
+    """FastAPI dependency enforcing Administrator ('admin') role."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges are required for this action.",
+        )
+    return current_user

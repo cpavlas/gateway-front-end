@@ -10,12 +10,20 @@ import {
   FileText,
   HardDrive,
   Laptop,
+  Lock,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Router,
+  Save,
   Search,
+  Settings2,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Upload,
+  UserPlus,
+  Users,
   Wifi,
   XCircle,
 } from 'lucide-react'
@@ -24,11 +32,15 @@ import {
   formatClock24h,
   type ConfigBackupPayload,
   type ConfigRestoreSummary,
+  type ConnectivityTestResponse,
   type DeviceListResponse,
   type HealthLevel,
+  type IntegrationSettingsUpdatePayload,
   type ServiceHealthStatus,
+  type UserRole,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { useAuth } from '../context/AuthContext'
 
 interface StatusPageProps {
   activeTab?: AppTab
@@ -242,12 +254,39 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   onSelectTab,
 }) => {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role !== 'operator'
+
   const [auditEnabled, setAuditEnabled] = useState(false)
   const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [auditLabelFilter, setAuditLabelFilter] = useState('')
   const [auditSearch, setAuditSearch] = useState('')
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
   const [restoreSummary, setRestoreSummary] = useState<ConfigRestoreSummary | null>(null)
+
+  // Phase 9 (FB-P9-002): Integration Settings & Live Connectivity Diagnostics
+  const [settingsExpanded, setSettingsExpanded] = useState(false)
+  const [opnUrl, setOpnUrl] = useState('')
+  const [opnKey, setOpnKey] = useState('')
+  const [opnSecret, setOpnSecret] = useState('')
+  const [opnVerifySsl, setOpnVerifySsl] = useState(false)
+  const [opnProtectedIps, setOpnProtectedIps] = useState('')
+  const [esUrl, setEsUrl] = useState('')
+  const [esKey, setEsKey] = useState('')
+  const [esVerifySsl, setEsVerifySsl] = useState(false)
+  const [esIndexPatterns, setEsIndexPatterns] = useState('')
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [diagnosticResult, setDiagnosticResult] = useState<ConnectivityTestResponse | null>(null)
+
+  // Phase 9 (FB-P9-003): Multi-User Management
+  const [usersExpanded, setUsersExpanded] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newUserRole, setNewUserRole] = useState<UserRole>('operator')
+  const [userMgmtMessage, setUserMgmtMessage] = useState<string | null>(null)
+  const [userMgmtError, setUserMgmtError] = useState<string | null>(null)
 
   const {
     data: healthReport,
@@ -264,19 +303,169 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   })
 
   const {
+    data: integrationSettings,
+    isFetching: isFetchingSettings,
+    refetch: refetchSettings,
+  } = useQuery({
+    queryKey: ['integrationSettings'],
+    queryFn: async () => {
+      const data = await apiClient.getIntegrationSettings()
+      setOpnUrl(data.opnsense_base_url)
+      setOpnKey(data.opnsense_api_key_masked)
+      setOpnSecret(data.opnsense_api_secret_masked)
+      setOpnVerifySsl(data.opnsense_verify_ssl)
+      setOpnProtectedIps(data.opnsense_protected_ips)
+      setEsUrl(data.elasticsearch_url)
+      setEsKey(data.elasticsearch_api_key_masked)
+      setEsVerifySsl(data.elasticsearch_verify_ssl)
+      setEsIndexPatterns(data.elasticsearch_index_patterns)
+      return data
+    },
+    enabled: settingsExpanded && isAdmin,
+  })
+
+  const {
+    data: usersListResponse,
+    isFetching: isFetchingUsers,
+    refetch: refetchUsers,
+  } = useQuery({
+    queryKey: ['usersList'],
+    queryFn: () => apiClient.getUsers(),
+    enabled: usersExpanded && isAdmin,
+  })
+
+  const {
     data: auditResponse,
     dataUpdatedAt: auditUpdatedAt,
     isFetching: isFetchingAudit,
     refetch: refetchAudit,
   } = useQuery({
-    queryKey: ['auditLogs', auditActionFilter, auditSearch],
+    queryKey: ['auditLogs', auditActionFilter, auditLabelFilter, auditSearch],
     queryFn: () =>
       apiClient.getAuditLogs({
         action: auditActionFilter || undefined,
+        audit_label: auditLabelFilter || undefined,
         search: auditSearch.trim() || undefined,
         limit: 50,
       }),
     enabled: auditEnabled,
+  })
+
+  const buildSettingsPayload = (): IntegrationSettingsUpdatePayload => ({
+    opnsense_base_url: opnUrl.trim() || undefined,
+    opnsense_api_key: opnKey.trim() || undefined,
+    opnsense_api_secret: opnSecret.trim() || undefined,
+    opnsense_verify_ssl: opnVerifySsl,
+    opnsense_protected_ips: opnProtectedIps.trim() || undefined,
+    elasticsearch_url: esUrl.trim() || undefined,
+    elasticsearch_api_key: esKey.trim() || undefined,
+    elasticsearch_verify_ssl: esVerifySsl,
+    elasticsearch_index_patterns: esIndexPatterns.trim() || undefined,
+  })
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: () => apiClient.updateIntegrationSettings(buildSettingsPayload()),
+    onSuccess: (updated) => {
+      setSettingsError(null)
+      setSettingsMessage(
+        `Saved runtime integration settings (Source: ${updated.source === 'ui_override' ? 'UI Override' : '.env'}).`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save integration settings.')
+    },
+  })
+
+  const resetSettingsMutation = useMutation({
+    mutationFn: () => apiClient.resetIntegrationSettings(),
+    onSuccess: (resetView) => {
+      setSettingsError(null)
+      setDiagnosticResult(null)
+      setOpnUrl(resetView.opnsense_base_url)
+      setOpnKey(resetView.opnsense_api_key_masked)
+      setOpnSecret(resetView.opnsense_api_secret_masked)
+      setOpnVerifySsl(resetView.opnsense_verify_ssl)
+      setOpnProtectedIps(resetView.opnsense_protected_ips)
+      setEsUrl(resetView.elasticsearch_url)
+      setEsKey(resetView.elasticsearch_api_key_masked)
+      setEsVerifySsl(resetView.elasticsearch_verify_ssl)
+      setEsIndexPatterns(resetView.elasticsearch_index_patterns)
+      setSettingsMessage('Reset integration settings to .env defaults.')
+      void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to reset integration settings.')
+    },
+  })
+
+  const testOpnMutation = useMutation({
+    mutationFn: () => apiClient.testOpnsenseConnectivity(buildSettingsPayload()),
+    onSuccess: (res) => {
+      setDiagnosticResult(res)
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'OPNsense connectivity test failed.')
+    },
+  })
+
+  const testEsMutation = useMutation({
+    mutationFn: () => apiClient.testElasticsearchConnectivity(buildSettingsPayload()),
+    onSuccess: (res) => {
+      setDiagnosticResult(res)
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'Elasticsearch connectivity test failed.')
+    },
+  })
+
+  const createUserMutation = useMutation({
+    mutationFn: () =>
+      apiClient.createUser({
+        username: newUsername.trim(),
+        password: newPassword,
+        role: newUserRole,
+      }),
+    onSuccess: (created) => {
+      setUserMgmtError(null)
+      setUserMgmtMessage(`Created user '${created.username}' (${created.role}).`)
+      setNewUsername('')
+      setNewPassword('')
+      setNewUserRole('operator')
+      void queryClient.invalidateQueries({ queryKey: ['usersList'] })
+    },
+    onError: (err) => {
+      setUserMgmtError(err instanceof Error ? err.message : 'Failed to create user.')
+    },
+  })
+
+  const toggleUserActiveMutation = useMutation({
+    mutationFn: ({ userId, isActive }: { userId: number; isActive: boolean }) =>
+      apiClient.updateUser(userId, { is_active: isActive }),
+    onSuccess: (updated) => {
+      setUserMgmtError(null)
+      setUserMgmtMessage(
+        `User '${updated.username}' is now ${updated.is_active ? 'active' : 'disabled'}.`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['usersList'] })
+    },
+    onError: (err) => {
+      setUserMgmtError(err instanceof Error ? err.message : 'Failed to update user status.')
+    },
+  })
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId: number) => apiClient.deleteUser(userId),
+    onSuccess: (deleted) => {
+      setUserMgmtError(null)
+      setUserMgmtMessage(`Deleted user '${deleted.username}'.`)
+      void queryClient.invalidateQueries({ queryKey: ['usersList'] })
+    },
+    onError: (err) => {
+      setUserMgmtError(err instanceof Error ? err.message : 'Failed to delete user.')
+    },
   })
 
   const exportMutation = useMutation({
@@ -625,7 +814,530 @@ export const StatusPage: React.FC<StatusPageProps> = ({
           )}
         </section>
 
-        {/* Audit & Event History (Phase 7) */}
+        {/* Phase 9 (FB-P9-002): Integration Settings & Connectivity Diagnostics (Admin Only) */}
+        {isAdmin && (
+          <section
+            data-testid="integration-settings-panel"
+            className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-center gap-2.5">
+                <Settings2 className="h-5 w-5 text-indigo-400" aria-hidden="true" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-slate-100">
+                      Integration Settings &amp; Connectivity Diagnostics
+                    </h2>
+                    {integrationSettings && (
+                      <span
+                        data-testid="settings-source-badge"
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          integrationSettings.source === 'ui_override'
+                            ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                            : 'border-slate-700 bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {integrationSettings.source === 'ui_override'
+                          ? 'Source: UI Override'
+                          : 'Source: .env'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Configure OPNsense &amp; Elasticsearch connection parameters and run live connectivity diagnostics
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-testid="toggle-integration-settings-btn"
+                onClick={() => {
+                  if (!settingsExpanded) {
+                    setSettingsExpanded(true)
+                  } else {
+                    void refetchSettings()
+                  }
+                }}
+                disabled={isFetchingSettings}
+                className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isFetchingSettings ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>
+                  {settingsExpanded
+                    ? isFetchingSettings
+                      ? 'Loading...'
+                      : 'Refresh Settings'
+                    : 'Configure Connections'}
+                </span>
+              </button>
+            </div>
+
+            {settingsExpanded && (
+              <div className="mt-5 space-y-5">
+                {settingsMessage && (
+                  <div
+                    data-testid="settings-status-message"
+                    className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200"
+                  >
+                    {settingsMessage}
+                  </div>
+                )}
+
+                {settingsError && (
+                  <div
+                    data-testid="settings-error-message"
+                    className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-200"
+                  >
+                    {settingsError}
+                  </div>
+                )}
+
+                {diagnosticResult && (
+                  <div
+                    data-testid="connectivity-diagnostic-result"
+                    className={`rounded-lg border p-3.5 text-xs ${
+                      diagnosticResult.reachable
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-semibold">
+                      <span className="uppercase">
+                        {diagnosticResult.service} Connectivity Check:{' '}
+                        {diagnosticResult.reachable ? 'REACHABLE' : 'FAILED'}
+                      </span>
+                      <span className="font-mono">{diagnosticResult.latency_ms} ms</span>
+                    </div>
+                    <p className="mt-1">{diagnosticResult.message}</p>
+                    {diagnosticResult.error_diagnostic && (
+                      <p
+                        data-testid="diagnostic-error-detail"
+                        className="mt-1.5 font-mono text-[11px] text-rose-300"
+                      >
+                        Diagnostic: {diagnosticResult.error_diagnostic}
+                      </p>
+                    )}
+                    {diagnosticResult.troubleshooting_hint && (
+                      <p
+                        data-testid="diagnostic-troubleshooting-hint"
+                        className="mt-1 text-[11px] text-amber-200"
+                      >
+                        Hint: {diagnosticResult.troubleshooting_hint}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  {/* OPNsense Settings */}
+                  <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300">
+                        OPNsense 26.7.7 Connection
+                      </h3>
+                      <button
+                        type="button"
+                        data-testid="test-opnsense-btn"
+                        onClick={() => testOpnMutation.mutate()}
+                        disabled={testOpnMutation.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-600/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-60 cursor-pointer"
+                      >
+                        <span>
+                          {testOpnMutation.isPending
+                            ? 'Testing...'
+                            : 'Test OPNsense Connection'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        OPNsense Base URL
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="input-opnsense-url"
+                        value={opnUrl}
+                        onChange={(e) => setOpnUrl(e.target.value)}
+                        placeholder="https://192.168.1.1"
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          API Key
+                        </label>
+                        <input
+                          type="password"
+                          data-testid="input-opnsense-key"
+                          value={opnKey}
+                          onChange={(e) => setOpnKey(e.target.value)}
+                          placeholder="OPNsense API Key"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          API Secret
+                        </label>
+                        <input
+                          type="password"
+                          data-testid="input-opnsense-secret"
+                          value={opnSecret}
+                          onChange={(e) => setOpnSecret(e.target.value)}
+                          placeholder="OPNsense API Secret"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          data-testid="input-opnsense-verify-ssl"
+                          checked={opnVerifySsl}
+                          onChange={(e) => setOpnVerifySsl(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                        />
+                        <span>Verify TLS Certificate</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Elasticsearch Settings */}
+                  <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300">
+                        Elasticsearch 9.4.3 Connection
+                      </h3>
+                      <button
+                        type="button"
+                        data-testid="test-elasticsearch-btn"
+                        onClick={() => testEsMutation.mutate()}
+                        disabled={testEsMutation.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-600/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-60 cursor-pointer"
+                      >
+                        <span>
+                          {testEsMutation.isPending
+                            ? 'Testing...'
+                            : 'Test Elasticsearch Connection'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Elasticsearch URL
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="input-elasticsearch-url"
+                        value={esUrl}
+                        onChange={(e) => setEsUrl(e.target.value)}
+                        placeholder="https://192.168.1.10:9200"
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Base64 API Key
+                        </label>
+                        <input
+                          type="password"
+                          data-testid="input-elasticsearch-key"
+                          value={esKey}
+                          onChange={(e) => setEsKey(e.target.value)}
+                          placeholder="Elasticsearch API Key"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Index Patterns
+                        </label>
+                        <input
+                          type="text"
+                          data-testid="input-elasticsearch-index"
+                          value={esIndexPatterns}
+                          onChange={(e) => setEsIndexPatterns(e.target.value)}
+                          placeholder="logs-pfsense.log*"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          data-testid="input-elasticsearch-verify-ssl"
+                          checked={esVerifySsl}
+                          onChange={(e) => setEsVerifySsl(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                        />
+                        <span>Verify TLS Certificate</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-slate-800 pt-3">
+                  <button
+                    type="button"
+                    data-testid="reset-settings-btn"
+                    onClick={() => resetSettingsMutation.mutate()}
+                    disabled={resetSettingsMutation.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Reset to .env Defaults</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="save-settings-btn"
+                    onClick={() => saveSettingsMutation.mutate()}
+                    disabled={saveSettingsMutation.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+                  >
+                    <Save className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>
+                      {saveSettingsMutation.isPending
+                        ? 'Saving...'
+                        : 'Save Integration Settings'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Phase 9 (FB-P9-003): User Accounts & Access Management (Admin Only) */}
+        {isAdmin && (
+          <section
+            data-testid="user-management-panel"
+            className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-center gap-2.5">
+                <Users className="h-5 w-5 text-indigo-400" aria-hidden="true" />
+                <div>
+                  <h2 className="text-base font-semibold text-slate-100">
+                    User Accounts &amp; Access Management
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Add platform users, assign Admin or Standard Operator roles, and enforce default admin protection
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-testid="toggle-user-management-btn"
+                onClick={() => {
+                  if (!usersExpanded) {
+                    setUsersExpanded(true)
+                  } else {
+                    void refetchUsers()
+                  }
+                }}
+                disabled={isFetchingUsers}
+                className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+              >
+                <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>
+                  {usersExpanded
+                    ? isFetchingUsers
+                      ? 'Refreshing...'
+                      : 'Refresh Users'
+                    : 'Manage Users'}
+                </span>
+              </button>
+            </div>
+
+            {usersExpanded && (
+              <div className="mt-5 space-y-4">
+                {userMgmtMessage && (
+                  <div
+                    data-testid="user-mgmt-status-message"
+                    className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200"
+                  >
+                    {userMgmtMessage}
+                  </div>
+                )}
+
+                {userMgmtError && (
+                  <div
+                    data-testid="user-mgmt-error-message"
+                    className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-200"
+                  >
+                    {userMgmtError}
+                  </div>
+                )}
+
+                <form
+                  data-testid="create-user-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (!newUsername.trim() || newPassword.length < 8) {
+                      setUserMgmtError(
+                        'Username (min 3 chars) and password (min 8 chars) are required.',
+                      )
+                      return
+                    }
+                    createUserMutation.mutate()
+                  }}
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 sm:grid-cols-4"
+                >
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Username
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="new-user-username"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      placeholder="e.g. operator_1"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Initial Password
+                    </label>
+                    <input
+                      type="password"
+                      data-testid="new-user-password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min 8 characters"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Platform Role
+                    </label>
+                    <select
+                      aria-label="New user role"
+                      data-testid="new-user-role"
+                      value={newUserRole}
+                      onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="operator">Standard User (Operator)</option>
+                      <option value="admin">Administrator (Full Access)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      data-testid="create-user-submit-btn"
+                      disabled={createUserMutation.isPending}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>
+                        {createUserMutation.isPending ? 'Adding...' : 'Add User'}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+
+                <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
+                  <table
+                    data-testid="users-table"
+                    className="w-full text-left border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase text-slate-400">
+                        <th className="py-2 px-3">Username</th>
+                        <th className="py-2 px-3">Role</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(usersListResponse?.users ?? []).map((u) => (
+                        <tr key={u.id} data-testid={`user-row-${u.username}`}>
+                          <td className="py-2.5 px-3 font-mono font-semibold text-slate-100">
+                            <div className="flex items-center gap-2">
+                              <span>{u.username}</span>
+                              {u.is_protected_admin && (
+                                <span
+                                  data-testid="protected-admin-badge"
+                                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 font-sans text-[10px] font-bold uppercase text-amber-300"
+                                >
+                                  <Lock className="h-2.5 w-2.5" aria-hidden="true" />
+                                  Protected Default Admin
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 uppercase text-indigo-300 font-semibold">
+                            {u.role}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                u.is_active
+                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                  : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                              }`}
+                            >
+                              {u.is_active ? 'Active' : 'Disabled'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                type="button"
+                                data-testid={`toggle-user-active-${u.username}`}
+                                disabled={u.is_protected_admin}
+                                onClick={() =>
+                                  toggleUserActiveMutation.mutate({
+                                    userId: u.id,
+                                    isActive: !u.is_active,
+                                  })
+                                }
+                                className="rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                {u.is_active ? 'Disable' : 'Enable'}
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`delete-user-${u.username}`}
+                                disabled={u.is_protected_admin}
+                                onClick={() => deleteUserMutation.mutate(u.id)}
+                                className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Audit & Event History (Phase 7 & Phase 9 FB-P9-004) */}
         <section
           data-testid="audit-logs-section"
           className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
@@ -702,6 +1414,26 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                 </div>
 
                 <select
+                  aria-label="Filter audit logs by label"
+                  data-testid="audit-label-filter"
+                  value={auditLabelFilter}
+                  onChange={(e) => setAuditLabelFilter(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">All Audit Labels</option>
+                  <option value="AUTH_EVENT">AUTH_EVENT</option>
+                  <option value="USER_MGMT">USER_MGMT</option>
+                  <option value="SETTINGS_CHANGE">SETTINGS_CHANGE</option>
+                  <option value="DIAGNOSTIC_ERROR">DIAGNOSTIC_ERROR</option>
+                  <option value="DEVICE_CONTROL">DEVICE_CONTROL</option>
+                  <option value="YOUTUBE_CONTROL">YOUTUBE_CONTROL</option>
+                  <option value="GROUP_CONTROL">GROUP_CONTROL</option>
+                  <option value="TIMER_OVERRIDE">TIMER_OVERRIDE</option>
+                  <option value="SCHEDULE_CHANGE">SCHEDULE_CHANGE</option>
+                  <option value="CONFIG_BACKUP">CONFIG_BACKUP</option>
+                </select>
+
+                <select
                   aria-label="Filter audit logs by action"
                   data-testid="audit-action-filter"
                   value={auditActionFilter}
@@ -735,6 +1467,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     <thead>
                       <tr className="border-b border-slate-800 text-[11px] uppercase text-slate-400">
                         <th className="py-2 px-3">Timestamp</th>
+                        <th className="py-2 px-3">Audit Label</th>
                         <th className="py-2 px-3">Action</th>
                         <th className="py-2 px-3">Actor</th>
                         <th className="py-2 px-3">Target</th>
@@ -746,10 +1479,27 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                           <td className="py-2 px-3 font-mono text-slate-400">
                             {new Date(log.created_at).toLocaleString([], { hour12: false })}
                           </td>
+                          <td className="py-2 px-3">
+                            <span
+                              data-testid="audit-label-badge"
+                              className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                                log.audit_label === 'DIAGNOSTIC_ERROR'
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                  : log.audit_label === 'USER_MGMT' ||
+                                      log.audit_label === 'SETTINGS_CHANGE'
+                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                              }`}
+                            >
+                              {log.audit_label ?? 'SYSTEM'}
+                            </span>
+                          </td>
                           <td className="py-2 px-3 font-mono font-semibold text-indigo-300">
                             {log.action}
                           </td>
-                          <td className="py-2 px-3 text-slate-300">{log.actor}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-200">
+                            {log.actor}
+                          </td>
                           <td className="py-2 px-3 font-mono text-slate-400">
                             {log.target} ({log.status})
                           </td>

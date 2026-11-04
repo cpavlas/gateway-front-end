@@ -9,17 +9,19 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.auth import login_rate_limiter
-from app.config import Settings, get_settings
+from app.config import Settings, clear_runtime_overrides, get_settings
 from app.db import dispose_db, init_db
 from app.main import create_app
 
 
 @pytest.fixture(autouse=True)
 def reset_rate_limiter() -> None:
-    """Clear login rate limiter state before and after each test."""
+    """Clear login rate limiter and runtime settings overrides before and after each test."""
     login_rate_limiter.clear_all()
+    clear_runtime_overrides()
     yield
     login_rate_limiter.clear_all()
+    clear_runtime_overrides()
 
 
 @pytest.fixture()

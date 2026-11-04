@@ -71,14 +71,21 @@ def validate_ipv4_list(ipv4_addresses: list[str]) -> list[str]:
 
 
 _PLEX_SERVER_NOISE_DOMAINS: list[str] = [
-    "servers.plex.tv",
+    "pubsub.plex.tv",
+]
+
+_PLEX_PLAYBACK_SIGNAL_DOMAINS: list[str] = [
     "analytics.plex.tv",
-    "metadata.provider.plex.tv",
-    "scrobbles.plex.tv",
     "discover.provider.plex.tv",
     "luma.plex.tv",
-    "pubsub.plex.tv",
-    "plex.tv",
+    "images.plex.tv",
+    "watch.plex.tv",
+    "scrobbles.plex.tv",
+    "metadata.provider.plex.tv",
+    "app.plex.tv",
+    "clients.plex.tv",
+    "api.plex.tv",
+    "www.plex.tv",
 ]
 
 _YOUTUBE_BACKGROUND_NOISE_DOMAINS: list[str] = [
@@ -117,6 +124,7 @@ def _build_app_usage_agg(
             "filters": {
                 "youtube": {
                     "bool": {
+                        "filter": [{"terms": {"source.ip": RFC1918_CIDRS}}],
                         "must_not": youtube_must_not,
                         "should": [
                             {
@@ -142,22 +150,26 @@ def _build_app_usage_agg(
                 },
                 "plex": {
                     "bool": {
+                        "filter": [{"terms": {"source.ip": RFC1918_CIDRS}}],
                         "must_not": plex_must_not,
                         "should": [
                             {"term": {"destination.port": 32400}},
                             {
                                 "terms": {
-                                    "dns.question.name": [
-                                        "app.plex.tv",
-                                        "clients.plex.tv",
+                                    "dns.question.registered_domain": [
+                                        "plex.tv",
+                                        "plex.direct",
+                                        "plex.bz",
+                                        "plexapp.com",
                                     ]
                                 }
                             },
                             {
-                                "terms": {
-                                    "dns.question.registered_domain": [
-                                        "plexapp.com",
-                                    ]
+                                "wildcard": {
+                                    "dns.question.name": {
+                                        "value": "*plex*",
+                                        "case_insensitive": True,
+                                    }
                                 }
                             },
                         ],
@@ -172,7 +184,7 @@ def _build_app_usage_agg(
                     "field": "@timestamp",
                     "fixed_interval": "5m",
                     "time_zone": safe_tz,
-                    "min_doc_count": 5,
+                    "min_doc_count": 1,
                 }
             },
             "bytes": {"sum": {"field": "network.bytes"}},
@@ -182,18 +194,30 @@ def _build_app_usage_agg(
                 "filter": {"terms": {"source.ip": RFC1918_CIDRS}},
                 "aggs": {
                     "devices": {
-                        "terms": {"field": "source.ip", "size": 15},
+                        "terms": {"field": "source.ip", "size": 25},
                         "aggs": {
                             "active_slots": {
                                 "date_histogram": {
                                     "field": "@timestamp",
                                     "fixed_interval": "5m",
                                     "time_zone": safe_tz,
-                                    "min_doc_count": 5,
+                                    "min_doc_count": 1,
                                 }
                             },
                             "port_32400": {
                                 "filter": {"term": {"destination.port": 32400}}
+                            },
+                            "server_registrations": {
+                                "filter": {
+                                    "term": {"dns.question.name": "servers.plex.tv"}
+                                }
+                            },
+                            "playback_signals": {
+                                "filter": {
+                                    "terms": {
+                                        "dns.question.name": _PLEX_PLAYBACK_SIGNAL_DOMAINS
+                                    }
+                                }
                             },
                             "bytes": {"sum": {"field": "network.bytes"}},
                             "dns_queries": {
@@ -221,6 +245,8 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
         bytes_val = int(float((b.get("bytes") or {}).get("value") or 0))
         last_active_at = (b.get("last_active") or {}).get("value_as_string")
 
+        min_slot_docs = 5 if app_key == "youtube" else 1
+
         device_buckets = (
             ((b.get("by_device") or {}).get("devices") or {}).get("buckets")
         ) or []
@@ -238,23 +264,35 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                 dev_port_32400 = int(
                     (db.get("port_32400") or {}).get("doc_count") or 0
                 )
+                dev_server_reg = int(
+                    (db.get("server_registrations") or {}).get("doc_count") or 0
+                )
+                dev_playback_sig = int(
+                    (db.get("playback_signals") or {}).get("doc_count") or 0
+                )
                 dev_slot_buckets = (
                     (db.get("active_slots") or {}).get("buckets")
                 ) or []
                 valid_slots = [
                     sb
                     for sb in dev_slot_buckets
-                    if int(sb.get("doc_count") or 0) >= 5
+                    if int(sb.get("doc_count") or 0) >= min_slot_docs
                 ]
                 dev_active_slots = len(valid_slots)
 
-                # Ignore 24/7 automated DNS pollers on Plex or router filterdns on YouTube
+                # Ignore Plex Media Server hosts (which register via servers.plex.tv),
+                # 24/7 automated DNS health pollers on Plex, and router filterdns on YouTube
+                if app_key == "plex" and (
+                    dev_server_reg > 0
+                    or (
+                        dev_active_slots >= 140
+                        and dev_port_32400 == 0
+                        and dev_bytes == 0
+                        and (dev_playback_sig * 20 < dev_events)
+                    )
+                ):
+                    continue
                 if (
-                    app_key == "plex"
-                    and dev_active_slots >= 140
-                    and dev_port_32400 == 0
-                    and dev_bytes == 0
-                ) or (
                     app_key == "youtube"
                     and dev_active_slots >= 140
                     and dev_bytes == 0
@@ -295,7 +333,9 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             slot_buckets = ((b.get("active_slots") or {}).get("buckets")) or []
             active_slots = sum(
-                1 for sb in slot_buckets if int(sb.get("doc_count") or 0) >= 5
+                1
+                for sb in slot_buckets
+                if int(sb.get("doc_count") or 0) >= min_slot_docs
             )
             active_minutes = active_slots * 5
 

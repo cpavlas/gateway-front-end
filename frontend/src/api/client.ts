@@ -6,10 +6,103 @@ export type GroupAccessStatus = 'empty' | 'allowed' | 'partially_blocked' | 'blo
 export type OverrideMode = 'pause' | 'bonus'
 export type OverrideTargetType = 'device' | 'group'
 
+export type UserRole = 'admin' | 'operator'
+
 export interface AuthUserResponse {
   username: string
   authenticated: boolean
   expires_at: string
+  role?: UserRole
+  theme_preference?: string
+}
+
+export interface SetupStatusResponse {
+  needs_initial_setup: boolean
+  admin_username: string
+}
+
+export interface SetupAdminPayload {
+  password: string
+  confirm_password?: string
+}
+
+export interface UserItem {
+  id: number
+  username: string
+  role: UserRole
+  is_active: boolean
+  is_protected_admin: boolean
+  theme_preference: string
+  created_at: string
+  updated_at: string
+}
+
+export interface UserListResponse {
+  users: UserItem[]
+}
+
+export interface UserCreatePayload {
+  username: string
+  password: string
+  role?: UserRole
+  is_active?: boolean
+  theme_preference?: string
+}
+
+export interface UserUpdatePayload {
+  password?: string
+  role?: UserRole
+  is_active?: boolean
+  theme_preference?: string
+}
+
+export interface IntegrationSettingsView {
+  source: 'ui_override' | 'env'
+  opnsense_base_url: string
+  has_opnsense_api_key: boolean
+  opnsense_api_key_masked: string
+  has_opnsense_api_secret: boolean
+  opnsense_api_secret_masked: string
+  opnsense_verify_ssl: boolean
+  opnsense_ca_cert_path: string
+  opnsense_timeout_seconds: number
+  opnsense_protected_ips: string
+  elasticsearch_url: string
+  has_elasticsearch_api_key: boolean
+  elasticsearch_api_key_masked: string
+  elasticsearch_verify_ssl: boolean
+  elasticsearch_ca_cert_path: string
+  elasticsearch_timeout_seconds: number
+  elasticsearch_index_patterns: string
+  updated_by?: string | null
+  updated_at?: string | null
+}
+
+export interface IntegrationSettingsUpdatePayload {
+  opnsense_base_url?: string
+  opnsense_api_key?: string
+  opnsense_api_secret?: string
+  opnsense_verify_ssl?: boolean
+  opnsense_ca_cert_path?: string
+  opnsense_timeout_seconds?: number
+  opnsense_protected_ips?: string
+  elasticsearch_url?: string
+  elasticsearch_api_key?: string
+  elasticsearch_verify_ssl?: boolean
+  elasticsearch_ca_cert_path?: string
+  elasticsearch_timeout_seconds?: number
+  elasticsearch_index_patterns?: string
+}
+
+export interface ConnectivityTestResponse {
+  service: 'opnsense' | 'elasticsearch'
+  reachable: boolean
+  status: HealthLevel
+  latency_ms: number
+  message: string
+  error_diagnostic?: string | null
+  troubleshooting_hint?: string | null
+  details?: Record<string, unknown>
 }
 
 export interface LoginPayload {
@@ -272,6 +365,7 @@ export interface AuditLogItem {
   id: number
   actor: string
   action: string
+  audit_label?: string
   target: string
   status: string
   details: string
@@ -558,6 +652,19 @@ export const apiClient = {
     })
   },
 
+  getSetupStatus(): Promise<SetupStatusResponse> {
+    return requestJson<SetupStatusResponse>('/api/v1/auth/setup-status', {
+      method: 'GET',
+    })
+  },
+
+  setupInitialAdmin(payload: SetupAdminPayload): Promise<AuthUserResponse> {
+    return requestJson<AuthUserResponse>('/api/v1/auth/setup-admin', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   login(payload: LoginPayload): Promise<AuthUserResponse> {
     return requestJson<AuthUserResponse>('/api/v1/auth/login', {
       method: 'POST',
@@ -785,12 +892,16 @@ export const apiClient = {
 
   getAuditLogs(params?: {
     action?: string
+    audit_label?: string
     search?: string
     limit?: number
   }): Promise<AuditLogListResponse> {
     const query = new URLSearchParams()
     if (params?.action && params.action !== 'all') {
       query.set('action', params.action)
+    }
+    if (params?.audit_label && params.audit_label !== 'all') {
+      query.set('audit_label', params.audit_label)
     }
     if (params?.search && params.search.trim()) {
       query.set('search', params.search.trim())
@@ -802,6 +913,78 @@ export const apiClient = {
     return requestJson<AuditLogListResponse>(`/api/v1/audit-logs${qs ? `?${qs}` : ''}`, {
       method: 'GET',
     })
+  },
+
+  getUsers(): Promise<UserListResponse> {
+    return requestJson<UserListResponse>('/api/v1/users', {
+      method: 'GET',
+    })
+  },
+
+  createUser(payload: UserCreatePayload): Promise<UserItem> {
+    return requestJson<UserItem>('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateUser(userId: number, payload: UserUpdatePayload): Promise<UserItem> {
+    return requestJson<UserItem>(`/api/v1/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteUser(userId: number): Promise<{ deleted_user_id: number; username: string }> {
+    return requestJson<{ deleted_user_id: number; username: string }>(
+      `/api/v1/users/${userId}`,
+      { method: 'DELETE' },
+    )
+  },
+
+  getIntegrationSettings(): Promise<IntegrationSettingsView> {
+    return requestJson<IntegrationSettingsView>('/api/v1/system/settings', {
+      method: 'GET',
+    })
+  },
+
+  updateIntegrationSettings(
+    payload: IntegrationSettingsUpdatePayload,
+  ): Promise<IntegrationSettingsView> {
+    return requestJson<IntegrationSettingsView>('/api/v1/system/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  resetIntegrationSettings(): Promise<IntegrationSettingsView> {
+    return requestJson<IntegrationSettingsView>('/api/v1/system/settings', {
+      method: 'DELETE',
+    })
+  },
+
+  testOpnsenseConnectivity(
+    payload?: IntegrationSettingsUpdatePayload,
+  ): Promise<ConnectivityTestResponse> {
+    return requestJson<ConnectivityTestResponse>(
+      '/api/v1/system/settings/test-opnsense',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
+  },
+
+  testElasticsearchConnectivity(
+    payload?: IntegrationSettingsUpdatePayload,
+  ): Promise<ConnectivityTestResponse> {
+    return requestJson<ConnectivityTestResponse>(
+      '/api/v1/system/settings/test-elasticsearch',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
   },
 
   exportConfigBackup(): Promise<ConfigBackupPayload> {

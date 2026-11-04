@@ -70,12 +70,15 @@ def test_rejects_invalid_or_placeholder_app_secret_key(bad_secret: str) -> None:
         "REPLACE_WITH_STRONG_ADMIN_PASSWORD",
     ],
 )
-def test_rejects_empty_or_placeholder_admin_password(bad_password: str) -> None:
-    """ADMIN_PASSWORD must reject empty strings and template placeholders."""
+def test_empty_or_placeholder_admin_password_triggers_first_boot_setup_mode(
+    bad_password: str,
+) -> None:
+    """Empty or placeholder ADMIN_PASSWORD enters NGINX-style first-boot setup mode (FB-P9-001)."""
     kwargs = _base_kwargs()
     kwargs["admin_password"] = bad_password
-    with pytest.raises(ValidationError):
-        Settings(**kwargs)
+    cfg = Settings(**kwargs)
+    assert cfg.has_configured_env_admin_password is False
+    assert cfg.admin_password.get_secret_value() == ""
 
 
 def test_rejects_invalid_protected_ip() -> None:

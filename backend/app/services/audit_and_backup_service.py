@@ -15,6 +15,7 @@ from app.models import (
     DeviceGroup,
     DeviceGroupMembership,
     format_days_of_week,
+    infer_audit_label,
     normalize_group_color,
     normalize_mac_address,
     parse_days_of_week,
@@ -32,6 +33,7 @@ class AuditLogItem(BaseModel):
     id: int
     actor: str
     action: str
+    audit_label: str = "SYSTEM"
     target: str
     status: str
     details: str
@@ -102,10 +104,14 @@ class ConfigRestoreSummary(BaseModel):
 
 def build_audit_log_item(row: AuditLog) -> AuditLogItem:
     """Convert an `AuditLog` ORM instance into an `AuditLogItem`."""
+    resolved_label = infer_audit_label(
+        row.action or "", getattr(row, "audit_label", None)
+    )
     return AuditLogItem(
         id=row.id,
         actor=row.actor,
         action=row.action,
+        audit_label=resolved_label,
         target=row.target or "",
         status=row.status or "success",
         details=row.details or "",
@@ -117,6 +123,7 @@ def filter_and_paginate_audit_logs(
     rows: list[AuditLog],
     *,
     action_filter: str | None = None,
+    audit_label_filter: str | None = None,
     search: str | None = None,
     limit: int = 50,
 ) -> AuditLogListResponse:
@@ -125,7 +132,25 @@ def filter_and_paginate_audit_logs(
     filtered = sorted_rows
     if action_filter and action_filter.strip() and action_filter.strip().lower() != "all":
         act_q = action_filter.strip().lower()
-        filtered = [r for r in filtered if act_q in (r.action or "").lower()]
+        filtered = [
+            r
+            for r in filtered
+            if act_q in (r.action or "").lower()
+            or act_q == infer_audit_label(r.action or "", getattr(r, "audit_label", None)).lower()
+        ]
+
+    if (
+        audit_label_filter
+        and audit_label_filter.strip()
+        and audit_label_filter.strip().lower() != "all"
+    ):
+        lbl_q = audit_label_filter.strip().upper()
+        filtered = [
+            r
+            for r in filtered
+            if infer_audit_label(r.action or "", getattr(r, "audit_label", None))
+            == lbl_q
+        ]
 
     if search and search.strip():
         q = search.strip().lower()
@@ -134,6 +159,7 @@ def filter_and_paginate_audit_logs(
             for r in filtered
             if q in (r.actor or "").lower()
             or q in (r.action or "").lower()
+            or q in infer_audit_label(r.action or "", getattr(r, "audit_label", None)).lower()
             or q in (r.target or "").lower()
             or q in (r.details or "").lower()
             or q in (r.status or "").lower()
@@ -362,6 +388,7 @@ async def list_audit_logs(
     db: AsyncSession,
     *,
     action_filter: str | None = None,
+    audit_label_filter: str | None = None,
     search: str | None = None,
     limit: int = 50,
 ) -> AuditLogListResponse:
@@ -371,6 +398,7 @@ async def list_audit_logs(
     return filter_and_paginate_audit_logs(
         rows,
         action_filter=action_filter,
+        audit_label_filter=audit_label_filter,
         search=search,
         limit=limit,
     )

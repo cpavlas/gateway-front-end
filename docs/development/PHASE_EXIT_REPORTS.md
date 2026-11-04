@@ -338,3 +338,25 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   - `await client.cluster.health()` in the `elasticsearch` v9 Python client returns an `elastic_transport.ObjectApiResponse` (a `Mapping` supporting `.get()`), not a `dict` subclass. Using `hasattr(health_resp, "get")` ensures compatibility with both live `ObjectApiResponse` instances and unit test `dict` mocks.
 - *Finding 2 (Layer-2 Intra-Subnet Plex Streaming vs. Unbound DNS Signatures — `BUG-P8-003`):*
   - Unlike YouTube (which always traverses the WAN gateway and queries public `googlevideo.com` CDN edges), a local Plex Media Server on the same `/24` LAN streams video directly over Layer 2 without generating OPNsense `filterlog` port-32400 packets. Therefore, LAN Plex client detection must rely on Unbound DNS queries for `*.plex.direct` and `*.plex.tv` playback domains while filtering out Plex Media Server hosts via `servers.plex.tv` registration queries.
+
+---
+
+## Phase 9 Exit Analysis & Unplanned-Information Retrospective (`v1.0.3` — 2026-11-04)
+
+### 1. Phase 9 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P9-001` – `FB-P9-004`):**
+  1. **`FB-P9-001` (NGINX-Style First-Boot `admin` Password Creation):** Added `GET /api/v1/auth/setup-status` and `POST /api/v1/auth/setup-admin`, automatic SQLite `admin` seeding when a real `ADMIN_PASSWORD` is present in `.env`, and the First-Boot Password Creation form on `LoginPage.tsx`.
+  2. **`FB-P9-002` (UI Admin Panel for OPNsense & Elasticsearch Variables + Live Connectivity Test):** Added SQLite `system_settings` persistence with AEAD-encrypted secrets (`ENC:v1:...`), runtime override precedence over `.env` (`GET / PUT / DELETE /api/v1/system/settings`), and live connectivity diagnostic endpoints (`POST /api/v1/system/settings/test-opnsense`, `POST /api/v1/system/settings/test-elasticsearch`) that surface detailed troubleshooting hints in `StatusPage.tsx` and log failures to `audit_logs` (`DIAGNOSTIC_ERROR`).
+  3. **`FB-P9-003` (Multi-User Management & Built-in `admin` Protection):** Added SQLite `users` table (`admin` vs. `operator` roles), `/api/v1/users` (`GET`, `POST`, `PATCH /{id}`, `DELETE /{id}`), and strict enforcement (`403 Forbidden` + UI lock) preventing deletion, disabling, or demotion of the built-in `admin` account.
+  4. **`FB-P9-004` (Per-User Action Attribution & `audit_label` Badges):** Added `audit_label` to `AuditLog`, recorded `actor = current_user.username` across all mutations, and added the `Audit Label` badge column and filter selector in `StatusPage.tsx`.
+  5. **`FB-P8-008` / `BUG-P9-002` (Plex Local LAN Streaming Investigation -> Deferred to Direct Plex API Integration `FB-P9-005`):** Evaluated Unbound DNS `*.plex.direct` / `plex.tv` playback heuristics in `CP-9.1`, which confirmed during Gate 2 validation (`PHASE9-Verify.md`) that LG webOS Smart TVs streaming over same-subnet L2 bypass both OPNsense `filterlog` and Unbound DNS during multi-hour sessions while other local services trigger `*.plex.direct` DNS queries. Per user decision, deeper Tautulli-style direct Plex Media Server API integration is logged as `FB-P9-005` (`BUG-P9-002`) for a future release.
+- **Final Automated Quality Metrics (`v1.0.3`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `118 / 118` passed (`85%` coverage), `0` ruff errors, `0` mypy issues.
+  - **Frontend (`vitest`, `tsc && vite build`):** `26 / 26` passed (`90.37%` coverage), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward Adjustments
+- **Why Gateway Firewall/DNS Logs Cannot Replace Direct Plex API Telemetry (`BUG-P9-002` / `FB-P9-005`):**
+  - In a local LAN where Smart TVs (`LGwebOSTV`) and the Plex Media Server reside on the same `/24` subnet, video streams travel at Layer 2 without crossing OPNsense (`filterlog`), and Smart TV apps cache `*.plex.direct` or use local GDM discovery without querying Unbound DNS during playback. Meanwhile, media automation/monitoring services on other LAN hosts periodically query `*.plex.direct`, skewing DNS-derived device rankings and `Last active` timestamps. Querying the Plex Media Server API directly (like Tautulli) is the authoritative solution and is tracked under `FB-P9-005`.
+- **Feed-Forward into Phase 10 (`v1.0.4` — Dedicated `Firewall & Security` Tab):**
+  - Phase 10 proceeds cleanly with `FB-P10-001` (Firewall & Security dashboard, pass/block/direction KPIs, timeline bar chart, Suspected Bad Actors / Scanners with 1-click LAN block, Active Inbound WAN Exposure / Open Ports, and searchable `filterlog` explorer).
+

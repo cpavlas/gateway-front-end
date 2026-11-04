@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -16,6 +17,59 @@ VALID_GROUP_COLORS = frozenset(
 )
 VALID_OVERRIDE_MODES = frozenset({"pause", "bonus"})
 VALID_OVERRIDE_TARGETS = frozenset({"device", "group"})
+VALID_USER_ROLES = frozenset({"admin", "operator"})
+VALID_USER_THEMES = frozenset({"default", "crimson", "ocean"})
+VALID_AUDIT_LABELS = frozenset(
+    {
+        "AUTH_EVENT",
+        "USER_MGMT",
+        "SETTINGS_CHANGE",
+        "DIAGNOSTIC_ERROR",
+        "DEVICE_CONTROL",
+        "YOUTUBE_CONTROL",
+        "GROUP_CONTROL",
+        "TIMER_OVERRIDE",
+        "SCHEDULE_CHANGE",
+        "CONFIG_BACKUP",
+        "SYSTEM",
+    }
+)
+
+
+def infer_audit_label(action: str, audit_label: str | None = None) -> str:
+    """Resolve or infer a canonical `audit_label` badge category from an audit action."""
+    if audit_label and audit_label.strip() and audit_label.strip().upper() != "SYSTEM":
+        cleaned_label = audit_label.strip().upper()
+        if cleaned_label in VALID_AUDIT_LABELS:
+            return cleaned_label
+    act = (action or "").strip().lower()
+    if not act:
+        return "SYSTEM"
+    if act.startswith(("auth.", "login", "logout")):
+        return "AUTH_EVENT"
+    if act.startswith("user"):
+        return "USER_MGMT"
+    if act.startswith("diagnostic"):
+        return "DIAGNOSTIC_ERROR"
+    if act.startswith("settings"):
+        return "SETTINGS_CHANGE"
+    if "youtube" in act:
+        return "YOUTUBE_CONTROL"
+    if act.startswith("device"):
+        return "DEVICE_CONTROL"
+    if act.startswith("group"):
+        return "GROUP_CONTROL"
+    if act.startswith("timer"):
+        return "TIMER_OVERRIDE"
+    if act.startswith("schedule"):
+        return "SCHEDULE_CHANGE"
+    if (
+        act.startswith(("config", "backup", "restore"))
+        or "restore" in act
+        or "backup" in act
+    ):
+        return "CONFIG_BACKUP"
+    return "SYSTEM"
 
 
 def utc_now() -> datetime:
@@ -148,12 +202,22 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     actor: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    audit_label: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="SYSTEM", index=True
+    )
     target: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="success")
     details: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False, index=True
     )
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs["audit_label"] = infer_audit_label(
+            str(kwargs.get("action", "")),
+            kwargs.get("audit_label"),
+        )
+        super().__init__(**kwargs)
 
 
 class Device(Base):
@@ -305,6 +369,48 @@ class RecurringSchedule(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+
+class User(Base):
+    """Platform user account supporting multi-user RBAC ('admin' vs 'operator')."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="operator", index=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True
+    )
+    theme_preference: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="default"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class SystemSetting(Base):
+    """Runtime UI-configured integration settings overriding .env defaults."""
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_by: Mapped[str] = mapped_column(String(64), nullable=False, default="admin")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
