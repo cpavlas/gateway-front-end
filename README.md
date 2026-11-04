@@ -65,7 +65,7 @@ Self-hosted, single-container Dockerized web application (`http://localhost:8080
 
 - [`PLAN.md`](PLAN.md) — Master 7-Phase architecture and execution plan.
 - [`docs/API_KEYS_SETUP.md`](docs/API_KEYS_SETUP.md) — OPNsense aliases, LAN firewall rules (full internet + selective YouTube block), ACL privileges, and Elasticsearch API key setup.
-- [`docs/FEATURE_BACKLOG.md`](docs/FEATURE_BACKLOG.md) — User feedback and feature backlog ledger (`FB-P4-*`, `FB-P5-*`, `FB-P6-*`).
-- [`docs/TEST_AND_BUG_LOG.md`](docs/TEST_AND_BUG_LOG.md) — Cumulative test cycle and bug resolution ledger (`BUG-P1-*` through `BUG-P7-*`).
-- [`docs/PHASE_EXIT_REPORTS.md`](docs/PHASE_EXIT_REPORTS.md) — End-of-phase retrospectives and unplanned-information audits across all 7 phases.
-- [`docs/PHASE_1_TRACKING.md`](docs/PHASE_1_TRACKING.md) .. [`docs/PHASE_7_TRACKING.md`](docs/PHASE_7_TRACKING.md) — Step-by-step phase execution trackers.
+- [`docs/development/FEATURE_BACKLOG.md`](docs/development/FEATURE_BACKLOG.md) — User feedback and feature backlog ledger (`FB-P4-*`, `FB-P5-*`, `FB-P6-*`).
+- [`docs/development/TEST_AND_BUG_LOG.md`](docs/development/TEST_AND_BUG_LOG.md) — Cumulative test cycle and bug resolution ledger (`BUG-P1-*` through `BUG-P7-*`).
+- [`docs/development/PHASE_EXIT_REPORTS.md`](docs/development/PHASE_EXIT_REPORTS.md) — End-of-phase retrospectives and unplanned-information audits across all 7 phases.
+- [`docs/development/PHASE_1_TRACKING.md`](docs/development/PHASE_1_TRACKING.md) .. [`docs/development/PHASE_7_TRACKING.md`](docs/development/PHASE_7_TRACKING.md) — Step-by-step phase execution trackers.

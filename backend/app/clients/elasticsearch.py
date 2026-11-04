@@ -70,13 +70,54 @@ def validate_ipv4_list(ipv4_addresses: list[str]) -> list[str]:
     return cleaned
 
 
-def _build_app_usage_agg(safe_tz: str) -> dict[str, Any]:
+_PLEX_SERVER_NOISE_DOMAINS: list[str] = [
+    "servers.plex.tv",
+    "analytics.plex.tv",
+    "metadata.provider.plex.tv",
+    "scrobbles.plex.tv",
+    "discover.provider.plex.tv",
+    "luma.plex.tv",
+    "pubsub.plex.tv",
+    "plex.tv",
+]
+
+_YOUTUBE_BACKGROUND_NOISE_DOMAINS: list[str] = [
+    "googlevideo.com",
+    "youtube-nocookie.com",
+    "youtubei.googleapis.com",
+    "accounts.youtube.com",
+    "youtube.googleapis.com",
+]
+
+
+def _build_app_usage_agg(
+    safe_tz: str,
+    excluded_ips: list[str] | None = None,
+) -> dict[str, Any]:
     """Build Elasticsearch filters aggregation for YouTube and Plex 5-minute active windows."""
+    common_must_not: list[dict[str, Any]] = [
+        {"term": {"event.action": "block"}},
+    ]
+    clean_excluded = [ip.strip() for ip in (excluded_ips or []) if ip and ip.strip()]
+    if clean_excluded:
+        common_must_not.append({"terms": {"source.ip": clean_excluded}})
+
+    youtube_must_not = [
+        *common_must_not,
+        {"terms": {"dns.question.name": _YOUTUBE_BACKGROUND_NOISE_DOMAINS}},
+    ]
+
+    plex_must_not = [
+        *common_must_not,
+        {"terms": {"dns.question.name": _PLEX_SERVER_NOISE_DOMAINS}},
+    ]
+
     return {
         "filters": {
             "filters": {
                 "youtube": {
                     "bool": {
+                        "must_not": youtube_must_not,
                         "should": [
                             {
                                 "terms": {
@@ -84,23 +125,13 @@ def _build_app_usage_agg(safe_tz: str) -> dict[str, Any]:
                                         "youtube.com",
                                         "youtu.be",
                                         "googlevideo.com",
-                                        "ytimg.com",
-                                        "youtube-nocookie.com",
                                     ]
                                 }
                             },
                             {
                                 "wildcard": {
                                     "dns.question.name": {
-                                        "value": "*youtube*",
-                                        "case_insensitive": True,
-                                    }
-                                }
-                            },
-                            {
-                                "wildcard": {
-                                    "dns.question.name": {
-                                        "value": "*googlevideo*",
+                                        "value": "*.googlevideo.com",
                                         "case_insensitive": True,
                                     }
                                 }
@@ -111,26 +142,24 @@ def _build_app_usage_agg(safe_tz: str) -> dict[str, Any]:
                 },
                 "plex": {
                     "bool": {
+                        "must_not": plex_must_not,
                         "should": [
+                            {"term": {"destination.port": 32400}},
                             {
                                 "terms": {
-                                    "dns.question.registered_domain": [
-                                        "plex.tv",
-                                        "plex.direct",
-                                        "plexapp.com",
+                                    "dns.question.name": [
+                                        "app.plex.tv",
+                                        "clients.plex.tv",
                                     ]
                                 }
                             },
                             {
-                                "wildcard": {
-                                    "dns.question.name": {
-                                        "value": "*plex*",
-                                        "case_insensitive": True,
-                                    }
+                                "terms": {
+                                    "dns.question.registered_domain": [
+                                        "plexapp.com",
+                                    ]
                                 }
                             },
-                            {"term": {"destination.port": 32400}},
-                            {"term": {"source.port": 32400}},
                         ],
                         "minimum_should_match": 1,
                     }
@@ -143,18 +172,44 @@ def _build_app_usage_agg(safe_tz: str) -> dict[str, Any]:
                     "field": "@timestamp",
                     "fixed_interval": "5m",
                     "time_zone": safe_tz,
-                    "min_doc_count": 1,
+                    "min_doc_count": 5,
                 }
             },
             "bytes": {"sum": {"field": "network.bytes"}},
             "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
             "last_active": {"max": {"field": "@timestamp"}},
+            "by_device": {
+                "filter": {"terms": {"source.ip": RFC1918_CIDRS}},
+                "aggs": {
+                    "devices": {
+                        "terms": {"field": "source.ip", "size": 15},
+                        "aggs": {
+                            "active_slots": {
+                                "date_histogram": {
+                                    "field": "@timestamp",
+                                    "fixed_interval": "5m",
+                                    "time_zone": safe_tz,
+                                    "min_doc_count": 5,
+                                }
+                            },
+                            "port_32400": {
+                                "filter": {"term": {"destination.port": 32400}}
+                            },
+                            "bytes": {"sum": {"field": "network.bytes"}},
+                            "dns_queries": {
+                                "filter": {"term": {"event.provider": "unbound"}}
+                            },
+                            "last_active": {"max": {"field": "@timestamp"}},
+                        },
+                    }
+                },
+            },
         },
     }
 
 
 def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract YouTube and Plex active usage time (`active_minutes`), queries, and bytes."""
+    """Extract YouTube/Plex active usage (`active_minutes`), queries, bytes, and top 3 devices."""
     buckets = ((aggs.get("app_usage") or {}).get("buckets")) or {}
     items: list[dict[str, Any]] = []
     for app_key, display_name in (("youtube", "YouTube"), ("plex", "Plex")):
@@ -162,15 +217,88 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(b, dict):
             b = {}
         event_count = int(b.get("doc_count") or 0)
-        slot_buckets = ((b.get("active_slots") or {}).get("buckets")) or []
-        active_slots = sum(1 for sb in slot_buckets if int(sb.get("doc_count") or 0) > 0)
-        if active_slots == 0 and event_count > 0:
-            active_minutes = 5
-        else:
-            active_minutes = active_slots * 5
         dns_queries = int((b.get("dns_queries") or {}).get("doc_count") or 0)
         bytes_val = int(float((b.get("bytes") or {}).get("value") or 0))
         last_active_at = (b.get("last_active") or {}).get("value_as_string")
+
+        device_buckets = (
+            ((b.get("by_device") or {}).get("devices") or {}).get("buckets")
+        ) or []
+        top_devices: list[dict[str, Any]] = []
+        active_slot_keys: set[str] = set()
+
+        if device_buckets:
+            for db in device_buckets:
+                ip_str = str(db.get("key") or "").strip()
+                if not ip_str:
+                    continue
+                dev_events = int(db.get("doc_count") or 0)
+                dev_dns = int((db.get("dns_queries") or {}).get("doc_count") or 0)
+                dev_bytes = int(float((db.get("bytes") or {}).get("value") or 0))
+                dev_port_32400 = int(
+                    (db.get("port_32400") or {}).get("doc_count") or 0
+                )
+                dev_slot_buckets = (
+                    (db.get("active_slots") or {}).get("buckets")
+                ) or []
+                valid_slots = [
+                    sb
+                    for sb in dev_slot_buckets
+                    if int(sb.get("doc_count") or 0) >= 5
+                ]
+                dev_active_slots = len(valid_slots)
+
+                # Ignore 24/7 automated DNS pollers on Plex or router filterdns on YouTube
+                if (
+                    app_key == "plex"
+                    and dev_active_slots >= 140
+                    and dev_port_32400 == 0
+                    and dev_bytes == 0
+                ) or (
+                    app_key == "youtube"
+                    and dev_active_slots >= 140
+                    and dev_bytes == 0
+                    and ip_str.endswith(".1")
+                ):
+                    continue
+
+                if dev_active_slots <= 0:
+                    continue
+
+                for idx, sb in enumerate(valid_slots):
+                    slot_key = str(
+                        sb.get("key_as_string") or sb.get("key") or f"{ip_str}:{idx}"
+                    )
+                    active_slot_keys.add(slot_key)
+
+                dev_active_minutes = dev_active_slots * 5
+                top_devices.append(
+                    {
+                        "ipv4_address": ip_str,
+                        "effective_name": ip_str,
+                        "active_minutes": dev_active_minutes,
+                        "event_count": dev_events,
+                        "dns_queries": dev_dns,
+                        "bytes": dev_bytes,
+                    }
+                )
+
+            top_devices.sort(
+                key=lambda d: (
+                    int(d["active_minutes"]),
+                    int(d["bytes"]),
+                    int(d["event_count"]),
+                ),
+                reverse=True,
+            )
+            active_minutes = len(active_slot_keys) * 5
+        else:
+            slot_buckets = ((b.get("active_slots") or {}).get("buckets")) or []
+            active_slots = sum(
+                1 for sb in slot_buckets if int(sb.get("doc_count") or 0) >= 5
+            )
+            active_minutes = active_slots * 5
+
         items.append(
             {
                 "app_key": app_key,
@@ -180,6 +308,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                 "dns_queries": dns_queries,
                 "bytes": bytes_val,
                 "last_active_at": last_active_at,
+                "top_devices": top_devices[:3],
             }
         )
     return items
@@ -189,6 +318,7 @@ def build_network_overview_query(
     window: str = "24h",
     tz_name: str = "UTC",
     top_n: int = 10,
+    excluded_ips: list[str] | None = None,
 ) -> dict[str, Any]:
     """Construct the Elasticsearch aggregation DSL for network-wide traffic and DNS overview."""
     _, es_gte, interval = resolve_time_window(window)
@@ -207,7 +337,7 @@ def build_network_overview_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
-            "app_usage": _build_app_usage_agg(safe_tz),
+            "app_usage": _build_app_usage_agg(safe_tz, excluded_ips=excluded_ips),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "timeline": {
@@ -950,6 +1080,23 @@ class ElasticsearchServiceClient:
                 allow_no_indices=True,
             )
             doc_count = int(count_resp.get("count", 0))
+
+            cluster_status = "unknown"
+            assigned_shards = 0
+            unassigned_shards = 0
+            relocating_shards = 0
+            try:
+                health_resp = await client.cluster.health()
+                if hasattr(health_resp, "get"):
+                    raw_status = health_resp.get("status", "unknown")
+                    if isinstance(raw_status, str):
+                        cluster_status = raw_status.lower()
+                        assigned_shards = int(health_resp.get("active_shards", 0) or 0)
+                        unassigned_shards = int(health_resp.get("unassigned_shards", 0) or 0)
+                        relocating_shards = int(health_resp.get("relocating_shards", 0) or 0)
+            except Exception:
+                pass
+
             elapsed = round((time.perf_counter() - start) * 1000, 2)
             return ServiceHealthStatus(
                 service="elasticsearch",
@@ -965,6 +1112,10 @@ class ElasticsearchServiceClient:
                     "version": es_version,
                     "index_patterns": self._index_patterns,
                     "document_count": doc_count,
+                    "cluster_status": cluster_status,
+                    "assigned_shards": assigned_shards,
+                    "unassigned_shards": unassigned_shards,
+                    "relocating_shards": relocating_shards,
                 },
             )
         except (AuthenticationException, AuthorizationException) as exc:
@@ -992,10 +1143,19 @@ class ElasticsearchServiceClient:
         self,
         window: str = "24h",
         top_n: int = 10,
+        excluded_ips: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute network-wide traffic and DNS aggregation query against logs-pfsense.log*."""
         win_key, _, _ = resolve_time_window(window)
-        body = build_network_overview_query(window=win_key, tz_name=self._tz, top_n=top_n)
+        merged_excluded = sorted(
+            set(self._settings.protected_ip_set).union(excluded_ips or [])
+        )
+        body = build_network_overview_query(
+            window=win_key,
+            tz_name=self._tz,
+            top_n=top_n,
+            excluded_ips=merged_excluded,
+        )
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
         try:

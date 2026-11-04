@@ -29,6 +29,16 @@ from app.services.device_service import (
 # ---------------------------------------------------------------------------
 
 
+class AppUsageDeviceItem(BaseModel):
+    device_id: int | None = None
+    ipv4_address: str
+    effective_name: str
+    active_minutes: int = 0
+    event_count: int = 0
+    dns_queries: int = 0
+    bytes: int = 0
+
+
 class AppUsageItem(BaseModel):
     app_key: Literal["youtube", "plex"]
     display_name: str
@@ -37,6 +47,7 @@ class AppUsageItem(BaseModel):
     dns_queries: int = 0
     bytes: int = 0
     last_active_at: str | None = None
+    top_devices: list[AppUsageDeviceItem] = Field(default_factory=list)
 
 
 def _build_zero_app_usage() -> list[AppUsageItem]:
@@ -47,12 +58,56 @@ def _build_zero_app_usage() -> list[AppUsageItem]:
     ]
 
 
-def _parse_app_usage_items(es_data: dict[str, Any]) -> list[AppUsageItem]:
-    """Parse raw `application_usage` dicts into typed `AppUsageItem` objects."""
+def _parse_app_usage_items(
+    es_data: dict[str, Any],
+    sqlite_devices: list[Device] | None = None,
+    settings: Settings | None = None,
+) -> list[AppUsageItem]:
+    """Parse raw `application_usage` dicts into `AppUsageItem` objects with SQLite enrichment."""
     raw = es_data.get("application_usage")
-    if isinstance(raw, list) and raw:
-        return [AppUsageItem(**a) for a in raw if isinstance(a, dict)]
-    return _build_zero_app_usage()
+    if not isinstance(raw, list) or not raw:
+        return _build_zero_app_usage()
+
+    by_ip: dict[str, Device] = {
+        d.ipv4_address: d for d in (sqlite_devices or []) if d.ipv4_address
+    }
+    parsed: list[AppUsageItem] = []
+    for a in raw:
+        if not isinstance(a, dict):
+            continue
+        raw_top = a.get("top_devices") or []
+        enriched_top: list[AppUsageDeviceItem] = []
+        for td in raw_top:
+            if not isinstance(td, dict):
+                continue
+            ip_str = str(td.get("ipv4_address") or "").strip()
+            if not ip_str:
+                continue
+            dev = by_ip.get(ip_str)
+            if dev is not None:
+                dev_id: int | None = dev.id
+                eff_name = (
+                    (dev.display_name or "").strip()
+                    or (dev.hostname or "").strip()
+                    or ip_str
+                )
+            else:
+                dev_id = None
+                eff_name = str(td.get("effective_name") or ip_str)
+            enriched_top.append(
+                AppUsageDeviceItem(
+                    device_id=dev_id,
+                    ipv4_address=ip_str,
+                    effective_name=eff_name,
+                    active_minutes=int(td.get("active_minutes") or 0),
+                    event_count=int(td.get("event_count") or 0),
+                    dns_queries=int(td.get("dns_queries") or 0),
+                    bytes=int(td.get("bytes") or 0),
+                )
+            )
+        item_copy = {**a, "top_devices": enriched_top[:3]}
+        parsed.append(AppUsageItem(**item_copy))
+    return parsed or _build_zero_app_usage()
 
 
 class TimelineBucketItem(BaseModel):
@@ -297,7 +352,7 @@ def _assemble_network_overview_response(
         top_organizations=[
             TopOrganizationItem(**o) for o in (es_data.get("top_organizations") or [])
         ],
-        application_usage=_parse_app_usage_items(es_data),
+        application_usage=_parse_app_usage_items(es_data, sqlite_devices, settings),
     )
 
 
@@ -453,9 +508,21 @@ async def get_network_overview_analytics(
     stmt = select(Device)
     result = await db.execute(stmt)
     sqlite_devices = list(result.scalars().all())
+    protected_db_ips = [
+        d.ipv4_address
+        for d in sqlite_devices
+        if d.is_protected and d.ipv4_address
+    ]
 
     try:
-        es_data = await es_client.fetch_network_overview(window=win_key, top_n=12)
+        try:
+            es_data = await es_client.fetch_network_overview(
+                window=win_key,
+                top_n=12,
+                excluded_ips=protected_db_ips,
+            )
+        except TypeError:
+            es_data = await es_client.fetch_network_overview(window=win_key, top_n=12)
     except ElasticsearchQueryError as exc:
         return _build_empty_overview_response(
             window=win_key,

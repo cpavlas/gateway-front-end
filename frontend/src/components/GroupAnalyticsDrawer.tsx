@@ -18,10 +18,13 @@ import {
 import {
   apiClient,
   formatActiveMinutes,
+  formatBlockedPercentage,
   formatBytes,
+  formatClock24h,
   type TimeWindow,
 } from '../api/client'
 import { getGroupBadgeClasses } from './GroupFormModal'
+import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 
 interface GroupAnalyticsDrawerProps {
   groupId: number | null
@@ -50,6 +53,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
 
   const {
     data: analytics,
+    dataUpdatedAt,
     isLoading,
     isFetching,
   } = useQuery({
@@ -131,14 +135,13 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
   const topOrgs = analytics?.top_organizations ?? []
   const recentQueries = analytics?.recent_queries ?? []
   const appUsage = analytics?.application_usage ?? [
-    { app_key: 'youtube' as const, display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
-    { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'youtube' as const, display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null, top_devices: [] },
+    { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null, top_devices: [] },
   ]
 
-  const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
-  const maxHourlyEvents = Math.max(1, ...hourlyProfile.map((h) => h.total_events))
   const maxDomainCount = Math.max(1, ...topDomains.map((d) => d.query_count))
   const maxMemberBytes = Math.max(1, ...memberBreakdown.map((m) => m.bytes))
+  const lastUpdatedClock = formatClock24h(analytics?.generated_at || dataUpdatedAt)
 
   return (
     <div
@@ -258,20 +261,31 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending || isFetching}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-60 cursor-pointer"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${
-                refreshMutation.isPending || isFetching ? 'animate-spin' : ''
-              }`}
-              aria-hidden="true"
-            />
-            <span>Refresh Telemetry</span>
-          </button>
+          <div className="flex flex-col items-end gap-0.5">
+            <button
+              type="button"
+              data-testid="group-drawer-refresh-btn"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending || isFetching}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-60 cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${
+                  refreshMutation.isPending || isFetching ? 'animate-spin' : ''
+                }`}
+                aria-hidden="true"
+              />
+              <span>Refresh Telemetry</span>
+            </button>
+            {lastUpdatedClock && (
+              <span
+                data-testid="group-drawer-last-updated"
+                className="text-[10px] font-mono text-slate-400"
+              >
+                Updated: {lastUpdatedClock}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Scrollable Content */}
@@ -343,7 +357,9 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                       {(summary?.blocked_packet_count ?? 0).toLocaleString()}
                     </span>
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">Pass vs Block packets</p>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    Pass vs Block ({formatBlockedPercentage(summary?.blocked_packet_count ?? 0, summary?.allowed_packet_count ?? 0)})
+                  </p>
                 </div>
 
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5">
@@ -365,14 +381,14 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Application Usage & Control (FB-P6-004 & FB-P6-005) */}
+              {/* Application Usage & Control (FB-P6-004, FB-P6-005, FB-P8-002) */}
               <div
                 data-testid="group-drawer-app-usage-panel"
                 className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
               >
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-slate-200">
-                    Application Usage &amp; Group Control (YouTube &amp; Plex)
+                    Application Usage &amp; Group Control
                   </h3>
                   <p className="text-xs text-slate-400">
                     Combined group streaming duration and one-click YouTube blocking across group members
@@ -381,37 +397,66 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {appUsage.map((app) => {
                     const isYoutube = app.app_key === 'youtube'
+                    const appTopDevices = (app.top_devices ?? []).slice(0, 3)
                     return (
                       <div
                         key={app.app_key}
                         data-testid={`group-drawer-app-card-${app.app_key}`}
                         className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Tv
-                              className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
-                              aria-hidden="true"
-                            />
-                            <div>
-                              <span className="text-sm font-bold text-slate-100">
-                                {app.display_name}
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Tv
+                                className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
+                                aria-hidden="true"
+                              />
+                              <div>
+                                <span className="text-sm font-bold text-slate-100">
+                                  {app.display_name}
+                                </span>
+                                <p className="text-[11px] text-slate-400">
+                                  {(app.dns_queries ?? 0).toLocaleString()} DNS queries •{' '}
+                                  {formatBytes(app.bytes ?? 0)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span
+                                data-testid={`group-drawer-app-minutes-${app.app_key}`}
+                                className="text-base font-bold text-indigo-300 font-mono"
+                              >
+                                {formatActiveMinutes(app.active_minutes)}
                               </span>
-                              <p className="text-[11px] text-slate-400">
-                                {(app.dns_queries ?? 0).toLocaleString()} DNS queries •{' '}
-                                {formatBytes(app.bytes ?? 0)}
-                              </p>
+                              <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <span
-                              data-testid={`group-drawer-app-minutes-${app.app_key}`}
-                              className="text-base font-bold text-indigo-300 font-mono"
+
+                          {appTopDevices.length > 0 && (
+                            <div
+                              data-testid={`group-drawer-app-top-devices-${app.app_key}`}
+                              className="mt-2.5 border-t border-slate-800/70 pt-2"
                             >
-                              {formatActiveMinutes(app.active_minutes)}
-                            </span>
-                            <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
-                          </div>
+                              <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                                Top Group Devices
+                              </span>
+                              <ul className="space-y-1 text-xs">
+                                {appTopDevices.map((dev, idx) => (
+                                  <li
+                                    key={`${dev.ipv4_address}-${idx}`}
+                                    className="flex items-center justify-between gap-2"
+                                  >
+                                    <span className="truncate text-slate-300">
+                                      #{idx + 1} {dev.effective_name}
+                                    </span>
+                                    <span className="font-mono text-indigo-300">
+                                      {formatActiveMinutes(dev.active_minutes)}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
 
                         {isYoutube && group && group.blockable_devices > 0 && (
@@ -525,96 +570,42 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                 )}
               </div>
 
-              {/* Usage Timeline & 24-Hour Access Profile */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Usage Timeline & 24-Hour Access Profile (FB-P8-004 & FB-P8-005) */}
+              <div className="space-y-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="mb-3">
                     <h3 className="text-sm font-semibold text-slate-200">
                       Group Activity Timeline ({windowKey})
                     </h3>
-                    <div
-                      data-testid="group-timeline-legend"
-                      className="flex items-center gap-2.5 text-[11px] text-slate-300"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-xs bg-cyan-400" />
-                        <span>DNS Queries</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-xs bg-indigo-500" />
-                        <span>Firewall Events</span>
-                      </span>
-                    </div>
+                    <p className="text-xs text-slate-400">
+                      Combined DNS queries and firewall packets across group members
+                    </p>
                   </div>
-                  <div className="mt-3 flex h-28 items-end gap-1 pt-2">
-                    {timeline.length === 0 ? (
-                      <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
-                        No timeline buckets in selected window.
-                      </div>
-                    ) : (
-                      timeline.map((b, idx) => {
-                        const dnsCount = Math.max(0, b.dns_queries)
-                        const fwCount = Math.max(0, b.total_events - dnsCount)
-                        const combinedTotal = Math.max(b.total_events, dnsCount + fwCount)
-                        const heightPct = Math.max(
-                          6,
-                          Math.round((combinedTotal / maxTimelineEvents) * 100),
-                        )
-                        const dnsSharePct =
-                          combinedTotal > 0 ? Math.round((dnsCount / combinedTotal) * 100) : 50
-                        const fwSharePct = Math.max(0, 100 - dnsSharePct)
-                        const tooltipText = `${new Date(b.timestamp).toLocaleString()} — Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${dnsCount.toLocaleString()} | Firewall Events: ${fwCount.toLocaleString()} (${formatBytes(b.bytes)})`
-                        return (
-                          <div
-                            key={`${b.timestamp}-${idx}`}
-                            title={tooltipText}
-                            className="group relative flex-1 flex flex-col items-center justify-end h-full"
-                          >
-                            <div
-                              style={{ height: `${combinedTotal > 0 ? heightPct : 4}%` }}
-                              className="w-full flex flex-col overflow-hidden rounded-t transition-all"
-                            >
-                              <div
-                                style={{ height: `${dnsSharePct}%` }}
-                                className="w-full bg-cyan-400/85 group-hover:bg-cyan-300"
-                              />
-                              <div
-                                style={{ height: `${fwSharePct}%` }}
-                                className="w-full bg-indigo-500/85 group-hover:bg-indigo-400"
-                              />
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
+                  <TimelineBarChart
+                    timeline={timeline}
+                    windowKey={windowKey}
+                    prefixTestId="group-timeline"
+                    chartTestId="group-timeline-chart"
+                    legendTestId="group-timeline-legend"
+                    compact={true}
+                  />
                 </div>
 
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                  <h3 className="text-sm font-semibold text-slate-200">
-                    24-Hour Group Access Time Profile
-                  </h3>
-                  <div className="mt-3 grid grid-cols-24 gap-1 items-end h-28 pt-2">
-                    {hourlyProfile.map((h) => {
-                      const pct =
-                        h.total_events > 0
-                          ? Math.max(10, Math.round((h.total_events / maxHourlyEvents) * 100))
-                          : 4
-                      return (
-                        <div key={h.hour} className="flex flex-col items-center h-full justify-end">
-                          <div
-                            title={`${h.label} — ${h.total_events.toLocaleString()} events`}
-                            className={`w-full rounded-t transition-all ${
-                              h.total_events > 0
-                                ? 'bg-amber-400/85 hover:bg-amber-300'
-                                : 'bg-slate-800/60'
-                            }`}
-                            style={{ height: `${pct}%` }}
-                          />
-                        </div>
-                      )
-                    })}
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      24-Hour Group Access Time Profile
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Hourly online activity distribution across group members (00:00 - 23:00)
+                    </p>
                   </div>
+                  <HourlyProfileBarChart
+                    hourlyProfile={hourlyProfile}
+                    prefixTestId="group-hourly"
+                    chartTestId="group-hourly-profile"
+                    compact={true}
+                  />
                 </div>
               </div>
 
@@ -737,10 +728,10 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                         {recentQueries.map((q, idx) => (
                           <tr key={`${q.timestamp}-${q.domain}-${idx}`} className="hover:bg-slate-900/50">
                             <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                              {q.timestamp ? new Date(q.timestamp).toLocaleTimeString() : '—'}
+                              {q.timestamp ? new Date(q.timestamp).toLocaleTimeString() : '-'}
                             </td>
                             <td className="px-3 py-2 text-indigo-300 font-sans">
-                              {q.device_name ?? q.source_ip ?? '—'}
+                              {q.device_name ?? q.source_ip ?? '-'}
                             </td>
                             <td className="px-3 py-2 text-slate-100 break-all">{q.domain}</td>
                             <td className="px-3 py-2 text-right text-emerald-300">
@@ -760,4 +751,3 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
     </div>
   )
 }
-

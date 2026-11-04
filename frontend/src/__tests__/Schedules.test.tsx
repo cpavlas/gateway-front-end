@@ -176,7 +176,7 @@ describe('Phase 6 Recurring Schedules & Bedtime Rules UI', () => {
     expect(screen.getByTestId('schedules-kpi-total')).toHaveTextContent('2')
     expect(screen.getByTestId('schedules-kpi-active')).toHaveTextContent('1')
     expect(screen.getByTestId('schedule-status-1')).toHaveTextContent(
-      'Active Now — Blocking until 07:00',
+      'Active Now, Blocking until 07:00',
     )
     expect(screen.getByTestId('schedule-status-2')).toHaveTextContent('Disabled')
 

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import {
   apiClient,
+  formatClock24h,
   type ConfigBackupPayload,
   type ConfigRestoreSummary,
   type DeviceListResponse,
@@ -68,12 +69,25 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   const status: HealthLevel = health?.status ?? 'unhealthy'
   const details = health?.details ?? {}
   const isSqlite = testId === 'service-card-sqlite'
+  const isEs = testId === 'service-card-elasticsearch'
+
   const storageSizeFormatted =
     typeof details.storage_size_formatted === 'string'
       ? details.storage_size_formatted
       : undefined
   const totalRecords =
     typeof details.total_records === 'number' ? details.total_records : undefined
+
+  const clusterStatus =
+    typeof details.cluster_status === 'string'
+      ? details.cluster_status.toLowerCase()
+      : undefined
+  const assignedShards =
+    typeof details.assigned_shards === 'number' ? details.assigned_shards : undefined
+  const unassignedShards =
+    typeof details.unassigned_shards === 'number' ? details.unassigned_shards : 0
+  const relocatingShards =
+    typeof details.relocating_shards === 'number' ? details.relocating_shards : 0
 
   return (
     <div
@@ -105,6 +119,68 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         <p className="text-xs text-slate-300 leading-relaxed">
           {health ? health.message : 'Probing service status...'}
         </p>
+
+        {/* FB-P8-006: Highlighted Elasticsearch Cluster Health & Shard Breakdown */}
+        {isEs && (clusterStatus !== undefined || assignedShards !== undefined) && (
+          <div
+            data-testid="es-cluster-shard-stats"
+            className="space-y-2 rounded-lg border border-indigo-500/30 bg-indigo-950/25 p-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-indigo-300">
+                Cluster Health
+              </span>
+              <span
+                data-testid="es-cluster-status"
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold uppercase ${
+                  clusterStatus === 'green'
+                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                    : clusterStatus === 'yellow'
+                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                      : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                }`}
+              >
+                {clusterStatus ?? 'unknown'}
+              </span>
+            </div>
+            <div
+              data-testid="es-shard-counts"
+              className="grid grid-cols-3 gap-2 border-t border-indigo-500/20 pt-2 text-center"
+            >
+              <div>
+                <span className="block text-[10px] text-slate-400">Assigned</span>
+                <span
+                  data-testid="es-shards-assigned"
+                  className="font-mono text-sm font-bold text-emerald-300"
+                >
+                  {(assignedShards ?? 0).toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400">Unassigned</span>
+                <span
+                  data-testid="es-shards-unassigned"
+                  className={`font-mono text-sm font-bold ${
+                    unassignedShards > 0 ? 'text-amber-300' : 'text-slate-200'
+                  }`}
+                >
+                  {unassignedShards.toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400">Relocating</span>
+                <span
+                  data-testid="es-shards-relocating"
+                  className={`font-mono text-sm font-bold ${
+                    relocatingShards > 0 ? 'text-cyan-300' : 'text-slate-200'
+                  }`}
+                >
+                  {relocatingShards.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FB-P6-003: Highlighted SQLite Storage Size & Record Count stats */}
         {isSqlite && (storageSizeFormatted !== undefined || totalRecords !== undefined) && (
@@ -154,7 +230,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
       <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs text-slate-400">
         <span>Round-trip Latency</span>
         <span className="font-mono font-semibold text-slate-200">
-          {health ? `${health.latency_ms} ms` : '—'}
+          {health ? `${health.latency_ms} ms` : '-'}
         </span>
       </div>
     </div>
@@ -175,6 +251,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
 
   const {
     data: healthReport,
+    dataUpdatedAt: healthUpdatedAt,
     isLoading,
     isError,
     error,
@@ -188,6 +265,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
 
   const {
     data: auditResponse,
+    dataUpdatedAt: auditUpdatedAt,
     isFetching: isFetchingAudit,
     refetch: refetchAudit,
   } = useQuery({
@@ -301,6 +379,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   ).length
 
   const auditLogs = auditResponse?.items ?? []
+  const lastHealthClock = formatClock24h(healthUpdatedAt)
+  const lastAuditClock = formatClock24h(auditUpdatedAt)
 
   return (
     <AppLayout
@@ -310,7 +390,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       onSelectTab={onSelectTab}
     >
       <div className="space-y-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-100">
               System Connectivity &amp; Telemetry Status
@@ -320,18 +400,29 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-            className="inline-flex items-center gap-2 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            />
-            <span>{isFetching ? 'Refreshing...' : 'Refresh Status'}</span>
-          </button>
+          <div className="flex flex-col items-start sm:items-end gap-1 self-start">
+            <button
+              type="button"
+              data-testid="status-refresh-btn"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>{isFetching ? 'Refreshing...' : 'Refresh Status'}</span>
+            </button>
+            {lastHealthClock && (
+              <span
+                data-testid="status-last-updated"
+                className="text-[11px] font-mono text-slate-400"
+              >
+                Updated: {lastHealthClock}
+              </span>
+            )}
+          </div>
         </div>
 
         {isError && (
@@ -392,7 +483,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                 Live state of OPNsense ARP / Dnsmasq DHCP discovery and{' '}
                 <code className="text-indigo-300">gateway_blocked_devices</code> enforcement
                 {deviceList?.last_synced_at
-                  ? ` — Last synced ${new Date(deviceList.last_synced_at).toLocaleString()}`
+                  ? `, Last synced ${new Date(deviceList.last_synced_at).toLocaleString()}`
                   : ''}
               </p>
             </div>
@@ -539,7 +630,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
           data-testid="audit-logs-section"
           className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg"
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-center gap-2.5">
               <FileText className="h-5 w-5 text-indigo-400" aria-hidden="true" />
               <div>
@@ -555,31 +646,41 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              data-testid="load-audit-logs-btn"
-              onClick={() => {
-                if (!auditEnabled) {
-                  setAuditEnabled(true)
-                } else {
-                  void refetchAudit()
-                }
-              }}
-              disabled={isFetchingAudit}
-              className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
-                aria-hidden="true"
-              />
-              <span>
-                {auditEnabled
-                  ? isFetchingAudit
-                    ? 'Refreshing...'
-                    : 'Refresh Audit Logs'
-                  : 'Load Audit Logs'}
-              </span>
-            </button>
+            <div className="flex flex-col items-start sm:items-end gap-1 self-start">
+              <button
+                type="button"
+                data-testid="load-audit-logs-btn"
+                onClick={() => {
+                  if (!auditEnabled) {
+                    setAuditEnabled(true)
+                  } else {
+                    void refetchAudit()
+                  }
+                }}
+                disabled={isFetchingAudit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>
+                  {auditEnabled
+                    ? isFetchingAudit
+                      ? 'Refreshing...'
+                      : 'Refresh Audit Logs'
+                    : 'Load Audit Logs'}
+                </span>
+              </button>
+              {auditEnabled && lastAuditClock && (
+                <span
+                  data-testid="audit-last-updated"
+                  className="text-[11px] font-mono text-slate-400"
+                >
+                  Updated: {lastAuditClock}
+                </span>
+              )}
+            </div>
           </div>
 
           {auditEnabled && (
@@ -651,7 +752,6 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                           <td className="py-2 px-3 text-slate-300">{log.actor}</td>
                           <td className="py-2 px-3 font-mono text-slate-400">
                             {log.target} ({log.status})
-
                           </td>
                         </tr>
                       ))}

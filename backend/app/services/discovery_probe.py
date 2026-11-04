@@ -321,7 +321,7 @@ def render_discovery_markdown(
         or es_data.get("provider_buckets")
         or es_data.get("action_buckets")
     ):
-        lines.append("| *(None found)* | — | 0 |")
+        lines.append("| *(None found)* | - | 0 |")
 
     lines.extend(
         [
@@ -336,7 +336,7 @@ def render_discovery_markdown(
     for field_path, field_type in matched_ecs.items():
         lines.append(f"| `{field_path}` | `{field_type}` | Verified in mapping |")
     if not matched_ecs:
-        lines.append("| *(No ECS fields matched yet)* | — | — |")
+        lines.append("| *(No ECS fields matched yet)* | - | - |")
 
     if es_data.get("sample_documents"):
         lines.extend(

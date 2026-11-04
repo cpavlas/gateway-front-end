@@ -15,7 +15,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Frontend Unit Tests (`Vitest`):** `4 / 4 passed` in `1.33s` — **98.78% line/statement coverage**, **92.85% branch coverage**, **100% function coverage**.
 - **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.49s` with `0 errors`.
 - **Full-Stack Live Smoke Test:** Passed against live `https://opnsense.example.local` (`373.01 ms`), `https://elasticsearch.example.local:9200` (`39.53 ms`, `6,689,623` docs in `logs-pfsense.log*`), and local SQLite (`54.11 ms`).
-- **Bugs Resolved in Phase 1:** `5` (`BUG-P1-001` through `BUG-P1-005` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Resolved in Phase 1:** `5` (`BUG-P1-001` through `BUG-P1-005` in [docs/development/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `3` live environment schema discoveries waterfalled into Phases 2 and 3 of [PLAN.md](../PLAN.md).
 
 ---
@@ -60,7 +60,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
   - Reconciled **`69` total network devices** (`57` online in ARP, `0` literal `"*"` hostnames remaining, `192.168.1.1` automatically locked as Protected).
   - Verified live single-click **Block** and **Allow (Unblock)** end-to-end against `https://opnsense.example.local` (`OPNsense 26.7.7-amd64`).
-- **Bugs Resolved in Phase 2:** `4` (`BUG-P2-001` through `BUG-P2-004` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Resolved in Phase 2:** `4` (`BUG-P2-001` through `BUG-P2-004` in [docs/development/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `1` enrichment update waterfalled into Phase 3 of [PLAN.md](../PLAN.md).
 
 ---
@@ -96,7 +96,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
   - Network Overview (`/api/v1/analytics/overview?window=24h`) aggregated **`967,295` total events**, **`65.3 MB` firewall traffic**, and **`428,506` Unbound DNS queries**, automatically enriching top RFC1918 LAN IPs with SQLite `Device` metadata (`Chrispy`, `ProxmoxVM`, `elastic-node-02`, `elastic-node-03`).
   - Per-Device Analytics (`/api/v1/devices/{id}/analytics`) verified live with Usage Timeline, 24-Hour Access Time Profile (`00:00`–`23:00` local timezone), Top Visited Domains, Top Destination ASN Organizations, and Chronological Recent DNS Query search.
-- **Bugs Resolved in Phase 3:** `1` (`BUG-P3-001` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Resolved in Phase 3:** `1` (`BUG-P3-001` in [docs/development/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
 - **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `1` multi-IP group aggregation enhancement waterfalled into Phase 4 of [PLAN.md](../PLAN.md).
 
 ---
@@ -135,15 +135,15 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Frontend Production Build (`tsc -b && vite build`):** Succeeded in `1.59s` with `0 errors`.
 - **Full-Stack Live Smoke & Manual UI Verification (`http://localhost:8080`):**
   - Verified live Group creation, member assignment, one-click Group Block/Unblock against `https://opnsense.example.local`, and multi-IP Group Analytics (`108,822` events / `37.65 MB` / `32,692` DNS queries with per-member contribution breakdown) against `https://elasticsearch.example.local:9200`.
-  - User confirmed manual verification: *"Buttons are working; Block / Unblock works, including with created groups"*, and provided 11 structured UI & feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md).
-- **Bugs Resolved in Phase 4:** `1` (`BUG-P4-001` in [docs/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
-- **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `11` user UI/feature feedback items logged in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and waterfalled into Phases 5–7 of [PLAN.md](../PLAN.md).
+  - User confirmed manual verification: *"Buttons are working; Block / Unblock works, including with created groups"*, and provided 11 structured UI & feature feedback items logged in [docs/development/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md).
+- **Bugs Resolved in Phase 4:** `1` (`BUG-P4-001` in [docs/development/TEST_AND_BUG_LOG.md](TEST_AND_BUG_LOG.md)).
+- **Bugs Deferred / Waterfalled:** `0` unresolved bugs deferred; `11` user UI/feature feedback items logged in [docs/development/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and waterfalled into Phases 5–7 of [PLAN.md](../PLAN.md).
 
 ---
 
-### 2. Waterfall Adjustments & Feature Backlog Integration (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
-1. **Established `docs/FEATURE_BACKLOG.md` as a Mandatory Phase-Gate Artifact:**
-   - All 11 Phase 4 user feedback items (`FB-P4-001` through `FB-P4-011`) are tracked with complexity ratings, code references, and architectural evaluations in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md), and reviewed at the start and end of every phase.
+### 2. Waterfall Adjustments & Feature Backlog Integration (`PLAN.md` & `docs/development/FEATURE_BACKLOG.md`)
+1. **Established `docs/development/FEATURE_BACKLOG.md` as a Mandatory Phase-Gate Artifact:**
+   - All 11 Phase 4 user feedback items (`FB-P4-001` through `FB-P4-011`) are tracked with complexity ratings, code references, and architectural evaluations in [docs/development/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md), and reviewed at the start and end of every phase.
 2. **Waterfalled into Phase 5 (Update 5A — Quick-Win UI Polish, Versioning, Stacked Timeline Chart & Status Page Cleanup):**
    - **`FB-P4-001`:** Remove `SYSTEM:` prefix from the header health badge (`HEALTHY`, `DEGRADED`, `DOWN` / `UNHEALTHY`).
    - **`FB-P4-002`:** Increment application version (`backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json`) with each phase push to match GitHub (`v0.4.0` → `v0.5.0` → `v0.6.0` → `v1.0.0`).
@@ -155,7 +155,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
    - **`FB-P4-011`:** Replace or remove the stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at the bottom of `StatusPage.tsx` (since the full table was implemented in Phase 2 as the dedicated `Devices & Access Control` tab).
    - **Phase 5 Complexity Impact:** Remains **3.5 / 5 (Medium–High)**.
 3. **Evaluated for Phase 6 / Phase 7 (`FB-P4-007`, `FB-P4-008`, `FB-P4-009` — Per-Device Domain & ASN Organization Blocking):**
-   - Documented technical architecture options in [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) for per-device domain (`type: "host"`) and ASN (`type: "asn"` + `destination.as.number` ES sub-aggregation) blocking via OPNsense aliases and per-device firewall rules, plus the **Blocked Domains & ASN Organizations** management panel in the Analytics Drawer.
+   - Documented technical architecture options in [docs/development/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) for per-device domain (`type: "host"`) and ASN (`type: "asn"` + `destination.as.number` ES sub-aggregation) blocking via OPNsense aliases and per-device firewall rules, plus the **Blocked Domains & ASN Organizations** management panel in the Analytics Drawer.
 
 ---
 
@@ -169,7 +169,7 @@ At the completion of every phase (before Git check-in and unlocking the next pha
     - When querying `logs-pfsense.log*` across multiple group member IPs, using a `terms` aggregation on `source.ip` (`by_member_ip` for `filterlog` and `by_member_dns` for `unbound`) cleanly attributes each member's outbound traffic and DNS query share in a single round-trip query.
 - **How we will apply these learnings to Phase 5:**
   1. Leverage `PRAGMA foreign_keys=ON` for Phase 5's `temporary_overrides` table (`device_id` and `group_id` foreign keys with `ON DELETE CASCADE`) so deleting a group automatically cleans up its timers.
-  2. Begin Phase 5 by reviewing [docs/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and executing the scheduled Phase 4 UI & chart enhancements alongside the Temporary Pause / Bonus Access timer engine.
+  2. Begin Phase 5 by reviewing [docs/development/FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) and executing the scheduled Phase 4 UI & chart enhancements alongside the Temporary Pause / Bonus Access timer engine.
 
 ---
 
@@ -188,10 +188,10 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 
 ---
 
-### 2. Waterfall Impact & Plan Adjustments for Subsequent Phases (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
+### 2. Waterfall Impact & Plan Adjustments for Subsequent Phases (`PLAN.md` & `docs/development/FEATURE_BACKLOG.md`)
 1. **Zero Deferred Bugs from Phase 5:**
    - All 3 defects discovered during Phase 5 (`BUG-P5-001`, `BUG-P5-002`, and `BUG-P5-003`) were resolved and verified with regression tests before Phase 5 check-in.
-2. **User Phase 5 UI & Persistence Feedback Logged in `docs/FEATURE_BACKLOG.md` & Scheduled for Phase 6 (`FB-P5-001` – `FB-P5-010`):**
+2. **User Phase 5 UI & Persistence Feedback Logged in `docs/development/FEATURE_BACKLOG.md` & Scheduled for Phase 6 (`FB-P5-001` – `FB-P5-010`):**
    - **`FB-P5-001` (Centered Modal Dialog for Timer Controls):** Convert the Timer popover into a centered screen modal dialog (`fixed inset-0 z-50`) so it never requires scrolling near the bottom of the viewport and prevents multiple timer menus from opening simultaneously.
    - **`FB-P5-002` (Active Countdown & Mode Color on Timer Button):** Merge the active countdown directly into the `Timer` button (`Paused · Xm left` in amber, `Bonus · Xm left` in emerald) instead of rendering a separate pill.
    - **`FB-P5-003` (Duration-Only Preset Button Labels):** Show only duration values (`15m`, `30m`, `1h`, `2h`, `Until 07:00`) inside the modal preset buttons without repeating `Pause` or `Bonus`.
@@ -235,10 +235,10 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 
 ---
 
-### 2. Waterfall Impact & Plan Adjustments for Phase 7 (`PLAN.md` & `docs/FEATURE_BACKLOG.md`)
+### 2. Waterfall Impact & Plan Adjustments for Phase 7 (`PLAN.md` & `docs/development/FEATURE_BACKLOG.md`)
 1. **Zero Deferred Bugs from Phase 6:**
    - Both defects discovered during Phase 6 (`BUG-P6-001` and `BUG-P6-002`) were resolved and verified with regression tests before Phase 6 check-in.
-2. **User Phase 6 Feedback & Feature Requests Logged in `docs/FEATURE_BACKLOG.md` & Scheduled for Phase 7 (`FB-P6-001` – `FB-P6-005`):**
+2. **User Phase 6 Feedback & Feature Requests Logged in `docs/development/FEATURE_BACKLOG.md` & Scheduled for Phase 7 (`FB-P6-001` – `FB-P6-005`):**
    - **`FB-P6-001` (Schedule Modal Single-Device Search Field):** Add a search input above the Target Device selector when creating a single-device schedule in `ScheduleFormModal.tsx`.
    - **`FB-P6-002` (Per-Second System Clock Below `Logout` Button):** Display a live 1-second updating system clock directly below the `Logout` button in `AppLayout.tsx`.
    - **`FB-P6-003` (`Local SQLite Store` Storage Size & Record Count Stats):** Add on-disk storage size (`KB`/`MB`) and total/per-table record count metrics to `/api/v1/system/health` (`sqlite.details`) and `StatusPage.tsx`.
@@ -294,3 +294,47 @@ At the completion of every phase (before Git check-in and unlocking the next pha
      - `StatusPage.tsx`'s JSON configuration restore handler initially called `await file.text()`, which is standard in modern browsers but unimplemented on `jsdom`'s `File` prototype during `Vitest` runs. Adding a `FileReader.readAsText(file)` fallback ensured identical behavior across both headless test runners and production browsers.
 
 
+---
+
+## Phase 8 Exit Report: Telemetry Accuracy Fixes, Bar Chart `Stacked`/`Total` Selector & X/Y Axes, Elasticsearch Cluster/Shard Health & Global UI Polish (`v1.0.2`)
+
+- **Phase Status:** `COMPLETE` (`v1.0.2` — First Phase of the `v1.1` Release Cycle)
+- **Completed Date:** `2026-11-03`
+- **Git Branch / Tag:** `phase8` merged (`--no-ff`) into `main`, tagged `v1.0.2`
+
+### 1. Test & Coverage Metrics (`v1.0.2`)
+- **Backend (`Python 3.12.15`, `pytest`, `ruff`, `mypy`):**
+  - **Unit Tests:** `113 passed` (`100%` pass rate across 18 test suites)
+  - **Code Coverage:** `86%` total statement coverage (exceeding the `>= 85%` gate)
+  - **Static Analysis:** `ruff check backend` (`0` errors) and `mypy backend/app` (`0` issues in 26 source files)
+- **Frontend (`Node 22`, `Vitest`, `TypeScript`, `Vite`):**
+  - **Unit Tests:** `24 passed` across 7 test suites (`100%` pass rate)
+  - **Code Coverage:** `91.16%` statement/line coverage (`83.02%` branch coverage, exceeding the `>= 85%` gate)
+  - **Production Bundle:** `tsc -b && vite build` (`0` errors)
+
+### 2. Delivered Phase 8 Scope (`FB-P8-001` – `FB-P8-007`)
+1. **`FB-P8-001` & `FB-P8-002` (`elasticsearch.py`, `analytics_service.py`, `AnalyticsPage.tsx`):**
+   - Resolved the near-100% YouTube active-time inflation (`BUG-P8-001`) by excluding protected gateway IPs (`filterdns` on `.1`), excluding `event.action: "block"`, excluding passive thumbnail/background domains (`ytimg.com`, `youtubei.googleapis.com`), and aggregating 5-minute active windows **per LAN device (`source.ip`)** with `min_doc_count: 5`.
+   - Added **Top 3 Devices (Active Time)** enriched with SQLite device names inside each Application Usage Stats card.
+2. **`FB-P8-003` (`client.ts`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):**
+   - Appended the blocked traffic percentage (`(XX.X%)`) directly after the packet count in the `Blocked Firewall Packets` KPI box across the network overview and device/group analytics drawers.
+3. **`FB-P8-004` & `FB-P8-005` (`TelemetryBarChart.tsx`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):**
+   - Created reusable `TimelineBarChart` and `HourlyProfileBarChart` components featuring a **`Stacked` | `Total`** mode selector, color legend, explicit **Y-Axis scale** (`Max`, `50%`, `0` + vertical `Events` label), **X-Axis tick labels** (timestamps/hours + horizontal axis title), and at-a-glance value labels on bars.
+4. **`FB-P8-006` (`elasticsearch.py`, `StatusPage.tsx`, `docs/API_KEYS_SETUP.md`):**
+   - Added `GET /_cluster/health` telemetry (`cluster_status`, `assigned_shards`, `unassigned_shards`, `relocating_shards`) to `ElasticsearchServiceClient.check_health()` and rendered Cluster Health (`GREEN` / `YELLOW` / `RED`) and Shard Counts on the `Elasticsearch 9.4.3` service card, plus documented `cluster: ["monitor"]` in `docs/API_KEYS_SETUP.md`.
+5. **`FB-P8-007` (Global UI & Backend):**
+   - Removed all EM dashes (`—`) across `frontend/src/` and `backend/app/` (shortening `"Application Usage Stats — YouTube & Plex (24h)"` to `"Application Usage Stats"`) and added a 24-hour `Updated: HH:MM:SS` timestamp directly below every `Refresh` button across all pages and drawers.
+
+### 3. Waterfall Impact & Adjustments for Phase 9 (`v1.0.3`)
+1. **Waterfalled Bug Fix (`BUG-P8-003` / `FB-P8-008` — Plex Local LAN Client Streaming Detection):**
+   - During Gate 2 live UI validation (`docs/development/Validation/PHASE8-Verify.md`), YouTube usage and Top-3 devices reported accurately, but Plex missed local LAN streaming from `LGwebOSTV` (`.243`) and LAN streaming clients (`.66`, `.70`).
+   - Live Elasticsearch inspection showed that intra-VLAN traffic on port `32400` switches at Layer 2 without traversing OPNsense's `filterlog`, and removing `plex.direct` / `plex.tv` playback domains (`analytics.plex.tv`, `discover.provider.plex.tv`, `luma.plex.tv`, `images.plex.tv`, `watch.plex.tv`, `scrobbles.plex.tv`) in `CP-8.1` filtered out LAN client playback DNS telemetry.
+   - Scheduled as **`FB-P8-008` in Step 9.1 of Phase 9 (`v1.0.3`)**: restore `plex.direct`, `plex.tv`, and `*plex*` client playback domains in `_build_app_usage_agg()`, use a sub-aggregation on `servers.plex.tv` (which only Plex Media Server hosts query) + 24/7 poller heuristics (`>= 140` slots with zero playback/scrobble domains) to separate servers/pollers from LAN clients, and lower the per-client Plex DNS slot threshold to `min_doc_count: 1`.
+2. **Process Governance Enhancement (`AGENTS.md` & `docs/development/Validation/PHASEx-Verify.md`):**
+   - Updated `AGENTS.md` so every Gate 2 (`Step X.4`) publishes a dedicated `docs/development/Validation/PHASEx-Verify.md` file with the full "What to Verify" checklist and a feedback section for user sign-off.
+
+### 4. Unplanned Information Audit & Feed-Forward Learnings for Phase 9
+- *Finding 1 (`elastic_transport.ObjectApiResponse` vs. `dict` — `BUG-P8-002`):*
+  - `await client.cluster.health()` in the `elasticsearch` v9 Python client returns an `elastic_transport.ObjectApiResponse` (a `Mapping` supporting `.get()`), not a `dict` subclass. Using `hasattr(health_resp, "get")` ensures compatibility with both live `ObjectApiResponse` instances and unit test `dict` mocks.
+- *Finding 2 (Layer-2 Intra-Subnet Plex Streaming vs. Unbound DNS Signatures — `BUG-P8-003`):*
+  - Unlike YouTube (which always traverses the WAN gateway and queries public `googlevideo.com` CDN edges), a local Plex Media Server on the same `/24` LAN streams video directly over Layer 2 without generating OPNsense `filterlog` port-32400 packets. Therefore, LAN Plex client detection must rely on Unbound DNS queries for `*.plex.direct` and `*.plex.tv` playback domains while filtering out Plex Media Server hosts via `servers.plex.tv` registration queries.

@@ -5,10 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   apiClient,
   formatActiveMinutes,
+  formatBlockedPercentage,
+  formatClock24h,
   type DeviceItem,
   type GroupItem,
   type SystemHealthResponse,
 } from '../api/client'
+import {
+  formatCompactCount,
+  formatTimelineAxisTick,
+} from '../components/TelemetryBarChart'
 import { AuthProvider } from '../context/AuthContext'
 import { AppLayout } from '../components/AppLayout'
 import { ScheduleFormModal } from '../components/ScheduleFormModal'
@@ -548,5 +554,171 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     expect(screen.getByTestId('group-drawer-youtube-toggle')).toHaveTextContent(
       /Block YouTube/i,
     )
+  })
+
+  it('Phase 8 (FB-P8-002..007): renders Top 3 App Devices, Blocked %, Stacked/Total Bar Chart toggle & X/Y axes, ES Cluster/Shard Health, and Last Updated clocks', async () => {
+    expect(formatBlockedPercentage(0, 0)).toBe('0.0%')
+    expect(formatBlockedPercentage(10, 190)).toBe('5.0%')
+    expect(formatClock24h(null)).toBe('')
+    expect(formatClock24h('2026-11-01T14:05:09Z')).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+    expect(formatCompactCount(450)).toBe('450')
+    expect(formatCompactCount(2500)).toBe('2.5k')
+    expect(formatCompactCount(45000)).toBe('45k')
+    expect(formatCompactCount(1500000)).toBe('1.5M')
+    expect(formatTimelineAxisTick('2026-11-01T14:00:00Z', '24h')).toMatch(/^\d{2}:\d{2}$/)
+    expect(formatTimelineAxisTick('2026-11-01T14:00:00Z', '7d')).toMatch(/^\d{2}\/\d{2}$/)
+
+    vi.spyOn(apiClient, 'getSystemHealth').mockResolvedValue({
+      overall_status: 'healthy',
+      version: '1.0.2',
+      services: {
+        sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1, message: 'OK' },
+        opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 10, message: 'OK' },
+        elasticsearch: {
+          service: 'elasticsearch',
+          status: 'healthy',
+          latency_ms: 8,
+          message: 'Elasticsearch 9.4.3 connected.',
+          details: {
+            es_version: '9.4.3',
+            index_doc_count: 6900000,
+            cluster_status: 'green',
+            assigned_shards: 1638,
+            unassigned_shards: 0,
+            relocating_shards: 0,
+          },
+        },
+      },
+    })
+
+    vi.spyOn(apiClient, 'getNetworkOverview').mockResolvedValue({
+      window: '24h',
+      generated_at: '2026-11-01T14:00:00Z',
+      es_reachable: true,
+      summary: {
+        total_events: 500,
+        firewall_event_count: 200,
+        dns_query_count: 300,
+        blocked_packet_count: 50,
+        allowed_packet_count: 150,
+        total_bytes: 1048576,
+      },
+      timeline: [
+        {
+          timestamp: '2026-11-01T12:00:00Z',
+          total_events: 250,
+          dns_queries: 150,
+          allowed_packets: 80,
+          blocked_packets: 20,
+          bytes: 524288,
+        },
+        {
+          timestamp: '2026-11-01T13:00:00Z',
+          total_events: 250,
+          dns_queries: 150,
+          allowed_packets: 70,
+          blocked_packets: 30,
+          bytes: 524288,
+        },
+      ],
+      top_devices: [],
+      top_domains: [],
+      top_registered_domains: [],
+      top_organizations: [],
+      application_usage: [
+        {
+          app_key: 'youtube',
+          display_name: 'YouTube',
+          active_minutes: 80,
+          event_count: 240,
+          dns_queries: 190,
+          bytes: 52428800,
+          last_active_at: '2026-11-01T13:50:00Z',
+          top_devices: [
+            {
+              device_id: 10,
+              ipv4_address: '192.168.1.110',
+              effective_name: 'Living Room Apple TV',
+              active_minutes: 60,
+              event_count: 180,
+              dns_queries: 140,
+              bytes: 40000000,
+            },
+            {
+              device_id: 11,
+              ipv4_address: '192.168.1.111',
+              effective_name: 'Kids iPad',
+              active_minutes: 20,
+              event_count: 60,
+              dns_queries: 50,
+              bytes: 12428800,
+            },
+          ],
+        },
+        {
+          app_key: 'plex',
+          display_name: 'Plex',
+          active_minutes: 5,
+          event_count: 15,
+          dns_queries: 10,
+          bytes: 10485760,
+          last_active_at: '2026-11-01T13:45:00Z',
+          top_devices: [],
+        },
+      ],
+      warning: null,
+    })
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    const { unmount } = render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <AnalyticsPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // Wait for overview query to finish loading
+    expect(await screen.findByTestId('overview-app-usage-panel')).toBeInTheDocument()
+
+    // Verify Blocked Firewall Packets % (50 / 200 = 25.0%)
+    expect(screen.getByTestId('overview-kpi-blocked-pct')).toHaveTextContent('(25.0%)')
+
+    // Verify Top 3 Devices list under YouTube & Plex
+    const ytTopDevices = screen.getByTestId('overview-app-top-devices-youtube')
+    expect(within(ytTopDevices).getByText('Living Room Apple TV')).toBeInTheDocument()
+    expect(within(ytTopDevices).getByText('1h')).toBeInTheDocument()
+    expect(within(ytTopDevices).getByText('Kids iPad')).toBeInTheDocument()
+    expect(within(ytTopDevices).getByText('20m')).toBeInTheDocument()
+
+    // Verify Last Updated clock below Refresh Analytics button
+    expect(screen.getByTestId('overview-last-updated')).toHaveTextContent(/Updated:/i)
+
+    // Verify Bar Chart X/Y Axes and Stacked | Total toggle
+    expect(screen.getByTestId('overview-timeline-y-axis')).toHaveTextContent('Events')
+    expect(screen.getByTestId('overview-timeline-x-axis')).toHaveTextContent('Time (24H Window)')
+    expect(screen.getAllByTestId('timeline-dns-segment').length).toBeGreaterThan(0)
+    await user.click(screen.getByTestId('overview-timeline-mode-total'))
+    expect(screen.getAllByTestId('timeline-total-segment').length).toBeGreaterThan(0)
+    await user.click(screen.getByTestId('overview-timeline-mode-stacked'))
+
+    unmount()
+
+    // Render StatusPage and verify Elasticsearch Cluster Health & Shard breakdown
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <StatusPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByTestId('es-cluster-shard-stats')).toBeInTheDocument()
+    expect(screen.getByTestId('es-cluster-status')).toHaveTextContent('green')
+    expect(screen.getByTestId('es-shards-assigned')).toHaveTextContent('1,638')
+    expect(screen.getByTestId('es-shards-unassigned')).toHaveTextContent('0')
+    expect(screen.getByTestId('es-shards-relocating')).toHaveTextContent('0')
+    expect(screen.getByTestId('status-last-updated')).toHaveTextContent(/Updated:/i)
   })
 })

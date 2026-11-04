@@ -18,9 +18,12 @@ import {
 import {
   apiClient,
   formatActiveMinutes,
+  formatBlockedPercentage,
   formatBytes,
+  formatClock24h,
   type TimeWindow,
 } from '../api/client'
+import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 
 interface DeviceAnalyticsDrawerProps {
   deviceId: number | null
@@ -47,6 +50,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
 
   const {
     data: analytics,
+    dataUpdatedAt,
     isLoading,
     isFetching,
     refetch,
@@ -131,9 +135,8 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
     { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
   ]
 
-  const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
-  const maxHourlyEvents = Math.max(1, ...hourlyProfile.map((h) => h.total_events))
   const maxDomainCount = Math.max(1, ...topDomains.map((d) => d.query_count))
+  const lastUpdatedClock = formatClock24h(analytics?.generated_at || dataUpdatedAt)
 
   return (
     <div
@@ -194,7 +197,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   >
                     <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
                     <span>
-                      {accessMutation.isPending ? 'Updating...' : 'Blocked — Click to Allow'}
+                      {accessMutation.isPending ? 'Updating...' : 'Blocked, Click to Allow'}
                     </span>
                   </button>
                 ) : (
@@ -207,7 +210,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   >
                     <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                     <span>
-                      {accessMutation.isPending ? 'Blocking...' : 'Allowed — Click to Block'}
+                      {accessMutation.isPending ? 'Blocking...' : 'Allowed, Click to Block'}
                     </span>
                   </button>
                 )}
@@ -246,24 +249,34 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
             ))}
           </div>
 
-          <button
-            type="button"
-            data-testid="drawer-refresh-btn"
-            onClick={() => {
-              refreshMutation.mutate()
-              void refetch()
-            }}
-            disabled={isFetching || refreshMutation.isPending}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${
-                isFetching || refreshMutation.isPending ? 'animate-spin' : ''
-              }`}
-              aria-hidden="true"
-            />
-            <span>Refresh Telemetry</span>
-          </button>
+          <div className="flex flex-col items-end gap-0.5">
+            <button
+              type="button"
+              data-testid="drawer-refresh-btn"
+              onClick={() => {
+                refreshMutation.mutate()
+                void refetch()
+              }}
+              disabled={isFetching || refreshMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${
+                  isFetching || refreshMutation.isPending ? 'animate-spin' : ''
+                }`}
+                aria-hidden="true"
+              />
+              <span>Refresh Telemetry</span>
+            </button>
+            {lastUpdatedClock && (
+              <span
+                data-testid="drawer-last-updated"
+                className="text-[10px] font-mono text-slate-400"
+              >
+                Updated: {lastUpdatedClock}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Scrollable Content Body */}
@@ -303,7 +316,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-400">
                     {summary?.allowed_packet_count ?? 0} pass / {summary?.blocked_packet_count ?? 0}{' '}
-                    block
+                    block ({formatBlockedPercentage(summary?.blocked_packet_count ?? 0, summary?.allowed_packet_count ?? 0)})
                   </p>
                 </div>
 
@@ -360,7 +373,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-100">
-                      Application Usage &amp; Selective Control (YouTube &amp; Plex)
+                      Application Usage &amp; Selective Control
                     </h3>
                     <p className="text-xs text-slate-400">
                       Active streaming time (5-minute activity windows) and selective YouTube blocking (keeps Plex &amp; general internet allowed)
@@ -438,99 +451,27 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Usage & Activity Timeline (FB-P4-006 Stacked Bar Graph) */}
+              {/* Usage & Activity Timeline (FB-P4-006, FB-P8-004, FB-P8-005) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-100">
-                      Usage &amp; Activity Timeline ({windowKey})
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      Stacked DNS lookups and firewall packet events over time
-                    </p>
-                  </div>
-                  <div
-                    data-testid="drawer-timeline-legend"
-                    className="flex items-center gap-3 text-xs text-slate-300"
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-xs bg-cyan-400" />
-                      <span>DNS Queries</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-xs bg-indigo-500" />
-                      <span>Firewall Events</span>
-                    </span>
-                  </div>
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-100">
+                    Usage &amp; Activity Timeline ({windowKey})
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    DNS lookups and firewall packet events over time
+                  </p>
                 </div>
 
-                {timeline.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-slate-500">
-                    No timeline buckets recorded in this window.
-                  </p>
-                ) : (
-                  <div
-                    data-testid="drawer-timeline-chart"
-                    className="flex h-32 items-end gap-1 pt-4 border-b border-slate-800/80"
-                  >
-                    {timeline.map((bucket) => {
-                      const dnsCount = Math.max(0, bucket.dns_queries)
-                      const fwCount = Math.max(0, bucket.total_events - dnsCount)
-                      const combinedTotal = Math.max(bucket.total_events, dnsCount + fwCount)
-                      const heightPct = Math.max(
-                        6,
-                        Math.round((combinedTotal / maxTimelineEvents) * 100),
-                      )
-                      const dnsSharePct =
-                        combinedTotal > 0 ? Math.round((dnsCount / combinedTotal) * 100) : 50
-                      const fwSharePct = Math.max(0, 100 - dnsSharePct)
-                      const tooltipText = `${new Date(bucket.timestamp).toLocaleString()} — Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${dnsCount.toLocaleString()} | Firewall Events: ${fwCount.toLocaleString()} (${formatBytes(bucket.bytes)})`
-                      return (
-                        <div
-                          key={bucket.timestamp}
-                          title={tooltipText}
-                          className="group relative flex-1 flex flex-col items-center justify-end h-full"
-                        >
-                          <div className="pointer-events-none invisible group-hover:visible absolute bottom-full mb-1.5 z-30 w-48 rounded-lg border border-slate-700 bg-slate-900/95 p-2 text-[10px] text-slate-100 shadow-xl">
-                            <div className="font-semibold text-white truncate">
-                              {new Date(bucket.timestamp).toLocaleString()}
-                            </div>
-                            <div className="mt-1 flex items-center justify-between text-cyan-300">
-                              <span>DNS Queries:</span>
-                              <span className="font-mono">{dnsCount.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-indigo-300">
-                              <span>Firewall Events:</span>
-                              <span className="font-mono">{fwCount.toLocaleString()}</span>
-                            </div>
-                            <div className="mt-0.5 border-t border-slate-800 pt-0.5 flex items-center justify-between text-slate-300">
-                              <span>Volume:</span>
-                              <span className="font-mono">{formatBytes(bucket.bytes)}</span>
-                            </div>
-                          </div>
-                          <div
-                            style={{ height: `${combinedTotal > 0 ? heightPct : 4}%` }}
-                            className="w-full flex flex-col overflow-hidden rounded-t transition-all"
-                          >
-                            <div
-                              data-testid="timeline-dns-segment"
-                              style={{ height: `${dnsSharePct}%` }}
-                              className="w-full bg-cyan-400/85 group-hover:bg-cyan-300"
-                            />
-                            <div
-                              data-testid="timeline-fw-segment"
-                              style={{ height: `${fwSharePct}%` }}
-                              className="w-full bg-indigo-500/85 group-hover:bg-indigo-400"
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                <TimelineBarChart
+                  timeline={timeline}
+                  windowKey={windowKey}
+                  prefixTestId="drawer-timeline"
+                  chartTestId="drawer-timeline-chart"
+                  legendTestId="drawer-timeline-legend"
+                />
               </div>
 
-              {/* 24-Hour Access Time Profile */}
+              {/* 24-Hour Access Time Profile (FB-P8-004, FB-P8-005) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
                 <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -548,39 +489,11 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   )}
                 </div>
 
-                <div
-                  data-testid="drawer-hourly-profile"
-                  className="grid grid-cols-12 gap-1.5 sm:grid-cols-24 pt-2"
-                >
-                  {hourlyProfile.map((pt) => {
-                    const heightPct =
-                      pt.total_events > 0
-                        ? Math.max(12, Math.round((pt.total_events / maxHourlyEvents) * 100))
-                        : 4
-                    return (
-                      <div
-                        key={pt.hour}
-                        data-testid={`hourly-bar-${pt.hour}`}
-                        title={`${pt.label}: ${pt.total_events.toLocaleString()} events (${pt.dns_queries.toLocaleString()} DNS, ${formatBytes(pt.bytes)})`}
-                        className="flex flex-col items-center gap-1"
-                      >
-                        <div className="flex h-20 w-full items-end rounded bg-slate-900 p-0.5">
-                          <div
-                            style={{ height: `${heightPct}%` }}
-                            className={`w-full rounded-xs transition-all ${
-                              pt.total_events > 0
-                                ? 'bg-emerald-500/80 hover:bg-emerald-400'
-                                : 'bg-slate-800'
-                            }`}
-                          />
-                        </div>
-                        <span className="text-[10px] font-mono text-slate-400">
-                          {pt.hour.toString().padStart(2, '0')}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
+                <HourlyProfileBarChart
+                  hourlyProfile={hourlyProfile}
+                  prefixTestId="drawer-hourly"
+                  chartTestId="drawer-hourly-profile"
+                />
               </div>
 
               {/* Top Visited Domains & Destination Organizations */}
@@ -719,7 +632,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                             </td>
                             <td className="px-3 py-2 text-slate-100 break-all">{q.domain}</td>
                             <td className="px-3 py-2 text-slate-400">
-                              {q.registered_domain ?? '—'}
+                              {q.registered_domain ?? '-'}
                             </td>
                             <td className="px-3 py-2 text-right text-indigo-300">
                               {q.record_type}

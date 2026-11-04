@@ -655,7 +655,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             disabled={isGroupBusy}
                             title={
                               grp.youtube_status === 'blocked'
-                                ? 'YouTube blocked for group (Plex allowed) — Click to allow YouTube'
+                                ? 'YouTube blocked for group (Plex allowed), Click to allow YouTube'
                                 : 'Block YouTube for group (keeps Plex & general internet allowed)'
                             }
                             onClick={() =>
@@ -1034,7 +1034,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               disabled={isBusy || !dev.ipv4_address}
                               title={
                                 dev.is_youtube_blocked
-                                  ? 'YouTube blocked (Plex & Internet allowed) — Click to allow YouTube'
+                                  ? 'YouTube blocked (Plex & Internet allowed), Click to allow YouTube'
                                   : 'Click to block YouTube only (keeps Plex & Internet allowed)'
                               }
                               onClick={() =>

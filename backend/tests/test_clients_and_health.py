@@ -168,13 +168,19 @@ async def test_opnsense_raise_for_status_500(test_settings: Settings) -> None:
 async def test_elasticsearch_client_healthy_probe(
     test_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ElasticsearchServiceClient.check_health returns healthy when info() and count() succeed."""
+    """ElasticsearchServiceClient.check_health returns healthy with cluster and shard stats."""
     mock_es = AsyncMock()
     mock_es.info.return_value = {
-        "cluster_name": "sparkle-es",
+        "cluster_name": "gateway-es",
         "version": {"number": "9.4.3"},
     }
     mock_es.count.return_value = {"count": 14250}
+    mock_es.cluster.health.return_value = {
+        "status": "green",
+        "active_shards": 1638,
+        "unassigned_shards": 0,
+        "relocating_shards": 2,
+    }
 
     es_service = ElasticsearchServiceClient(test_settings)
     monkeypatch.setattr(es_service, "create_es_client", lambda: mock_es)
@@ -184,6 +190,10 @@ async def test_elasticsearch_client_healthy_probe(
     assert health.status == "healthy"
     assert health.details["version"] == "9.4.3"
     assert health.details["document_count"] == 14250
+    assert health.details["cluster_status"] == "green"
+    assert health.details["assigned_shards"] == 1638
+    assert health.details["unassigned_shards"] == 0
+    assert health.details["relocating_shards"] == 2
     mock_es.close.assert_awaited_once()
 
 
