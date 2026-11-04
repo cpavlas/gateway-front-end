@@ -66,7 +66,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_elasticsearch_analytics.py` testing query construction, timezone bucketing, response normalization with realistic `logs-pfsense.log*` fixtures, and error/timeout handling.
 - **Checkpoint `CP-3.1` Verification Criteria:**
   - [x] `pytest backend/tests/test_elasticsearch_analytics.py` passes 100% with `>= 85%` coverage (`77/77` backend tests passing in `2.02s`, `97%` coverage on `app/clients/elasticsearch.py`, `95%` total backend coverage; `ruff` and `mypy` `0` errors).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -83,7 +83,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_analytics_api.py` covering authenticated access, SQLite device enrichment, zero-IP devices, TTL cache hit/expiration, and graceful ES degradation.
 - **Checkpoint `CP-3.2` Verification Criteria:**
   - [x] `pytest backend/tests/` passes 100% with `>= 85%` coverage, and `ruff` + `mypy` report `0` errors (`79/79` backend tests passing in `2.02s`, `100%` coverage on `analytics_service.py` and `api/analytics.py`, `95%` total backend coverage).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -96,7 +96,7 @@ flowchart LR
   - [x] Write frontend unit tests in `frontend/src/__tests__/Analytics.test.tsx`.
 - **Checkpoint `CP-3.3` Verification Criteria:**
   - [x] `npm run test` (`Vitest --coverage`) and `npm run build` (`tsc -b && vite build`) pass with zero errors and `>= 85%` coverage (`10/10` frontend tests passing across 3 test suites, `95.71%` statement/line coverage, `0` build errors).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md` (`BUG-P3-001`).
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md` (`BUG-P3-001`).
 
 ---
 
@@ -112,8 +112,8 @@ flowchart LR
 ### Step 3.5 — Phase 3 QA Audit, Exit Analysis, Learnings Checkpoint & Git Check-in
 - **Tasks:**
   - [x] Run full backend (`pytest --cov=app`, `ruff check`, `mypy`) and frontend (`vitest run --coverage`, `npm run build`) quality gates.
-  - [x] Finalize all Phase 3 entries in `docs/TEST_AND_BUG_LOG.md`.
-  - [x] Complete **Phase 3 Exit Report** in `docs/PHASE_EXIT_REPORTS.md` and waterfall any new findings into [PLAN.md](PLAN.md).
+  - [x] Finalize all Phase 3 entries in `docs/development/TEST_AND_BUG_LOG.md`.
+  - [x] Complete **Phase 3 Exit Report** in `docs/development/PHASE_EXIT_REPORTS.md` and waterfall any new findings into [PLAN.md](PLAN.md).
 - **Checkpoint `CP-3.5` (Phase 3 Exit Sign-Off):**
   - [x] Review Phase 3 Exit Report with user, commit to `phase3` branch, merge to `main`, and push to GitHub.
 

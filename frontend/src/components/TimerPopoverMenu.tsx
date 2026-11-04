@@ -203,7 +203,7 @@ export function TimerPopoverMenu({
                 <div className="flex items-center gap-1.5 font-semibold">
                   <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
-                    {activeOverride.mode === 'pause' ? 'Paused' : 'Bonus Time'} —{' '}
+                    {activeOverride.mode === 'pause' ? 'Paused' : 'Bonus Time'},{' '}
                     {formatRemainingDuration(liveRemainingSeconds)}
                   </span>
                 </div>

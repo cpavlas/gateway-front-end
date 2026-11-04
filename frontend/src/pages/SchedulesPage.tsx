@@ -16,7 +16,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
-import { apiClient, type ScheduleRule } from '../api/client'
+import { apiClient, formatClock24h, type ScheduleRule } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import {
   ScheduleFormModal,
@@ -43,6 +43,7 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
 
   const {
     data: scheduleList,
+    dataUpdatedAt: schedulesUpdatedAt,
     isLoading,
     isError,
     error,
@@ -130,6 +131,7 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
   const schedules = scheduleList?.schedules ?? []
   const activeCount = schedules.filter((s) => s.is_active_now).length
   const enabledCount = schedules.filter((s) => s.is_enabled).length
+  const lastSchedulesClock = formatClock24h(schedulesUpdatedAt)
 
   const openCreateModal = () => {
     setEditingSchedule(null)
@@ -160,22 +162,32 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
-            <button
-              type="button"
-              data-testid="reconcile-schedules-btn"
-              onClick={() => reconcileMutation.mutate()}
-              disabled={reconcileMutation.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${reconcileMutation.isPending ? 'animate-spin' : ''}`}
-                aria-hidden="true"
-              />
-              <span>
-                {reconcileMutation.isPending ? 'Evaluating...' : 'Evaluate Policies Now'}
-              </span>
-            </button>
+          <div className="flex flex-wrap items-start gap-2 self-start shrink-0">
+            <div className="flex flex-col items-start sm:items-end gap-1">
+              <button
+                type="button"
+                data-testid="reconcile-schedules-btn"
+                onClick={() => reconcileMutation.mutate()}
+                disabled={reconcileMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${reconcileMutation.isPending ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>
+                  {reconcileMutation.isPending ? 'Evaluating...' : 'Evaluate Policies Now'}
+                </span>
+              </button>
+              {lastSchedulesClock && (
+                <span
+                  data-testid="schedules-last-updated"
+                  className="text-[11px] font-mono text-slate-400"
+                >
+                  Updated: {lastSchedulesClock}
+                </span>
+              )}
+            </div>
 
             <button
               type="button"
@@ -344,7 +356,7 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                             ) : rule.is_active_now ? (
                               <>
                                 <ShieldAlert className="h-3 w-3 text-rose-400" aria-hidden="true" />
-                                <span>Active Now — Blocking until {rule.end_time}</span>
+                                <span>Active Now, Blocking until {rule.end_time}</span>
                               </>
                             ) : (
                               <>

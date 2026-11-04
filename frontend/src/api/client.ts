@@ -247,6 +247,16 @@ export interface GroupBulkActionResponse {
   warnings: string[]
 }
 
+export interface AppUsageDeviceItem {
+  device_id: number | null
+  ipv4_address: string
+  effective_name: string
+  active_minutes: number
+  event_count: number
+  dns_queries: number
+  bytes: number
+}
+
 export interface AppUsageItem {
   app_key: 'youtube' | 'plex'
   display_name: string
@@ -255,6 +265,7 @@ export interface AppUsageItem {
   dns_queries: number
   bytes: number
   last_active_at: string | null
+  top_devices?: AppUsageDeviceItem[]
 }
 
 export interface AuditLogItem {
@@ -479,6 +490,25 @@ export function formatRemainingDuration(remainingSeconds: number): string {
     return mins > 0 ? `${hours}h ${mins}m left` : `${hours}h left`
   }
   return `${Math.max(1, mins)}m left`
+}
+
+export function formatBlockedPercentage(blocked: number, allowed: number): string {
+  const safeBlocked = Math.max(0, blocked || 0)
+  const total = safeBlocked + Math.max(0, allowed || 0)
+  if (total <= 0) return '0.0%'
+  return `${((safeBlocked / total) * 100).toFixed(1)}%`
+}
+
+export function formatClock24h(timestamp?: number | string | null): string {
+  if (!timestamp) return ''
+  const parsed = new Date(timestamp)
+  if (Number.isNaN(parsed.getTime())) return String(timestamp)
+  return parsed.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 }
 
 export class ApiError extends Error {

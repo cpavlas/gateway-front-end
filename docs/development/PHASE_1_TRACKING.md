@@ -9,7 +9,7 @@
 ## 1. Phase 1 Objectives & Scope
 
 1. Establish strict secret hygiene (`.gitignore`, `.dockerignore`, `.env.example`, and hidden `.env`) before the first Git commit.
-2. Document step-by-step API key generation and least-privilege scoping in `docs/API_KEYS_SETUP.md` and initialize tracking ledgers (`docs/TEST_AND_BUG_LOG.md` and `docs/PHASE_EXIT_REPORTS.md`).
+2. Document step-by-step API key generation and least-privilege scoping in `docs/API_KEYS_SETUP.md` and initialize tracking ledgers (`docs/development/TEST_AND_BUG_LOG.md` and `docs/development/PHASE_EXIT_REPORTS.md`).
 3. Build the FastAPI backend foundation (`pydantic-settings`, async SQLite + SQLAlchemy 2.0 + Alembic) with Built-in Admin Login (`Argon2` + signed `HttpOnly` JWT cookies + login rate-limiting).
 4. Build async client wrappers and a `/api/v1/system/health` endpoint for OPNsense (`https://opnsense.example.local`) and Elasticsearch (`https://elasticsearch.example.local:9200`).
 6. Build the React 19 + TypeScript + Vite + Tailwind SPA shell (Login view, ProtectedRoute guard, layout header, and live OPNsense/ES health status indicators).
@@ -50,7 +50,7 @@ flowchart LR
   - [x] Create `.dockerignore` excluding `.env`, `.git/`, local virtualenvs, `node_modules/`, and test caches from image build contexts.
   - [x] Create `.env.example` (safe committed template) and hidden `.env` (pre-populated with a cryptographically random 64-hex-character `APP_SECRET_KEY`).
   - [x] Create `docs/API_KEYS_SETUP.md` with copy-pasteable commands and UI steps for OPNsense (`https://opnsense.example.local`) and Elasticsearch (`https://elasticsearch.example.local:9200`).
-  - [x] Initialize `docs/TEST_AND_BUG_LOG.md` and `docs/PHASE_EXIT_REPORTS.md` with Cycle 1 tables.
+  - [x] Initialize `docs/development/TEST_AND_BUG_LOG.md` and `docs/development/PHASE_EXIT_REPORTS.md` with Cycle 1 tables.
 - **Checkpoint `CP-1.1` Verification Criteria:**
   - [x] `git status --ignored` confirms `.env` is ignored by Git.
   - [x] User confirms or populates `ADMIN_PASSWORD`, `OPNSENSE_API_KEY`, `OPNSENSE_API_SECRET`, and `ELASTICSEARCH_API_KEY` in `.env` (required before Step 1.4 live discovery).
@@ -67,7 +67,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_config.py` and `backend/tests/test_auth.py`.
 - **Checkpoint `CP-1.2` Verification Criteria:**
   - [x] `pytest backend/tests/test_config.py backend/tests/test_auth.py` passes 100% (`17 passed in 0.52s`, `96%` coverage — valid login, invalid password `401`, missing/expired cookie `401`, rate-limit `429`, missing `.env` secret rejection).
-  - [x] Any defects found during unit testing are logged with resolutions in `docs/TEST_AND_BUG_LOG.md` (`BUG-P1-001`, `BUG-P1-002`, `BUG-P1-003`).
+  - [x] Any defects found during unit testing are logged with resolutions in `docs/development/TEST_AND_BUG_LOG.md` (`BUG-P1-001`, `BUG-P1-002`, `BUG-P1-003`).
 
 ---
 
@@ -82,7 +82,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_clients_and_health.py` using `respx` and mocked ES transport.
 - **Checkpoint `CP-1.3` Verification Criteria:**
   - [x] `pytest backend/tests/test_clients_and_health.py` passes 100% (`26 passed in 0.76s`, `93%` total coverage — covering healthy responses, `401/403` bad API keys, missing alias warnings, SSL errors, and network timeouts).
-  - [x] Any defects found during unit testing are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found during unit testing are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -96,7 +96,7 @@ flowchart LR
       - Populated ECS fields (`@timestamp`, `source.ip`, `destination.ip`, `network.bytes`, `event.action`, `dns.question.name`, `dns.question.registered_domain`, `destination.as.organization.name`) and redacted sample documents.
   - [x] Execute `scripts/discover_environment.py` once `.env` keys are populated.
 - **Checkpoint `CP-1.4` Verification Criteria:**
-  - [x] Any unexpected OPNsense payload structures or Elasticsearch schema nuances are recorded for the Phase 1 Exit Analysis (`BUG-P1-004` + Findings 4 & 5 in `docs/PHASE_EXIT_REPORTS.md`).
+  - [x] Any unexpected OPNsense payload structures or Elasticsearch schema nuances are recorded for the Phase 1 Exit Analysis (`BUG-P1-004` + Findings 4 & 5 in `docs/development/PHASE_EXIT_REPORTS.md`).
 
 ---
 
@@ -109,7 +109,7 @@ flowchart LR
   - [x] Write frontend unit tests in `frontend/src/__tests__/App.test.tsx`.
 - **Checkpoint `CP-1.5` Verification Criteria:**
   - [x] `npm run test` (`Vitest`) and `npm run build` (`tsc -b && vite build`) pass with zero errors (`4/4` tests passing, `98.78%` line/statement coverage, `92.85%` branch coverage, `100%` function coverage).
-  - [x] Any frontend test defects are logged with resolutions in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any frontend test defects are logged with resolutions in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -128,8 +128,8 @@ flowchart LR
 - **Tasks:**
   - [x] Run full backend (`pytest --cov=app`) and frontend (`vitest run --coverage`) suites and verify coverage `>= 85%` (Backend: `93.0%`, Frontend: `98.78%`).
   - [x] Run static analysis (`ruff check`, `mypy`, `tsc -b && vite build`) — `0 errors`.
-  - [x] Finalize all Phase 1 entries in `docs/TEST_AND_BUG_LOG.md` (`BUG-P1-001` through `BUG-P1-005`, all `Resolved in Phase 1`).
-  - [x] Complete **Phase 1 Exit Report** in `docs/PHASE_EXIT_REPORTS.md`:
+  - [x] Finalize all Phase 1 entries in `docs/development/TEST_AND_BUG_LOG.md` (`BUG-P1-001` through `BUG-P1-005`, all `Resolved in Phase 1`).
+  - [x] Complete **Phase 1 Exit Report** in `docs/development/PHASE_EXIT_REPORTS.md`:
     1. **Waterfall Impact Assessment:** Propagated discovered OPNsense Dnsmasq/ARP/Alias quirks (Updates 2A & 2B) into Phase 2 and discovered Elasticsearch `unbound`/`filterlog` ECS schema (Update 3A) into Phase 3 inside [PLAN.md](PLAN.md).
     2. **Unplanned Information Audit:** Documented OPNsense `26.7.7-amd64` `ACL.xml` & UI specifics, Elasticsearch `9.4.3` + `pfSense 1.25.4` data stream findings, and Windows Python 3.12 `sysmon` coverage fix.
 - **Checkpoint `CP-1.7` (Phase 1 Exit Sign-Off):**

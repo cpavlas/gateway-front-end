@@ -1,4 +1,4 @@
-# Phase 7 Execution & Checkpoint Tracking (`docs/PHASE_7_TRACKING.md`)
+# Phase 7 Execution & Checkpoint Tracking (`docs/development/PHASE_7_TRACKING.md`)
 
 > **Phase:** 7 of 7 (Test Cycle 7 — Selective Application Blocking [YouTube vs. Plex], YouTube/Plex Usage Time Telemetry, Audit Log, Config Backup/Restore & Phase 6 UI Backlog Integration)  
 > **Branch:** `phase7`  
@@ -9,7 +9,7 @@
 
 ## 1. Phase 7 Objectives & Scheduled Phase 6 Backlog Items
 
-### 1.1 Scheduled Phase 6 User Feedback & Feature Requests (`docs/FEATURE_BACKLOG.md` — Waterfall Update 7A)
+### 1.1 Scheduled Phase 6 User Feedback & Feature Requests (`docs/development/FEATURE_BACKLOG.md` — Waterfall Update 7A)
 1. **`FB-P6-001` (Single-Device Search Input in New Schedule Modal):**
    - In [`frontend/src/components/ScheduleFormModal.tsx`](frontend/src/components/ScheduleFormModal.tsx), when `Apply Schedule To` is set to **Single Device**, render a live search field (`Search device by name, IP, hostname, or MAC...`) directly above the Target Device selector that filters the device list in real time and auto-selects the first matching device.
 2. **`FB-P6-002` (Per-Second Live System Clock Below `Logout` Button in Top Header):**
@@ -64,7 +64,7 @@ flowchart LR
 
 | Step | Checkpoint | Description | Status | Verified Date |
 | :--- | :--- | :--- | :---: | :---: |
-| **Gate 1** | `GATE-7.0` | **Pre-Phase User Review Gate:** Review `docs/PHASE_7_TRACKING.md` and scheduled `FB-P6-001`..`005` items before starting Phase 7 | `[x] Complete` | 2026-11-01 |
+| **Gate 1** | `GATE-7.0` | **Pre-Phase User Review Gate:** Review `docs/development/PHASE_7_TRACKING.md` and scheduled `FB-P6-001`..`005` items before starting Phase 7 | `[x] Complete` | 2026-11-01 |
 | **Step 7.1** | `CP-7.1` | Selective YouTube Blocking Engine (`FB-P6-005`), Migration `0006`, OPNsense YouTube Aliases, and SQLite Storage/Record Telemetry (`FB-P6-003`) + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 7.2** | `CP-7.2` | Elasticsearch YouTube & Plex Active Usage Time Aggregator (`FB-P6-004`), `/api/v1/audit-logs`, and `/api/v1/system/{backup,restore}` + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 7.3** | `CP-7.3` | React YouTube Block Toggles, YouTube/Plex Usage Cards, Schedule Device Search (`FB-P6-001`), Per-Second Header Clock (`FB-P6-002`), SQLite Stats (`FB-P6-003`) & Audit/Backup UI + Unit Tests | `[x] Complete` | 2026-11-01 |
@@ -142,5 +142,5 @@ flowchart LR
 
 ### Step 7.5 (Gate 3 — Final Project Release) — Feedback Log, Phase 7 Exit Report & `v1.0.0` Git Push
 - **Tasks:**
-  - [ ] Process any final user feedback, complete the **Phase 7 Exit Report & Project Retrospective** in `docs/PHASE_EXIT_REPORTS.md`, update `README.md`, commit on `phase7`, merge `--no-ff` to `main`, tag `v1.0.0`, and push to GitHub.
+  - [ ] Process any final user feedback, complete the **Phase 7 Exit Report & Project Retrospective** in `docs/development/PHASE_EXIT_REPORTS.md`, update `README.md`, commit on `phase7`, merge `--no-ff` to `main`, tag `v1.0.0`, and push to GitHub.
 

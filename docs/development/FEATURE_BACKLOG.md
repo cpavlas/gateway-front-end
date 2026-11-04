@@ -1,4 +1,4 @@
-# Feature & UI Feedback Backlog (`docs/FEATURE_BACKLOG.md`)
+# Feature & UI Feedback Backlog (`docs/development/FEATURE_BACKLOG.md`)
 
 > **Living Governance Document:** This backlog records all user UI feedback, enhancement requests, and design evaluations captured during interactive phase reviews.  
 > **Mandatory Review Protocol:** At the **Entry** and **Exit Checkpoint** of every development phase (`Phase 4` → `Phase 7`), every `OPEN` or `EVALUATING` item in this file is reviewed to determine:
@@ -37,7 +37,21 @@
 | **`FB-P6-002`** | Top Page Header | Add live **system time** (updating every 1 second) directly below the `Logout` button in the top-right header | UI / Live Clock | `1 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
 | **`FB-P6-003`** | System Connectivity Tab | For the `Local SQLite Store` service card, display **storage size** (on-disk DB + WAL size) and **record count** stats | Observability / Telemetry | `1.5 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
 | **`FB-P6-004`** | Application Usage Stats (YouTube & Plex) | Track and display **active usage time** (minutes/hours, query/packet volume, and last active timestamp) for **YouTube** and **Plex** across devices, groups, and network overview | Application Analytics (`logs-pfsense.log*`) | `2.5 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
-| **`FB-P6-005`** | Selective Application Blocking (YouTube vs. Plex) | Application blocking control to **prevent access to YouTube** while **allowing access to Plex and everything else** (per-device and per-group toggle via OPNsense alias enforcement) | New Control Feature (App Control) | `3.5 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
+| **FB-P6-005** | Selective Application Blocking (YouTube vs. Plex) | Application blocking control to **prevent access to YouTube** while **allowing access to Plex and everything else** (per-device and per-group toggle via OPNsense alias enforcement) | New Control Feature (App Control) | 3.5 / 5 | **Phase 7** *(Scheduled Batch)* | COMPLETED (Phase 7) |
+| **FB-P8-001** | Traffic & DNS Analytics Tab | Fix YouTube & Plex near-100% active time inflation by aggregating 5m slots per LAN device (source.ip) with an active-streaming event threshold (min_doc_count >= 5) | Bug Fix / Analytics Accuracy | 2 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-002** | Traffic & DNS Analytics Tab | Display the **Top 3 Devices** and their active usage duration inside each Application Usage Stats card (YouTube & Plex) | Analytics Enhancement | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-003** | Analytics Overview & Drawers | Append blocked traffic percentage ((XX.X%)) after the number in the Blocked Firewall Packets KPI box | Analytics / UI Polish | 1 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-004** | All Bar Graphs | Add a **Stacked \| Total** view selector on all bar graphs to toggle between component breakout and total view | Data Visualization | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-005** | All Bar Graphs | Add horizontal (X-axis) and vertical (Y-axis) labels/scales to all bar graphs for at-a-glance readability without hovering | Data Visualization | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-006** | System Connectivity Tab (Elasticsearch 9.4.3) | Report **Cluster Health** (GREEN/YELLOW/RED) and **Shard Counts** (Assigned, Unassigned, Relocating) via GET /_cluster/health | Observability / ES Telemetry | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P8-007** | Global UI & Refresh Buttons | Remove all EM dashes (—) across the UI (e.g., shorten to "Application Usage Stats") and display Updated: HH:MM:SS below every Refresh button | Global UI Polish | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
+| **FB-P9-001** | Initial Admin Login (LoginPage) | NGINX-style **First-Boot Password Setup** for dmin on clean container builds (with seamless upgrade auto-seeding when ADMIN_PASSWORD is already set in .env) | Auth & Onboarding | 2.5 / 5 | **Phase 9 (1.0.3)** | SCHEDULED (Phase 9) |
+| **FB-P9-002** | System & Admin Tab (Integration Settings) | Expose OPNsense & Elasticsearch connection variables in the UI Admin Panel (persisted in SQLite with runtime precedence over .env + Reset to .env) and add a live **Connectivity Test** that surfaces errors in the UI and logs diagnostic failures to udit_logs | Admin Console & Diagnostics | 3.5 / 5 | **Phase 9 (1.0.3)** | SCHEDULED (Phase 9) |
+| **FB-P9-003** | System & Admin Tab (User Management) | Multi-user account creation & password management via Admin Console (Admin vs. Standard User / Operator roles), strictly preventing the default dmin user from being deleted or disabled | Multi-User RBAC | 3 / 5 | **Phase 9 (1.0.3)** | SCHEDULED (Phase 9) |
+| **FB-P9-004** | Audit Trail (udit_logs) | Track per-user attribution (ctor = current_user.username) and structured udit_label category badges across all UI actions | Security & Audit | 2 / 5 | **Phase 9 (1.0.3)** | SCHEDULED (Phase 9) |
+| **FB-P10-001** | New Firewall & Security Tab | Dedicated Firewall log explorer & security dashboard showing passed/blocked packet metrics, direction, searchable ilterlog stream, **Suspected Bad Actors / Scanners** (with 1-click LAN block), and **Active Inbound WAN Exposure (Open Ports)** | Security & Firewall Telemetry | 3.5 / 5 | **Phase 10 (1.0.4)** | SCHEDULED (Phase 10) |
+| **FB-P11-001** | Header Logo & Browser Favicon | Replace the shield icon with a custom **side-profile Unicorn with Rainbow Horn** SVG icon in the app header, login screen, and browser tab favicon | Branding & Iconography | 1.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
+| **FB-P11-002** | Header User Menu & Color Themes | Clicking the user's Name in the top header opens User Settings with **3 Eye-Friendly Dark-Room Color Themes** (Default Slate, Crimson & Obsidian light/dark red on black, and Ocean & Navy light/dark blue on deep navy) persisted per user | User Preferences & Theming | 2.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
 
 ---
 
@@ -351,3 +365,69 @@
 - **Complexity:** `3.5 / 5` (Medium–High).
 
 
+
+---
+
+### Area 9 — `v1.1` Release Roadmap & Observed `v1.0.1` Bug Resolutions (`FB-P8-001` – `FB-P11-002`)
+
+#### `FB-P8-001` & `FB-P8-002` — Per-Device Active Streaming Calculation & Top 3 Devices per Application (YouTube & Plex)
+- **User Feedback:**
+  - *"Both the youtube and Plex stats appear inaccurate as they always report near 100% active time even when no devices on the network are actively using youtube or plex. Need to investigate what might be causing this."*
+  - *"For application Usage Stats view, in the same box that shows the data for each item (currently just Youtube and Plex) also list the top 3 devices and the time they have spent on those applications below the current data"*
+- **Root Cause & Planned Fix (Phase 8):**
+  - Aggregating 5-minute buckets across all ~60 LAN devices simultaneously with `min_doc_count: 1` meant background keepalives and DNS refreshes caused almost every 5-minute bucket to register at least 1 event.
+  - Aggregate 5-minute slots **per LAN device (`source.ip`)** first with an active-streaming event threshold (`min_doc_count >= 5` events per 5m slot per device), compute per-device active minutes, and surface the **Top 3 Devices** (with SQLite display names and active durations) inside each Application Usage Stats card.
+
+#### `FB-P8-003` — Blocked Firewall Packets Percentage
+- **User Feedback:** *"For the Blocked Firewall Packets data box, add a percentage value after the number to show percentage of traffic blocked"*
+- **Planned Change (Phase 8):** Append `(XX.X%)` (computed as `blocked_packet_count / firewall_event_count * 100`) next to the number in the `Blocked Firewall Packets` KPI box across `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
+
+#### `FB-P8-004` & `FB-P8-005` — Bar Graph `Total` vs. `Stacked` Selector & Horizontal/Vertical Axis Keys
+- **User Feedback:**
+  - *"For all bar graphs that are shown add a selector in the view to change between total and stacked view where stacked shows the break out of the data used in the bar graph."*
+  - *"For all bar graphs that are shown, there is no horizontle or verticle key to denote what the user is looking at. We should have labels to show at a glance data without the need to hover over the data to see what it is."*
+- **Planned Change (Phase 8):** Add a `Stacked | Total` toggle pill and render explicit Y-axis scale ticks (`Max`, `Mid`, `0` + unit label) and X-axis time/hour labels on all bar charts.
+
+#### `FB-P8-006` — Elasticsearch 9.4.3 Cluster Health & Shard Count Telemetry
+- **User Feedback:** *"For the System Connectivity tab in the Elasticsearch 9.4.3 box, lets also report the current cluster health, shard count (split into assigned, unassigned, relocating) We may need new privileges for this as well since we will need access to the GET _clusterhealth and GET _cat calls"*
+- **Planned Change (Phase 8):** Query `GET /_cluster/health` in `ElasticsearchServiceClient.check_health()` to populate `cluster_status`, `assigned_shards`, `unassigned_shards`, and `relocating_shards`, render them on `StatusPage.tsx`, and document `cluster: ["monitor"]` in `docs/API_KEYS_SETUP.md`.
+
+#### `FB-P8-007` — Global Removal of EM Dashes (`—`) & `Updated: HH:MM:SS` Below All Refresh Buttons
+- **User Feedback:**
+  - *"Remove all the EM dashes or replace them with either commas if appropriate. For example, in the Traffic & DNS Analytics tab, for the Application Usage Stats box, it states 'Application Usage Stats — YouTube & Plex (24h)' This could just instead say Application Usage Stats only"*
+  - *"For all areas where there is a refresh button, show below that button the last time it was updated."*
+- **Planned Change (Phase 8):** Remove all EM dashes (`—`) across all UI views and backend messages, and display a 24-hour `Updated: HH:MM:SS` label directly below every `Refresh` button.
+
+#### `FB-P9-001` — NGINX-Style First-Boot `admin` Password Creation
+- **User Feedback:** *"Change initial admin to model other container apps, NGINX, where the first login on a clean build of the container instead asks for password creation using a defined user called admin"*
+- **Planned Change (Phase 9):** Trigger a First-Boot Password Setup screen on clean builds when no SQLite `admin` user exists and `ADMIN_PASSWORD` is unset/placeholder in `.env` (while auto-seeding the SQLite `admin` user if a valid `ADMIN_PASSWORD` is already present in `.env` for seamless upgrades).
+
+#### `FB-P9-002` — UI Admin Panel for OPNsense & Elasticsearch Variables + Live Connectivity Diagnostics
+- **User Feedback:** *"In addition to allowing users to use the .env file to define the necessary variables to connect to OPNsense and ES, also expose these variables in the UI under and Admin panel that is used to define those variables as well as test them with a simple connectivity check. If the device cannot be reached, expose the errors and log them in the system so the user can diagnose"*
+- **Planned Change (Phase 9):** Expand `System Connectivity` into `System & Admin` with an Integration Settings panel (persisted in SQLite with encrypted secrets, taking runtime precedence over `.env` with a `Reset to .env` option) and live `Test Connection` buttons that surface detailed errors in the UI and log diagnostic failures to `audit_logs`.
+
+#### `FB-P9-003` & `FB-P9-004` — Multi-User Management (`Admin` vs. `Standard User`), Built-in `admin` Protection & Per-User Audit Labels
+- **User Feedback:**
+  - *"Add the ability to add new users that can login to the platform. The user should be able to be added to the platform via the Admin console and have their password set by the admin at that time"*
+  - *"Ensure the default admin user cannot be deleted or disabled"*
+  - *"Enable per user tracking for actions performed in the UI that is logged in the logs with an audit label"*
+- **Planned Change (Phase 9):** Add multi-user management in `System & Admin` supporting `Admin` and `Standard User (Operator)` roles, enforce `403 Forbidden` if attempting to delete/disable the built-in `admin` user, and log every UI mutation with `actor = current_user.username` and a structured `audit_label` badge.
+
+#### `FB-P10-001` — Dedicated `Firewall & Security` Tab (Bad Actors, Open Inbound WAN Ports & Searchable Log Explorer)
+- **User Feedback:** *"Since we have access to all the firewall logs, lets add a Firewall section that reports all of the firewall activity that is also searchable and shows number of packets passed, blocked, direction etc. The goal of the view is to also be able to easily see bad actors on the network that may need to be blocked and show open ports that could allow for unintentional access into the network from the WAN that could be dangerous."*
+- **Planned Change (Phase 10):** Add a `Firewall & Security` navigation tab with pass/block/direction KPIs, timeline bar chart, side-by-side security panels for **Noisy/Blocked LAN Devices & External Scanners** (with 1-click LAN block) and **Active Inbound WAN Exposure (Open Ports)**, and a searchable/filterable `filterlog` table.
+
+#### `FB-P11-001` & `FB-P11-002` — Custom Unicorn Rainbow-Horn Logo/Favicon & Clickable Header User Name Menu with 3 Eye-Friendly Color Themes
+- **User Feedback:**
+  - *"Create an icon to replace the shield icon and have it display in the web browser next to the name of the page when its opened on a tab. The logo should be a side profile of a unicorn with rainbow colors for the horn"*
+  - *"Add the ability for a user to customize their color preferences in their view. Lets target 3 total options for now with the default being what it is now, but then also have a light red / dark red and black theme and a light blue / dark blue theme. Ideally the color selection should be easy on the eyes and not neon bright or uncomfortable to use in a dark room."*
+  - *(From `/grill-me`):* *"Have the theme be selectable by the user clicking on their Name in the header, which then shows user specific settings, including the themes."*
+- **Planned Change (Phase 11):** Replace the shield icon and browser favicon with a custom side-profile Unicorn with a rainbow-gradient horn SVG, and make the user's Name in the top header clickable to open a User Settings menu containing the 3 dark-room-friendly color themes (`Default Slate`, `Crimson & Obsidian`, and `Ocean & Navy`).
+
+
+#### `FB-P8-008` (`BUG-P8-003`) — Fix Plex Local LAN Client Streaming Detection (`*.plex.direct`, `plex.tv` Playback DNS & Server-vs-Client Separation)
+- **User Feedback (Phase 8 Gate 2):** *"All items are confirmed working and correct as planned for everything except PLEX, which does not appear to be catching the correct time used and devices. I believe the reason is the code is looking at an input port to track and may be missing local traffic from LGwebOSTV (.243) as several hours of Plex time was done today on that device, but the data is not present. We may need to investigate why. Log this as a bug."*
+- **Root Cause & Planned Fix (Scheduled for Phase 9 — `v1.0.3`):**
+  1. **Intra-VLAN L2 Switching Bypasses Port `32400` in `filterlog`:** Local LAN streaming between a Smart TV (`LGwebOSTV` on `.243`) or Google TV streamer (`.66`) and a local Plex Media Server on the same `/24` subnet (`.2` / `.250`) is switched at Layer 2 and never crosses the OPNsense firewall interface (`filterlog`).
+  2. **Restore `*.plex.direct` and `plex.tv` Client Playback Domains:** Include `dns.question.registered_domain: ["plex.direct", "plex.tv", "plexapp.com"]` and wildcard `*plex*` local hostnames in `_build_app_usage_agg()`, while using a sub-aggregation on `servers.plex.tv` (which only Plex Media Server hosts query) and 24/7 poller heuristics (`>= 140` slots with zero playback/scrobble domains) to exclude server/poller background noise and count client playback slots with `min_doc_count: 1`.
+- **Status:** `SCHEDULED (Phase 9 — v1.0.3)`

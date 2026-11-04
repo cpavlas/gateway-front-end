@@ -1,4 +1,4 @@
-# Phase 6 Execution & Checkpoint Tracking (`docs/PHASE_6_TRACKING.md`)
+# Phase 6 Execution & Checkpoint Tracking (`docs/development/PHASE_6_TRACKING.md`)
 
 > **Phase:** 6 of 7 (Test Cycle 6 — Control Feature #4: Recurring Schedules & Bedtime Rules + Phase 5 UI & Persistence Backlog Integration)  
 > **Branch:** `phase6`  
@@ -9,7 +9,7 @@
 
 ## 1. Phase 6 Objectives & Waterfalled Inputs from Phases 1–5
 
-### 1.1 Scheduled Phase 5 UI & Persistence Feedback Batch (`docs/FEATURE_BACKLOG.md` — Waterfall Update 6A)
+### 1.1 Scheduled Phase 5 UI & Persistence Feedback Batch (`docs/development/FEATURE_BACKLOG.md` — Waterfall Update 6A)
 1. **`FB-P5-001` (Centered Modal Dialog for Timer Controls):**
    - Replace the inline dropdown popover in `frontend/src/components/TimerPopoverMenu.tsx` with a **centered screen modal dialog** (`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs`) so it is always visible without scrolling (even on the bottom row or when search filters the list to 1 item) and prevents multiple timer menus from opening simultaneously.
 2. **`FB-P5-002` (Active Countdown & Mode Color Directly on the Timer Button):**
@@ -92,7 +92,7 @@ flowchart LR
 | **Step 6.2** | `CP-6.2` | `/api/v1/schedules` CRUD & Reconcile Endpoints, 60s Unified Policy/IP-Drift Loop, and `20m`/`40m`/`60m` Bonus Presets (`FB-P5-004`) + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 6.3** | `CP-6.3` | React `SchedulesPage`, `ScheduleFormModal`, Active Schedule Badges, and Phase 5 UI Backlog Batch (`FB-P5-001`..`009`) + Unit Tests | `[x] Complete` | 2026-11-01 |
 | **Step 6.4** | `CP-6.4` | **Gate 2 (STOP for User UI Validation):** Bump to `v0.6.0`, Rebuild Docker Container, Verify Persistence Across Container Restart, and Prompt User for UI Validation | `[x] Complete` | 2026-11-01 |
-| **Step 6.5** | `CP-6.5` | **Gate 3 (STOP Before Phase 7):** Log Phase 6 User Feedback in `docs/FEATURE_BACKLOG.md`, Complete Phase 6 Exit Report, Git Push `v0.6.0`, and Create `docs/PHASE_7_TRACKING.md` | `[x] Complete` | 2026-11-01 |
+| **Step 6.5** | `CP-6.5` | **Gate 3 (STOP Before Phase 7):** Log Phase 6 User Feedback in `docs/development/FEATURE_BACKLOG.md`, Complete Phase 6 Exit Report, Git Push `v0.6.0`, and Create `docs/development/PHASE_7_TRACKING.md` | `[x] Complete` | 2026-11-01 |
 
 ---
 
@@ -179,8 +179,8 @@ flowchart LR
 
 ### Step 6.5 (Gate 3 — STOP Before Phase 7) — Feedback Logging, Phase 6 Exit Report, Git Push & Phase 7 Tracking
 - **Tasks:**
-  - [x] Log all user Phase 6 feedback in `docs/FEATURE_BACKLOG.md` and update completed statuses for `FB-P5-001`..`FB-P5-010`.
-  - [x] Finalize Phase 6 bug ledger in `docs/TEST_AND_BUG_LOG.md` and write the **Phase 6 Exit Analysis & Retrospective** in `docs/PHASE_EXIT_REPORTS.md`.
+  - [x] Log all user Phase 6 feedback in `docs/development/FEATURE_BACKLOG.md` and update completed statuses for `FB-P5-001`..`FB-P5-010`.
+  - [x] Finalize Phase 6 bug ledger in `docs/development/TEST_AND_BUG_LOG.md` and write the **Phase 6 Exit Analysis & Retrospective** in `docs/development/PHASE_EXIT_REPORTS.md`.
   - [x] Commit on `phase6`, merge `--no-ff` to `main`, tag `v0.6.0`, and push to GitHub.
-  - [x] Create `docs/PHASE_7_TRACKING.md` and **STOP & PROMPT USER** to review before starting Phase 7.
+  - [x] Create `docs/development/PHASE_7_TRACKING.md` and **STOP & PROMPT USER** to review before starting Phase 7.
 

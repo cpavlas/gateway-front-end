@@ -10,7 +10,7 @@
 
 ## 1. Phase 5 Objectives & Waterfalled Inputs from Phases 1–4
 
-1. **Feature Backlog Review & Scheduled Phase 4 UI / Visualization Enhancements (`docs/FEATURE_BACKLOG.md` — Waterfall Update 5A):**
+1. **Feature Backlog Review & Scheduled Phase 4 UI / Visualization Enhancements (`docs/development/FEATURE_BACKLOG.md` — Waterfall Update 5A):**
    - **`FB-P4-001` (Header Health Badge):** Remove `SYSTEM:` prefix in `AppLayout.tsx` so the badge displays only the health status (`HEALTHY`, `DEGRADED`, `DOWN` / `UNHEALTHY`).
    - **`FB-P4-002` (Application Version Incrementing):** Increment version (`0.4.0` → `0.5.0`) across `backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json` on Phase 5 push.
    - **`FB-P4-003` (Telemetry Button Label):** Change Telemetry column button label in `DevicesPage.tsx` from `Usage & Domains` to `Analytics`.

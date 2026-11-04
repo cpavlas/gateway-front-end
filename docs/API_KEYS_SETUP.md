@@ -147,7 +147,7 @@ POST /_security/api_key
 }
 ```
 
-- **Why `"cluster": ["monitor"]`?** Allows `/api/v1/system/health` (`client.info()` / `client.ping()`) to verify cluster reachability and report Elasticsearch `9.4.3` health without granting any write or administrative permissions.
+- **Why `"cluster": ["monitor"]`?** Allows `/api/v1/system/health` (`client.info()`, `client.ping()`, and `GET /_cluster/health`) to verify cluster reachability, report overall **Cluster Health** (`GREEN`, `YELLOW`, `RED`), and report **Shard Counts** (`Assigned`, `Unassigned`, `Relocating`) on the System Connectivity tab without granting any write or administrative permissions.
 - **Why `"names": ["logs-pfsense.log*"]`?** Restricts document searches (`read`) and field mapping checks (`view_index_metadata`) strictly to the `logs-pfsense.log` data stream and its backing `.ds-logs-pfsense.log-*` indices.
 - Copy the **`encoded`** value from the JSON response (Base64-encoded `id:api_key`) and set it in `.env`:
   ```dotenv

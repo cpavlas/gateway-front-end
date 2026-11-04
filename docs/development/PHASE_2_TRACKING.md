@@ -57,7 +57,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_device_models.py` testing MAC/IP normalization, placeholder hostname stripping (`"*"`), unique constraints, and persistence.
 - **Checkpoint `CP-2.1` Verification Criteria:**
   - [x] `pytest backend/tests/test_device_models.py` passes 100% (`21/21` new model tests passing; `54/54` total backend tests passing in `1.33s`, `100%` coverage on `app/models/__init__.py`, `94%` total backend coverage).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -71,7 +71,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_opnsense_mutations.py` using `respx` (testing `alias_util` success, `403` config API fallback, idempotent add/remove, `kill_states` timeout/error handling, and invalid IP rejection).
 - **Checkpoint `CP-2.2` Verification Criteria:**
   - [x] `pytest backend/tests/test_opnsense_mutations.py` passes 100% (`14/14` new mutation tests passing; `68/68` total backend tests passing in `1.43s`, `95%` coverage on `opnsense.py`, `95%` total backend coverage).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -87,7 +87,7 @@ flowchart LR
   - [x] Write unit tests in `backend/tests/test_devices_api.py` covering merge edge cases (ARP-only static device, offline Dnsmasq device, DHCP IP change for existing MAC, protected IP `403` rejection, block/unblock + audit log creation, and partial `kill_states` warning).
 - **Checkpoint `CP-2.3` Verification Criteria:**
   - [x] `pytest backend/tests/` passes 100% with `>= 85%` coverage (`72/72` backend tests passing in `2.10s`, `89%` total backend coverage; `ruff` and `mypy` pass with `0` errors).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -102,7 +102,7 @@ flowchart LR
   - [x] Write frontend unit tests in `frontend/src/__tests__/DevicesPage.test.tsx`.
 - **Checkpoint `CP-2.4` Verification Criteria:**
   - [x] `npm run test` (`Vitest --coverage`) and `npm run build` (`tsc -b && vite build`) pass with zero errors and `>= 85%` coverage (`7/7` frontend tests passing, `96.59%` statement/line coverage, `0` TypeScript/Vite build errors).
-  - [x] Any defects found are logged in `docs/TEST_AND_BUG_LOG.md`.
+  - [x] Any defects found are logged in `docs/development/TEST_AND_BUG_LOG.md`.
 
 ---
 
@@ -118,8 +118,8 @@ flowchart LR
 ### Step 2.6 — Phase 2 QA Audit, Exit Analysis, Learnings Checkpoint & Git Check-in
 - **Tasks:**
   - [x] Run full backend (`pytest --cov=app`, `ruff check`, `mypy`) and frontend (`vitest run --coverage`, `npm run build`) quality gates (`72/72` backend tests passing at `89.0%` coverage; `7/7` frontend tests passing at `96.59%` coverage; `0` lint/type/build errors).
-  - [x] Finalize all Phase 2 entries in `docs/TEST_AND_BUG_LOG.md` (`BUG-P2-001` through `BUG-P2-004`).
-  - [x] Complete **Phase 2 Exit Report** in `docs/PHASE_EXIT_REPORTS.md` and waterfall any new findings into [PLAN.md](PLAN.md) and [docs/API_KEYS_SETUP.md](docs/API_KEYS_SETUP.md).
+  - [x] Finalize all Phase 2 entries in `docs/development/TEST_AND_BUG_LOG.md` (`BUG-P2-001` through `BUG-P2-004`).
+  - [x] Complete **Phase 2 Exit Report** in `docs/development/PHASE_EXIT_REPORTS.md` and waterfall any new findings into [PLAN.md](PLAN.md) and [docs/API_KEYS_SETUP.md](docs/API_KEYS_SETUP.md).
 - **Checkpoint `CP-2.6` (Phase 2 Exit Sign-Off):**
   - [x] Review Phase 2 Exit Report with user, commit to `phase2` branch, and push to GitHub.
 

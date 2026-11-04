@@ -15,11 +15,14 @@ import {
 import {
   apiClient,
   formatActiveMinutes,
+  formatBlockedPercentage,
   formatBytes,
+  formatClock24h,
   type TimeWindow,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
+import { TimelineBarChart } from '../components/TelemetryBarChart'
 
 interface AnalyticsPageProps {
   activeTab?: AppTab
@@ -43,6 +46,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
 
   const {
     data: overview,
+    dataUpdatedAt,
     isLoading,
     isFetching,
     isError,
@@ -75,9 +79,9 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
   const topOrgs = overview?.top_organizations ?? []
   const appUsage = overview?.application_usage ?? []
 
-  const maxTimelineEvents = Math.max(1, ...timeline.map((b) => b.total_events))
   const maxDomainCount = Math.max(1, ...topDomains.map((d) => d.query_count))
   const maxRegDomainCount = Math.max(1, ...topRegDomains.map((d) => d.query_count))
+  const lastUpdatedClock = formatClock24h(overview?.generated_at || dataUpdatedAt)
 
   return (
     <AppLayout
@@ -88,17 +92,17 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
     >
       <div className="space-y-6">
         {/* Page Header & Time Window Selector */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-100">
               Network Traffic &amp; DNS Analytics
             </h1>
             <p className="text-sm text-slate-400">
-              Live telemetry from Elasticsearch 9.4.3 — Unbound DNS resolution and filterlog packet metrics
+              Live telemetry from Elasticsearch 9.4.3, Unbound DNS resolution and filterlog packet metrics
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 self-start">
+          <div className="flex flex-wrap items-start gap-2 self-start">
             <div
               className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1"
               role="group"
@@ -121,21 +125,31 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
               ))}
             </div>
 
-            <button
-              type="button"
-              data-testid="overview-refresh-btn"
-              onClick={() => refreshMutation.mutate()}
-              disabled={isFetching || refreshMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${
-                  isFetching || refreshMutation.isPending ? 'animate-spin' : ''
-                }`}
-                aria-hidden="true"
-              />
-              <span>Refresh Analytics</span>
-            </button>
+            <div className="flex flex-col items-start sm:items-end gap-1">
+              <button
+                type="button"
+                data-testid="overview-refresh-btn"
+                onClick={() => refreshMutation.mutate()}
+                disabled={isFetching || refreshMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${
+                    isFetching || refreshMutation.isPending ? 'animate-spin' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>Refresh Analytics</span>
+              </button>
+              {lastUpdatedClock && (
+                <span
+                  data-testid="overview-last-updated"
+                  className="text-[11px] font-mono text-slate-400"
+                >
+                  Updated: {lastUpdatedClock}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -211,7 +225,13 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
               <ShieldAlert className="h-4 w-4 text-rose-400" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-bold text-rose-300">
-              {(summary?.blocked_packet_count ?? 0).toLocaleString()}
+              {(summary?.blocked_packet_count ?? 0).toLocaleString()}{' '}
+              <span
+                data-testid="overview-kpi-blocked-pct"
+                className="text-sm font-semibold text-rose-400"
+              >
+                ({formatBlockedPercentage(summary?.blocked_packet_count ?? 0, summary?.allowed_packet_count ?? 0)})
+              </span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {(summary?.allowed_packet_count ?? 0).toLocaleString()} allowed packets
@@ -228,7 +248,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
           </div>
         ) : (
           <>
-            {/* Application Usage Stats (YouTube & Plex — FB-P6-004) */}
+            {/* Application Usage Stats (FB-P6-004, FB-P8-001, FB-P8-002, FB-P8-007) */}
             <div
               data-testid="overview-app-usage-panel"
               className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow"
@@ -238,10 +258,10 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                   <Tv className="h-4 w-4 text-rose-400" aria-hidden="true" />
                   <div>
                     <h2 className="text-sm font-semibold text-slate-100">
-                      Application Usage Stats — YouTube &amp; Plex ({windowKey})
+                      Application Usage Stats
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Estimated active usage time derived from 5-minute activity buckets across all LAN devices
+                      Estimated active usage time derived from 5-minute client activity buckets across LAN devices
                     </p>
                   </div>
                 </div>
@@ -257,8 +277,11 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                     dns_queries: 0,
                     bytes: 0,
                     last_active_at: null,
+                    top_devices: [],
                   }
                   const isYoutube = appKey === 'youtube'
+                  const appTopDevices = (item.top_devices ?? []).slice(0, 3)
+
                   return (
                     <div
                       key={appKey}
@@ -311,15 +334,66 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* Top 3 Devices Breakdown (FB-P8-002) */}
+                      <div
+                        data-testid={`overview-app-top-devices-${appKey}`}
+                        className="mt-3 border-t border-slate-800/80 pt-2.5"
+                      >
+                        <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                          Top 3 Devices ({windowKey})
+                        </span>
+                        {appTopDevices.length === 0 ? (
+                          <p className="text-[11px] text-slate-500">
+                            No active client devices in this window.
+                          </p>
+                        ) : (
+                          <ul className="space-y-1 text-xs">
+                            {appTopDevices.map((dev, idx) => (
+                              <li
+                                key={`${dev.ipv4_address}-${idx}`}
+                                className="flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0 flex items-center gap-1.5 truncate">
+                                  <span className="font-mono text-[10px] text-slate-500">
+                                    #{idx + 1}
+                                  </span>
+                                  {dev.device_id !== null ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDeviceId(dev.device_id)}
+                                      className="font-medium text-slate-200 hover:text-indigo-300 truncate cursor-pointer"
+                                    >
+                                      {dev.effective_name}
+                                    </button>
+                                  ) : (
+                                    <span className="font-medium text-slate-200 truncate">
+                                      {dev.effective_name}
+                                    </span>
+                                  )}
+                                  {dev.effective_name !== dev.ipv4_address && (
+                                    <span className="font-mono text-[10px] text-slate-500">
+                                      ({dev.ipv4_address})
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="shrink-0 font-mono text-xs font-semibold text-indigo-300">
+                                  {formatActiveMinutes(dev.active_minutes)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
               </div>
             </div>
 
-            {/* Network Activity Timeline */}
+            {/* Network Activity Timeline (FB-P8-004 & FB-P8-005) */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-indigo-400" aria-hidden="true" />
                   <div>
@@ -333,35 +407,13 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                 </div>
               </div>
 
-              {timeline.length === 0 ? (
-                <p className="py-8 text-center text-xs text-slate-500">
-                  No timeline buckets recorded for this window.
-                </p>
-              ) : (
-                <div
-                  data-testid="overview-timeline-chart"
-                  className="flex h-36 items-end gap-1 pt-4 border-b border-slate-800"
-                >
-                  {timeline.map((bucket) => {
-                    const heightPct = Math.max(
-                      4,
-                      Math.round((bucket.total_events / maxTimelineEvents) * 100),
-                    )
-                    return (
-                      <div
-                        key={bucket.timestamp}
-                        title={`${new Date(bucket.timestamp).toLocaleString()}: ${bucket.total_events.toLocaleString()} events (${bucket.dns_queries.toLocaleString()} DNS, ${formatBytes(bucket.bytes)})`}
-                        className="group flex-1 flex flex-col items-center justify-end h-full"
-                      >
-                        <div
-                          style={{ height: `${heightPct}%` }}
-                          className="w-full rounded-t bg-indigo-500/80 group-hover:bg-indigo-400 transition-all"
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <TimelineBarChart
+                timeline={timeline}
+                windowKey={windowKey}
+                prefixTestId="overview-timeline"
+                chartTestId="overview-timeline-chart"
+                legendTestId="overview-timeline-legend"
+              />
             </div>
 
             {/* Top Active LAN Devices Table */}
@@ -374,7 +426,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                       Top Active LAN Devices (RFC1918)
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Enriched with SQLite device inventory — click Inspect to view 24h access hours &amp; domains
+                      Enriched with SQLite device inventory, click Inspect to view 24h access hours &amp; domains
                     </p>
                   </div>
                 </div>

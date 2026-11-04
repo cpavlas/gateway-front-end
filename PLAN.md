@@ -248,8 +248,8 @@ flowchart LR
 - **Container & Live Integration Verification**:
   - Build the multi-stage Docker container and run smoke verification against OPNsense and Elasticsearch at the end of each phase (including verifying container DNS resolution for `opnsense.example.local` and `elasticsearch.example.local:9200`).
 
-### 5.2 Bug Documentation & Resolution Ledger (`docs/TEST_AND_BUG_LOG.md`)
-A dedicated tracking document, `docs/TEST_AND_BUG_LOG.md`, will be maintained in the repository and updated **with every Git check-in**. Every defect found during unit testing, static type checking, container build, or live API validation will be recorded—including bugs intentionally deferred to a future phase:
+### 5.2 Bug Documentation & Resolution Ledger (`docs/development/TEST_AND_BUG_LOG.md`)
+A dedicated tracking document, `docs/development/TEST_AND_BUG_LOG.md`, will be maintained in the repository and updated **with every Git check-in**. Every defect found during unit testing, static type checking, container build, or live API validation will be recorded—including bugs intentionally deferred to a future phase:
 
 | Field | Description |
 | :--- | :--- |
@@ -264,8 +264,8 @@ A dedicated tracking document, `docs/TEST_AND_BUG_LOG.md`, will be maintained in
 | **Commit Reference** | Git commit hash where logged and/or resolved |
 
 ### 5.3 End-of-Phase Exit Analysis, Feature Backlog Review & Waterfall Re-Baselining
-Because real-world network data, user UI feedback, and API behaviors evolve as we build, **`PLAN.md` and `docs/FEATURE_BACKLOG.md` are treated as living documents**. At the conclusion of each phase (before check-in), we perform a structured **Exit Analysis** recorded in `docs/PHASE_EXIT_REPORTS.md`:
-1. **Waterfall Item & Feature Backlog Migration (`docs/FEATURE_BACKLOG.md`):** Any non-blocking bugs (`Deferred` in `docs/TEST_AND_BUG_LOG.md`), user UI/feature requests logged in `docs/FEATURE_BACKLOG.md`, newly uncovered edge cases, or architectural refinements are explicitly evaluated at each phase boundary and scheduled into the **Deliverables** and **Unit Testing Scope** of their target future phase (`Phase N+1..7`) inside `PLAN.md`.
+Because real-world network data, user UI feedback, and API behaviors evolve as we build, **`PLAN.md` and `docs/development/FEATURE_BACKLOG.md` are treated as living documents**. At the conclusion of each phase (before check-in), we perform a structured **Exit Analysis** recorded in `docs/development/PHASE_EXIT_REPORTS.md`:
+1. **Waterfall Item & Feature Backlog Migration (`docs/development/FEATURE_BACKLOG.md`):** Any non-blocking bugs (`Deferred` in `docs/development/TEST_AND_BUG_LOG.md`), user UI/feature requests logged in `docs/development/FEATURE_BACKLOG.md`, newly uncovered edge cases, or architectural refinements are explicitly evaluated at each phase boundary and scheduled into the **Deliverables** and **Unit Testing Scope** of their target future phase (`Phase N+1..7`) inside `PLAN.md`.
 2. **Complexity & Scope Re-Assessment:** Re-evaluate the complexity ratings (`1–5`) and dependencies of upcoming phases based on waterfalled items so scope creep stays visible and controlled.
 3. **Carry-Over Verification & Version Increment (`FB-P4-002`):** At the start of Phase `N+1`, any bugs or backlog items waterfalled into Phase `N+1` become priority acceptance criteria for that cycle. Prior to each phase Git check-in/push, increment the application version (`backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json`) so the UI header always matches the current release pushed to GitHub.
 
@@ -300,7 +300,7 @@ flowchart TD
 ### Phase 1 (Test Cycle 1): Foundation, Docker Packaging, Admin Auth & Environment Discovery
 - **Complexity:** **2 / 5 (Low–Medium)** — Straightforward project setup, auth boilerplate, multi-stage Docker build, and read-only API probing.
 - **Deliverables:**
-  1. Repository initialization: `.gitignore` (protecting `.env`), `.dockerignore`, `.env.example`, hidden `.env`, `docs/API_KEYS_SETUP.md`, `docs/TEST_AND_BUG_LOG.md`, and `docs/PHASE_EXIT_REPORTS.md`.
+  1. Repository initialization: `.gitignore` (protecting `.env`), `.dockerignore`, `.env.example`, hidden `.env`, `docs/API_KEYS_SETUP.md`, `docs/development/TEST_AND_BUG_LOG.md`, and `docs/development/PHASE_EXIT_REPORTS.md`.
   2. Backend core (`FastAPI`, `pydantic-settings`, SQLite + Alembic initial migration) with Built-in Admin Login (`/api/v1/auth/login`, `/logout`, `/me`) using signed `HttpOnly` cookies and login rate-limiting.
   3. Connectivity Health API (`/api/v1/system/health`) checking live reachability & credential validity for OPNsense (`https://opnsense.example.local`) and Elasticsearch (`https://elasticsearch.example.local:9200`).
   4. **Environment Discovery Tool (`scripts/discover_environment.py`)**:
@@ -313,7 +313,7 @@ flowchart TD
   - Mocked OPNsense & ES health check tests (healthy, auth failure, SSL error, unreachable).
   - Frontend Login form & protected route unit tests.
 - **Phase Exit & Check-in Gate:**
-  - Complete **Phase 1 Exit Analysis & Interactive Checkpoint** in `docs/PHASE_EXIT_REPORTS.md` (waterfall any discovered OPNsense/ES quirks or deferred bugs into Phases 2–3 in `PLAN.md`, and review unplanned info needed during live discovery) → Git check-in.
+  - Complete **Phase 1 Exit Analysis & Interactive Checkpoint** in `docs/development/PHASE_EXIT_REPORTS.md` (waterfall any discovered OPNsense/ES quirks or deferred bugs into Phases 2–3 in `PLAN.md`, and review unplanned info needed during live discovery) → Git check-in.
 
 ---
 
@@ -336,7 +336,7 @@ flowchart TD
   - Protected-IP safety tests verifying `403 Forbidden` if attempting to block `192.168.1.1` or admin's IP.
   - Partial failure handling (e.g., `alias_util/add` succeeds, `kill_states` times out — surfaces warning without corrupting state).
   - Frontend Device table filtering, inline rename, and toggle switch tests.
-- **Phase Exit & Check-in Gate:** Update Cycle 2 `docs/TEST_AND_BUG_LOG.md` → **Phase 2 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+- **Phase Exit & Check-in Gate:** Update Cycle 2 `docs/development/TEST_AND_BUG_LOG.md` → **Phase 2 Exit Analysis & Interactive Learnings Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
 
 ---
 
@@ -360,7 +360,7 @@ flowchart TD
   - Response normalization tests with real-shaped fixture data (missing fields, null bytes, IPv4-mapped formats, empty buckets).
   - Graceful degradation tests when ES returns `503` or times out.
   - Frontend Device Detail Drawer chart/table rendering & time-window switching tests.
-- **Phase Exit & Check-in Gate:** Update Cycle 3 `docs/TEST_AND_BUG_LOG.md` → **Phase 3 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+- **Phase Exit & Check-in Gate:** Update Cycle 3 `docs/development/TEST_AND_BUG_LOG.md` → **Phase 3 Exit Analysis & Interactive Learnings Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
 
 ---
 
@@ -381,7 +381,7 @@ flowchart TD
   - Batch toggle behavior when a group contains a protected device or an offline device without a current IP.
   - Multi-IP Elasticsearch `terms` query construction tests.
   - Frontend GroupCard toggle & member assignment modal tests.
-- **Phase Exit & Check-in Gate:** Update Cycle 4 `docs/TEST_AND_BUG_LOG.md` → **Phase 4 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+- **Phase Exit & Check-in Gate:** Update Cycle 4 `docs/development/TEST_AND_BUG_LOG.md` → **Phase 4 Exit Analysis & Interactive Learnings Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
 
 ---
 
@@ -396,14 +396,14 @@ flowchart TD
   3. **React Timer Controls**:
      - Quick-timer popover menu on every Device row and Group card (*"Pause 30m"*, *"Pause 1h"*, *"Pause 2h"*, *"Grant 30m Bonus"*, *"Custom..."*).
      - Live countdown pill (`Paused — 28m left` / `Bonus Time — 14m left`) with one-click **Cancel Timer**.
-  4. **Phase 4 Waterfall Update 5A — UI Polish, Stacked Activity Chart & System Connectivity Cleanup (`docs/FEATURE_BACKLOG.md`)**:
+  4. **Phase 4 Waterfall Update 5A — UI Polish, Stacked Activity Chart & System Connectivity Cleanup (`docs/development/FEATURE_BACKLOG.md`)**:
      - Integrate scheduled Phase 4 UI backlog items (`FB-P4-001` through `FB-P4-006`, `FB-P4-010`, and `FB-P4-011`): header health status badge (`HEALTHY`/`DOWN`), semantic version increment (`v0.4.0` -> `v0.5.0`), Telemetry button label (`Analytics`), Internet Access button state label (`Blocked`/`Allowed`), `Top Visited Domains` label cleanup, stacked `Usage & Activity Timeline` bar chart (DNS Queries vs. Firewall Events with color key legend and hover breakdown), Analytics title/button copy cleanup, and replacing/removing the stale Phase 1 placeholder card on `StatusPage.tsx`.
 - **Unit Testing Scope:**
   - Deterministic time-travel tests (`freezegun`) verifying exact block/unblock + `kill_states` calls upon timer expiry.
   - Simulated container restart tests (override expires while scheduler is stopped -> startup reconciliation fixes OPNsense alias).
   - Conflict resolution tests (manual permanent toggle cancels an active timer cleanly).
   - Frontend countdown badge and timer action menu tests.
-- **Phase Exit & Check-in Gate:** Update Cycle 5 `docs/TEST_AND_BUG_LOG.md` → **Phase 5 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+- **Phase Exit & Check-in Gate:** Update Cycle 5 `docs/development/TEST_AND_BUG_LOG.md` → **Phase 5 Exit Analysis & Interactive Learnings Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
 
 ---
 
@@ -421,7 +421,7 @@ flowchart TD
      - **DHCP IP Drift Sync:** If a blocked MAC address receives a new IP from OPNsense Dnsmasq, the reconciliation loop swaps the old IP out and adds the new IP into `gateway_blocked_devices` + kills states.
   2. **React Schedule Manager UI**:
      - Dedicated **Schedules** tab with visual day-of-week & time-window rule builder, enable/disable rule switch, target Device/Group selector, and clear status badges on devices (*"Blocked by Schedule: School Night Bedtime until 07:00"*).
-  3. **Phase 5 Waterfall Update 6A — Centered Timer Modal, Unified Timer Button, UI Polish & Persistent SQLite Volume (`docs/FEATURE_BACKLOG.md` `FB-P5-001`..`FB-P5-010`)**:
+  3. **Phase 5 Waterfall Update 6A — Centered Timer Modal, Unified Timer Button, UI Polish & Persistent SQLite Volume (`docs/development/FEATURE_BACKLOG.md` `FB-P5-001`..`FB-P5-010`)**:
      - Convert Timer controls into a centered screen modal dialog (`FB-P5-001`), merge active countdown & mode color directly into the `Timer` button (`FB-P5-002`), show duration-only preset labels (`FB-P5-003`), set Bonus Access presets to `20m` / `40m` / `60m` (`FB-P5-004`), align `Timer` button height on Group cards (`FB-P5-005`), rename `Sign Out` to `Logout` (`FB-P5-006`), stabilize Group `Filter` button layout (`FB-P5-007`), remove `(gateway_blocked_devices)` from Devices subtitle (`FB-P5-008`), format `Synced: HH:MM:SS` as 24-hour time underneath `Sync from OPNsense` (`FB-P5-009`), and bind `SQLITE_DB_PATH=/app/data/gateway.db` in `Settings.database_url` so groups, timers, and schedules persist across container restarts/rebuilds (`FB-P5-010`).
 - **Unit Testing Scope:**
   - Midnight-spanning window evaluation (`21:00` Monday → `07:00` Tuesday) across all 7 days of the week.
@@ -429,7 +429,7 @@ flowchart TD
   - Complete **Precedence Matrix Test Suite** covering every combination of Schedule + Bonus Timer + Pause Timer + Manual Block + Protected Flag.
   - DHCP IP change mid-schedule reconciliation tests.
   - Frontend Schedule Builder validation and status badge tests.
-- **Phase Exit & Check-in Gate:** Update Cycle 6 `docs/TEST_AND_BUG_LOG.md` → **Phase 6 Exit Analysis & Interactive Learnings Checkpoint** (`docs/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
+- **Phase Exit & Check-in Gate:** Update Cycle 6 `docs/development/TEST_AND_BUG_LOG.md` → **Phase 6 Exit Analysis & Interactive Learnings Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md` + waterfall adjustments to `PLAN.md`) → Git check-in.
 
 ---
 
@@ -442,13 +442,13 @@ flowchart TD
      - One-click JSON backup & restore of local metadata (device nicknames, groups, schedules) without exposing `.env` secrets.
   3. **Container & Security Hardening**:
      - Non-root container execution, Docker `HEALTHCHECK`, structured JSON logging, CSP/security headers, automatic SQLite audit-log retention pruning (e.g., 90 days), and comprehensive `README.md` self-hosting runbook.
-  4. **Phase 6 Waterfall Update 7A — Selective Application Blocking (YouTube vs. Plex), Application Usage Time Telemetry & UI Enhancements (`docs/FEATURE_BACKLOG.md` `FB-P6-001`..`FB-P6-005`)**:
+  4. **Phase 6 Waterfall Update 7A — Selective Application Blocking (YouTube vs. Plex), Application Usage Time Telemetry & UI Enhancements (`docs/development/FEATURE_BACKLOG.md` `FB-P6-001`..`FB-P6-005`)**:
      - Add single-device search filter in `ScheduleFormModal.tsx` (`FB-P6-001`), live per-second 24h system clock below `Logout` in `AppLayout.tsx` (`FB-P6-002`), `Local SQLite Store` storage size (`KB`/`MB`) and record count metrics in `/api/v1/system/health` & `StatusPage.tsx` (`FB-P6-003`), **YouTube & Plex Active Usage Time Tracking** (`active_minutes`, query/packet counts, and bandwidth from `logs-pfsense.log*` in `DeviceAnalyticsDrawer`, `GroupAnalyticsDrawer`, and `AnalyticsPage` — `FB-P6-004`), and **Selective Application Blocking for YouTube** (allowing Plex & general internet traffic via OPNsense `gateway_youtube_blocked_devices` + `gateway_youtube_domains` aliases — `FB-P6-005`).
 - **Unit & Integration Testing Scope:**
   - Audit log filtering, pagination, and retention pruning unit tests.
   - Config JSON export/import schema validation & duplicate-handling tests.
   - Full end-to-end API lifecycle test (Login → Discover Device → Group → Pause → Schedule → ES Analytics → Audit Log).
-- **Phase Exit & Check-in Gate:** Verify zero unresolved/un-dispositioned items in `docs/TEST_AND_BUG_LOG.md` → **Final Phase 7 Exit Analysis & Project Retrospective Checkpoint** (`docs/PHASE_EXIT_REPORTS.md`) → Git check-in & v1.0 release tag.
+- **Phase Exit & Check-in Gate:** Verify zero unresolved/un-dispositioned items in `docs/development/TEST_AND_BUG_LOG.md` → **Final Phase 7 Exit Analysis & Project Retrospective Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md`) → Git check-in & v1.0 release tag.
 
 ---
 
@@ -505,5 +505,39 @@ Before writing application code in **Phase 1**, let's confirm agreement on:
 - [x] **Software Stack:** Python 3.12 (`FastAPI`) + React (`TypeScript`, `Vite`, `Tailwind`, `Recharts`) + `SQLite` in a single multi-stage Docker container.
 - [x] **OPNsense Blocking Rule Approach:** Using `https://opnsense.example.local` (`192.168.1.1`) with a `Host(s)` alias (`gateway_blocked_devices`) blocking WAN/non-RFC1918 traffic + `kill_states` for instant cutoff while preserving local Dnsmasq DHCP renewals.
 - [x] **`.env` & Least-Privilege Scoping:** Scoped `svc_gateway_ui` OPNsense user + two-stage read-only Elasticsearch API key (7-day Phase 1 discovery key → index-locked Phase 3 production key).
-- [x] **7-Phase Living Plan, Exit Analyses & Learnings Checkpoints:** Moving sequentially through Phases 1 → 7 with `pytest` + `Vitest` unit tests, `docs/TEST_AND_BUG_LOG.md` (including deferred/waterfalled bug tracking), and an interactive **Phase-End Exit Analysis & Unplanned-Information Checkpoint** (`docs/PHASE_EXIT_REPORTS.md`) before each check-in and phase transition.
+- [x] **7-Phase Living Plan, Exit Analyses & Learnings Checkpoints:** Moving sequentially through Phases 1 → 7 with `pytest` + `Vitest` unit tests, `docs/development/TEST_AND_BUG_LOG.md` (including deferred/waterfalled bug tracking), and an interactive **Phase-End Exit Analysis & Unplanned-Information Checkpoint** (`docs/development/PHASE_EXIT_REPORTS.md`) before each check-in and phase transition.
 
+
+---
+
+## 9. `v1.1` Release Roadmap (`Phases 8 – 11` -> `v1.1.0`)
+
+Following the completion of `v1.0.1`, the `v1.1` release cycle is organized into **4 sequential phases (`Phase 8` through `Phase 11`)**, each governed by the same 5-Step Lifecycle and 3 Mandatory User Review Gates:
+
+### Phase 8 (`v1.0.2` — COMPLETE): Telemetry Accuracy Fixes, Bar Chart Axes/Selector, ES Shard Health & Global UI Polish (`FB-P8-001`..`FB-P8-007`)
+- **Deliverables:**
+  1. **YouTube & Plex Active-Time Accuracy Fix + Top 3 Devices per App (`FB-P8-001`, `FB-P8-002`):** Aggregate 5-minute slots per LAN device (`source.ip`) with an active-streaming event threshold (`min_doc_count >= 5`) to eliminate background keepalive inflation, and display the **Top 3 Devices and their active usage durations** inside each Application Usage Stats card.
+  2. **Blocked Firewall Packets Percentage (`FB-P8-003`):** Display `(XX.X%)` after the blocked packet count in the `Blocked Firewall Packets` KPI box across `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
+  3. **Bar Graph `Stacked` | `Total` Selector + X/Y Axis Labels (`FB-P8-004`, `FB-P8-005`):** Add a `Stacked` vs. `Total` view toggle and visible horizontal (X) and vertical (Y) axis labels/scales to all bar charts.
+  4. **Elasticsearch 9.4.3 Cluster Health & Shard Telemetry (`FB-P8-006`):** Query `GET /_cluster/health` in `ElasticsearchServiceClient.check_health()` and report `cluster_status` (`GREEN`/`YELLOW`/`RED`) and shard counts (`Assigned`, `Unassigned`, `Relocating`) on `StatusPage.tsx` (and document `cluster: ["monitor"]` in `docs/API_KEYS_SETUP.md`).
+  5. **Global EM-Dash (`—`) Removal & `Updated: HH:MM:SS` Below All Refresh Buttons (`FB-P8-007`).**
+
+### Phase 9 (`v1.0.3`): Plex Local LAN Usage Fix (`FB-P8-008`), First-Boot Admin Setup, Multi-User Accounts, UI Integration Settings & Per-User Audit Labels (`FB-P9-001`..`FB-P9-004`)
+- **Deliverables:**
+  1. **Waterfalled from Phase 8 — Plex Local LAN Client Streaming Detection (`FB-P8-008` / `BUG-P8-003`):** Capture same-subnet L2 Smart TV (`LGwebOSTV`) and LAN client Plex playback via `*.plex.direct` / `plex.tv` playback DNS domains (`analytics.plex.tv`, `discover.provider.plex.tv`, `luma.plex.tv`, `images.plex.tv`, `watch.plex.tv`, `scrobbles.plex.tv`), while separating Plex Media Server hosts (`.2`, `.250`) via `servers.plex.tv` sub-aggregation and 24/7 health pollers (`.3`) via poller heuristics (`>= 140` slots with zero playback/scrobble domains) and lowering the per-client Plex DNS slot threshold to `min_doc_count: 1`.
+  2. **NGINX-Style First-Boot `admin` Password Creation (`FB-P9-001`):** Prompt for initial `admin` password creation on clean container builds when no SQLite `admin` user exists and `ADMIN_PASSWORD` is unset/placeholder in `.env` (auto-seeding from `.env` if already set so existing deployments upgrade seamlessly).
+  3. **Multi-User Management (`Admin` vs. `Standard User / Operator`) & Default `admin` Protection (`FB-P9-003`):** Create/manage user accounts and passwords via the `System & Admin` console while enforcing that the built-in `admin` user cannot be deleted or disabled.
+  4. **UI Admin Panel for OPNsense & Elasticsearch Settings + Live Connectivity Diagnostics (`FB-P9-002`):** Persist UI-configured OPNsense and Elasticsearch connection variables in SQLite (encrypted at rest, taking runtime precedence over `.env` with a `Reset to .env` option) and provide a live Connectivity Test that surfaces detailed errors in the UI and logs diagnostic failures to `audit_logs`.
+  5. **Per-User Action Attribution & `audit_label` Badges (`FB-P9-004`).**
+
+### Phase 10 (`v1.0.4`): Firewall Activity & Security Inspector Tab (`FB-P10-001`)
+- **Deliverables:**
+  1. **Dedicated `Firewall & Security` Navigation Tab (`FirewallPage.tsx`):** Pass/Block/Direction KPI summary, `Pass` vs. `Block` timeline bar graph (with `Stacked`/`Total` toggle and X/Y axes), and a searchable/filterable `filterlog` event explorer.
+  2. **Side-by-Side Security Insights Panels:**
+     - **Noisy / Blocked LAN Devices & External Scanners** (with 1-click LAN device Block action).
+     - **Active Inbound WAN Exposure (Passed External -> Internal Ports)** highlighting any internal `IP:Port` accepting inbound traffic from public WAN IPs.
+
+### Phase 11 (`v1.1.0`): Custom Unicorn Rainbow Branding & User Color Themes (`FB-P11-001`, `FB-P11-002`)
+- **Deliverables:**
+  1. **Unicorn Side-Profile with Rainbow Horn Icon & Browser Favicon (`FB-P11-001`):** Replace the shield icon in the header, login screen, and browser tab `<link rel="icon">` with a custom SVG side-profile Unicorn featuring a rainbow horn.
+  2. **Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes (`FB-P11-002`):** Clicking the user's Name in the top header opens User Settings with a per-user persisted selector for **3 Dark-Room-Friendly Color Themes** (`Default Slate`, `Crimson & Obsidian` soft light/dark red on black, and `Ocean & Navy` soft light/dark blue on deep navy).

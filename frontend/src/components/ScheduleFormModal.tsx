@@ -426,7 +426,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-300">
               Target:{' '}
               <strong className="text-white">
-                {editingSchedule.target_type === 'group' ? 'Group' : 'Device'} —{' '}
+                {editingSchedule.target_type === 'group' ? 'Group' : 'Device'},{' '}
                 {editingSchedule.target_name}
               </strong>
             </div>

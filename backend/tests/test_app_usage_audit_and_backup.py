@@ -32,13 +32,18 @@ from app.services.audit_and_backup_service import (
 )
 
 
-def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction() -> None:
-    """Verify `_build_app_usage_agg` and `_extract_app_usage` compute 5-min active buckets."""
-    agg_dsl = _build_app_usage_agg("America/Los_Angeles")
+def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction(
+    test_settings: Settings,
+) -> None:
+    """Verify `_build_app_usage_agg` and `_extract_app_usage` compute 5m slots and top 3 devices."""
+    from app.models import Device
+    from app.services.analytics_service import _parse_app_usage_items
+
+    agg_dsl = _build_app_usage_agg("America/Los_Angeles", excluded_ips=["192.168.1.1"])
     assert "youtube" in agg_dsl["filters"]["filters"]
     assert "plex" in agg_dsl["filters"]["filters"]
 
-    overview_q = build_network_overview_query("24h", "UTC")
+    overview_q = build_network_overview_query("24h", "UTC", excluded_ips=["192.168.1.1"])
     device_q = build_device_analytics_query("192.168.1.60", "24h", "UTC")
     group_q = build_group_analytics_query(["192.168.1.60", "192.168.1.61"], "24h", "UTC")
     assert "app_usage" in overview_q["aggs"]
@@ -55,7 +60,54 @@ def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction() -> No
                             {"key_as_string": "2026-11-01T18:00:00Z", "doc_count": 12},
                             {"key_as_string": "2026-11-01T18:05:00Z", "doc_count": 19},
                             {"key_as_string": "2026-11-01T18:10:00Z", "doc_count": 17},
+                            {"key_as_string": "2026-11-01T18:15:00Z", "doc_count": 2},
                         ]
+                    },
+                    "by_device": {
+                        "devices": {
+                            "buckets": [
+                                {
+                                    "key": "192.168.1.60",
+                                    "doc_count": 31,
+                                    "bytes": {"value": 95_000_000},
+                                    "dns_queries": {"doc_count": 20},
+                                    "port_32400": {"doc_count": 0},
+                                    "active_slots": {
+                                        "buckets": [
+                                            {"key_as_string": "t1", "doc_count": 12},
+                                            {"key_as_string": "t2", "doc_count": 19},
+                                        ]
+                                    },
+                                },
+                                {
+                                    "key": "192.168.1.61",
+                                    "doc_count": 17,
+                                    "bytes": {"value": 30_000_000},
+                                    "dns_queries": {"doc_count": 12},
+                                    "port_32400": {"doc_count": 0},
+                                    "active_slots": {
+                                        "buckets": [
+                                            {"key_as_string": "t3", "doc_count": 17},
+                                            {"key_as_string": "t4", "doc_count": 2},
+                                        ]
+                                    },
+                                },
+                                {
+                                    # Router filterdns noise (>140 slots with 0 bytes on .1)
+                                    "key": "192.168.1.1",
+                                    "doc_count": 960,
+                                    "bytes": {"value": 0},
+                                    "dns_queries": {"doc_count": 960},
+                                    "port_32400": {"doc_count": 0},
+                                    "active_slots": {
+                                        "buckets": [
+                                            {"key_as_string": f"slot-{i}", "doc_count": 5}
+                                            for i in range(150)
+                                        ]
+                                    },
+                                },
+                            ]
+                        }
                     },
                     "bytes": {"value": 125_000_000},
                     "dns_queries": {"doc_count": 32},
@@ -84,11 +136,38 @@ def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction() -> No
     yt, plex = extracted[0], extracted[1]
     assert yt["app_key"] == "youtube"
     assert yt["display_name"] == "YouTube"
-    assert yt["active_minutes"] == 15  # 3 slots * 5m
+    assert yt["active_minutes"] == 15  # 3 valid device slots * 5m
+    assert len(yt["top_devices"]) == 2
+    assert yt["top_devices"][0]["ipv4_address"] == "192.168.1.60"
+    assert yt["top_devices"][0]["active_minutes"] == 10
+    assert yt["top_devices"][1]["ipv4_address"] == "192.168.1.61"
+    assert yt["top_devices"][1]["active_minutes"] == 5
     assert yt["event_count"] == 48
     assert yt["dns_queries"] == 32
     assert yt["bytes"] == 125_000_000
     assert yt["last_active_at"] == "2026-11-01T18:12:40Z"
+
+    dev_row = Device(
+        id=42,
+        mac_address="aa:bb:cc:dd:ee:60",
+        ipv4_address="192.168.1.60",
+        display_name="Living Room Apple TV",
+        is_online=True,
+        is_blocked=False,
+        is_manually_blocked=False,
+        is_youtube_blocked=False,
+        is_protected=False,
+        notes="",
+    )
+    enriched_items = _parse_app_usage_items(
+        {"application_usage": extracted},
+        sqlite_devices=[dev_row],
+        settings=test_settings,
+    )
+    assert enriched_items[0].top_devices[0].device_id == 42
+    assert enriched_items[0].top_devices[0].effective_name == "Living Room Apple TV"
+    assert enriched_items[0].top_devices[1].device_id is None
+    assert enriched_items[0].top_devices[1].effective_name == "192.168.1.61"
 
     assert plex["app_key"] == "plex"
     assert plex["display_name"] == "Plex"

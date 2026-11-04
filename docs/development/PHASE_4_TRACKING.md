@@ -4,7 +4,7 @@
 > **Branch:** `phase4`  
 > **Complexity Rating:** **3 / 5 (Medium)**  
 > **Status:** `COMPLETE (Ready for CP-4.5 Sign-Off & Git Push)`  
-> **Master Plan Reference:** [PLAN.md](PLAN.md) | [docs/PHASE_EXIT_REPORTS.md](docs/PHASE_EXIT_REPORTS.md) | [docs/FEATURE_BACKLOG.md](docs/FEATURE_BACKLOG.md)
+> **Master Plan Reference:** [PLAN.md](PLAN.md) | [docs/development/PHASE_EXIT_REPORTS.md](docs/development/PHASE_EXIT_REPORTS.md) | [docs/development/FEATURE_BACKLOG.md](docs/development/FEATURE_BACKLOG.md)
 
 ---
 
@@ -57,7 +57,7 @@ flowchart LR
 | **Step 4.2** | `CP-4.2` | `GroupService` (CRUD, State Calculation, Bulk Block/Unblock, Group Analytics) & `/api/v1/groups` Endpoints + Unit Tests | `[x] Complete` | 2026-10-31 |
 | **Step 4.3** | `CP-4.3` | React Group Summary Cards, Create/Edit Group & Member Modal, Group Analytics Drawer & Device Group Filter + Unit Tests | `[x] Complete` | 2026-10-31 |
 | **Step 4.4** | `CP-4.4` | Docker Container Rebuild (`http://localhost:8080`) & Live Group Block/Unblock + Group Analytics Smoke Verification | `[x] Complete` | 2026-10-31 |
-| **Step 4.5** | `CP-4.5` | Phase 4 Feedback Backlog (`docs/FEATURE_BACKLOG.md`), QA Gate, Bug Ledger, Exit Analysis, Learnings Checkpoint & Git Push | `[x] Ready for Sign-Off` | 2026-10-31 |
+| **Step 4.5** | `CP-4.5` | Phase 4 Feedback Backlog (`docs/development/FEATURE_BACKLOG.md`), QA Gate, Bug Ledger, Exit Analysis, Learnings Checkpoint & Git Push | `[x] Ready for Sign-Off` | 2026-10-31 |
 
 ---
 
@@ -111,8 +111,8 @@ flowchart LR
 ### Step 4.5 — Phase 4 QA Audit, Feedback Backlog, Exit Analysis, Learnings Checkpoint & Git Check-in
 - **Tasks:**
   - [x] Run full backend and frontend quality gates (`87/87` backend tests at `96%` coverage; `12/12` frontend tests at `94.06%` coverage).
-  - [x] Finalize all Phase 4 entries in [docs/TEST_AND_BUG_LOG.md](docs/TEST_AND_BUG_LOG.md) (`BUG-P4-001`).
-  - [x] Log all 11 user UI/feature review items in [docs/FEATURE_BACKLOG.md](docs/FEATURE_BACKLOG.md) for systematic phase-by-phase review.
-  - [x] Complete **Phase 4 Exit Report** in [docs/PHASE_EXIT_REPORTS.md](docs/PHASE_EXIT_REPORTS.md) and waterfall scheduled items into [PLAN.md](PLAN.md).
+  - [x] Finalize all Phase 4 entries in [docs/development/TEST_AND_BUG_LOG.md](docs/development/TEST_AND_BUG_LOG.md) (`BUG-P4-001`).
+  - [x] Log all 11 user UI/feature review items in [docs/development/FEATURE_BACKLOG.md](docs/development/FEATURE_BACKLOG.md) for systematic phase-by-phase review.
+  - [x] Complete **Phase 4 Exit Report** in [docs/development/PHASE_EXIT_REPORTS.md](docs/development/PHASE_EXIT_REPORTS.md) and waterfall scheduled items into [PLAN.md](PLAN.md).
 - **Checkpoint `CP-4.5` (Phase 4 Exit Sign-Off):**
-  - [ ] Review Phase 4 Exit Report & `docs/FEATURE_BACKLOG.md` with user, commit to `phase4` branch, merge to `main`, and push to GitHub.
+  - [ ] Review Phase 4 Exit Report & `docs/development/FEATURE_BACKLOG.md` with user, commit to `phase4` branch, merge to `main`, and push to GitHub.
