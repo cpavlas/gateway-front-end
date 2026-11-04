@@ -18,6 +18,7 @@ import {
 import { AuthProvider } from '../context/AuthContext'
 import { AppLayout } from '../components/AppLayout'
 import { ScheduleFormModal } from '../components/ScheduleFormModal'
+import { LoginPage } from '../pages/LoginPage'
 import { StatusPage } from '../pages/StatusPage'
 import { DevicesPage } from '../pages/DevicesPage'
 import { AnalyticsPage } from '../pages/AnalyticsPage'
@@ -720,5 +721,291 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     expect(screen.getByTestId('es-shards-unassigned')).toHaveTextContent('0')
     expect(screen.getByTestId('es-shards-relocating')).toHaveTextContent('0')
     expect(screen.getByTestId('status-last-updated')).toHaveTextContent(/Updated:/i)
+  })
+
+  it('Phase 9 (FB-P9-001): renders First-Boot admin password creation workflow on LoginPage and submits setupInitialAdmin', async () => {
+    vi.spyOn(apiClient, 'getCurrentUser').mockRejectedValue(new Error('401'))
+    const setupSpy = vi.spyOn(apiClient, 'setupInitialAdmin').mockResolvedValue({
+      username: 'admin',
+      authenticated: true,
+      expires_at: '2026-11-04T23:59:59Z',
+      role: 'admin',
+      theme_preference: 'default',
+    })
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <LoginPage initialSetupRequired={true} />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByTestId('first-boot-setup-form')).toBeInTheDocument()
+
+    // Short password triggers validation alert
+    await user.type(screen.getByLabelText(/New Administrator Password/i), 'short')
+    await user.click(screen.getByTestId('setup-admin-submit-btn'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at least 8 characters/i)
+
+    // Mismatched confirmation password triggers validation alert
+    const pwdInput = screen.getByLabelText(/New Administrator Password/i)
+    const confirmInput = screen.getByLabelText(/Confirm New Password/i)
+    await user.clear(pwdInput)
+    await user.type(pwdInput, 'StrongFirstBoot!2026')
+    await user.type(confirmInput, 'DifferentPass!2026')
+    await user.click(screen.getByTestId('setup-admin-submit-btn'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i)
+
+    // Matching passwords submit setupInitialAdmin
+    await user.clear(confirmInput)
+    await user.type(confirmInput, 'StrongFirstBoot!2026')
+    await user.click(screen.getByTestId('setup-admin-submit-btn'))
+    await waitFor(() => {
+      expect(setupSpy).toHaveBeenCalledWith({
+        password: 'StrongFirstBoot!2026',
+        confirm_password: 'StrongFirstBoot!2026',
+      })
+    })
+  })
+
+  it('Phase 9 (FB-P9-002, FB-P9-003, FB-P9-004): manages Integration Settings, Connectivity Diagnostics, Multi-User Accounts, and Audit Labels on StatusPage', async () => {
+    vi.spyOn(apiClient, 'getSystemHealth').mockResolvedValue({
+      overall_status: 'healthy',
+      version: '1.0.3',
+      services: {
+        sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1, message: 'OK' },
+        opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 10, message: 'OK' },
+        elasticsearch: {
+          service: 'elasticsearch',
+          status: 'healthy',
+          latency_ms: 8,
+          message: 'OK',
+        },
+      },
+    })
+    vi.spyOn(apiClient, 'getIntegrationSettings').mockResolvedValue({
+      source: 'env',
+      opnsense_base_url: 'https://192.168.1.1',
+      has_opnsense_api_key: true,
+      opnsense_api_key_masked: '••••••••',
+      has_opnsense_api_secret: true,
+      opnsense_api_secret_masked: '••••••••',
+      opnsense_verify_ssl: false,
+      opnsense_ca_cert_path: '',
+      opnsense_timeout_seconds: 10,
+      opnsense_protected_ips: '192.168.1.1',
+      elasticsearch_url: 'https://192.168.1.10:9200',
+      has_elasticsearch_api_key: true,
+      elasticsearch_api_key_masked: '••••••••',
+      elasticsearch_verify_ssl: false,
+      elasticsearch_ca_cert_path: '',
+      elasticsearch_timeout_seconds: 10,
+      elasticsearch_index_patterns: 'logs-pfsense.log*',
+    })
+    const updateSettingsSpy = vi
+      .spyOn(apiClient, 'updateIntegrationSettings')
+      .mockResolvedValue({
+        source: 'ui_override',
+        opnsense_base_url: 'https://192.168.1.254',
+        has_opnsense_api_key: true,
+        opnsense_api_key_masked: '••••••••',
+        has_opnsense_api_secret: true,
+        opnsense_api_secret_masked: '••••••••',
+        opnsense_verify_ssl: false,
+        opnsense_ca_cert_path: '',
+        opnsense_timeout_seconds: 10,
+        opnsense_protected_ips: '192.168.1.1',
+        elasticsearch_url: 'https://192.168.1.10:9200',
+        has_elasticsearch_api_key: true,
+        elasticsearch_api_key_masked: '••••••••',
+        elasticsearch_verify_ssl: false,
+        elasticsearch_ca_cert_path: '',
+        elasticsearch_timeout_seconds: 10,
+        elasticsearch_index_patterns: 'logs-pfsense.log*',
+      })
+    const resetSettingsSpy = vi
+      .spyOn(apiClient, 'resetIntegrationSettings')
+      .mockResolvedValue({
+        source: 'env',
+        opnsense_base_url: 'https://192.168.1.1',
+        has_opnsense_api_key: true,
+        opnsense_api_key_masked: '••••••••',
+        has_opnsense_api_secret: true,
+        opnsense_api_secret_masked: '••••••••',
+        opnsense_verify_ssl: false,
+        opnsense_ca_cert_path: '',
+        opnsense_timeout_seconds: 10,
+        opnsense_protected_ips: '192.168.1.1',
+        elasticsearch_url: 'https://192.168.1.10:9200',
+        has_elasticsearch_api_key: true,
+        elasticsearch_api_key_masked: '••••••••',
+        elasticsearch_verify_ssl: false,
+        elasticsearch_ca_cert_path: '',
+        elasticsearch_timeout_seconds: 10,
+        elasticsearch_index_patterns: 'logs-pfsense.log*',
+      })
+    vi.spyOn(apiClient, 'testOpnsenseConnectivity').mockResolvedValue({
+      service: 'opnsense',
+      reachable: false,
+      status: 'unhealthy',
+      latency_ms: 42.5,
+      message: 'HTTP 403 Forbidden',
+      error_diagnostic: 'HTTP 403 Authentication/Authorization Rejected',
+      troubleshooting_hint: 'Verify svc_gateway_ui ACL privileges.',
+    })
+    vi.spyOn(apiClient, 'testElasticsearchConnectivity').mockResolvedValue({
+      service: 'elasticsearch',
+      reachable: true,
+      status: 'healthy',
+      latency_ms: 11.2,
+      message: 'Elasticsearch 9.4.3 connected.',
+    })
+
+    vi.spyOn(apiClient, 'getUsers').mockResolvedValue({
+      users: [
+        {
+          id: 1,
+          username: 'admin',
+          role: 'admin',
+          is_active: true,
+          is_protected_admin: true,
+          theme_preference: 'default',
+          created_at: '2026-11-01T00:00:00Z',
+          updated_at: '2026-11-01T00:00:00Z',
+        },
+        {
+          id: 2,
+          username: 'operator_1',
+          role: 'operator',
+          is_active: true,
+          is_protected_admin: false,
+          theme_preference: 'default',
+          created_at: '2026-11-02T00:00:00Z',
+          updated_at: '2026-11-02T00:00:00Z',
+        },
+      ],
+    })
+    const createUserSpy = vi.spyOn(apiClient, 'createUser').mockResolvedValue({
+      id: 3,
+      username: 'operator_2',
+      role: 'operator',
+      is_active: true,
+      is_protected_admin: false,
+      theme_preference: 'default',
+      created_at: '2026-11-04T00:00:00Z',
+      updated_at: '2026-11-04T00:00:00Z',
+    })
+    const updateUserSpy = vi.spyOn(apiClient, 'updateUser').mockResolvedValue({
+      id: 2,
+      username: 'operator_1',
+      role: 'operator',
+      is_active: false,
+      is_protected_admin: false,
+      theme_preference: 'default',
+      created_at: '2026-11-02T00:00:00Z',
+      updated_at: '2026-11-04T00:00:00Z',
+    })
+    const deleteUserSpy = vi.spyOn(apiClient, 'deleteUser').mockResolvedValue({
+      deleted_user_id: 2,
+      username: 'operator_1',
+    })
+    vi.spyOn(apiClient, 'getAuditLogs').mockResolvedValue({
+      total_count: 1,
+      items: [
+        {
+          id: 901,
+          actor: 'admin',
+          action: 'diagnostic.opnsense',
+          audit_label: 'DIAGNOSTIC_ERROR',
+          target: 'https://192.168.1.254',
+          status: 'failed',
+          details: 'HTTP 403 Forbidden',
+          created_at: '2026-11-04T01:00:00Z',
+        },
+      ],
+    })
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <StatusPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // 1. Expand Integration Settings & Connectivity Diagnostics
+    await user.click(await screen.findByTestId('toggle-integration-settings-btn'))
+    expect(await screen.findByTestId('input-opnsense-url')).toHaveValue('https://192.168.1.1')
+
+    // Test OPNsense connectivity failure -> displays diagnostic & hint
+    await user.click(screen.getByTestId('test-opnsense-btn'))
+    expect(await screen.findByTestId('connectivity-diagnostic-result')).toHaveTextContent(
+      /FAILED/i,
+    )
+    expect(screen.getByTestId('diagnostic-error-detail')).toHaveTextContent(/403/i)
+    expect(screen.getByTestId('diagnostic-troubleshooting-hint')).toHaveTextContent(
+      /svc_gateway_ui/i,
+    )
+
+    // Test Elasticsearch connectivity success
+    await user.click(screen.getByTestId('test-elasticsearch-btn'))
+    await waitFor(() => {
+      expect(screen.getByTestId('connectivity-diagnostic-result')).toHaveTextContent(
+        /REACHABLE/i,
+      )
+    })
+
+    // Save Integration Settings & Reset to .env Defaults
+    await user.clear(screen.getByTestId('input-opnsense-url'))
+    await user.type(screen.getByTestId('input-opnsense-url'), 'https://192.168.1.254')
+    await user.click(screen.getByTestId('save-settings-btn'))
+    await waitFor(() => {
+      expect(updateSettingsSpy).toHaveBeenCalled()
+    })
+    await user.click(screen.getByTestId('reset-settings-btn'))
+    await waitFor(() => {
+      expect(resetSettingsSpy).toHaveBeenCalled()
+    })
+
+    // 2. Expand User Accounts & Access Management
+    await user.click(screen.getByTestId('toggle-user-management-btn'))
+    expect(await screen.findByTestId('protected-admin-badge')).toHaveTextContent(
+      'Protected Default Admin',
+    )
+    expect(screen.getByTestId('toggle-user-active-admin')).toBeDisabled()
+    expect(screen.getByTestId('delete-user-admin')).toBeDisabled()
+
+    // Create new user
+    await user.type(screen.getByTestId('new-user-username'), 'operator_2')
+    await user.type(screen.getByTestId('new-user-password'), 'OperatorPass!123')
+    await user.click(screen.getByTestId('create-user-submit-btn'))
+    await waitFor(() => {
+      expect(createUserSpy).toHaveBeenCalled()
+    })
+
+    // Toggle active and delete non-admin user
+    await user.click(screen.getByTestId('toggle-user-active-operator_1'))
+    await waitFor(() => {
+      expect(updateUserSpy).toHaveBeenCalledWith(2, { is_active: false })
+    })
+    await user.click(screen.getByTestId('delete-user-operator_1'))
+    await waitFor(() => {
+      expect(deleteUserSpy).toHaveBeenCalledWith(2)
+    })
+
+    // 3. Load Audit Logs & verify Audit Label badge + filter
+    await user.click(screen.getByTestId('load-audit-logs-btn'))
+    expect(await screen.findByTestId('audit-label-badge')).toHaveTextContent(
+      'DIAGNOSTIC_ERROR',
+    )
+    await user.selectOptions(
+      screen.getByTestId('audit-label-filter'),
+      'DIAGNOSTIC_ERROR',
+    )
   })
 })

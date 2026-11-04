@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +14,36 @@ DEFAULT_GATEWAY_IP = "192.168.1.1"
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/gateway.db"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
+
+PLACEHOLDER_ADMIN_PASSWORDS = frozenset(
+    {
+        "",
+        "replace_with_strong_admin_password",
+        "change-me-admin-password",
+        "change_me_on_first_login",
+        "changeme",
+        "setup_on_first_login",
+    }
+)
+
+_runtime_overrides: dict[str, Any] = {}
+
+
+def set_runtime_overrides(overrides: dict[str, Any]) -> None:
+    """Replace active in-memory runtime settings overrides loaded from SQLite."""
+    global _runtime_overrides
+    _runtime_overrides = dict(overrides)
+
+
+def clear_runtime_overrides() -> None:
+    """Clear all in-memory runtime settings overrides (reverting to .env defaults)."""
+    global _runtime_overrides
+    _runtime_overrides = {}
+
+
+def get_runtime_overrides() -> dict[str, Any]:
+    """Return a shallow copy of active in-memory runtime settings overrides."""
+    return dict(_runtime_overrides)
 
 
 class Settings(BaseSettings):
@@ -33,7 +63,7 @@ class Settings(BaseSettings):
 
     app_secret_key: SecretStr
     admin_username: str = Field(default="admin", min_length=1)
-    admin_password: SecretStr
+    admin_password: SecretStr = Field(default=SecretStr(""))
     session_expire_minutes: int = Field(default=720, ge=5, le=43200)
     auth_rate_limit_attempts: int = Field(default=5, ge=1, le=100)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=5, le=3600)
@@ -43,8 +73,8 @@ class Settings(BaseSettings):
 
     # 2. OPNsense Integration (OPNsense 26.7.7-amd64)
     opnsense_base_url: str = "https://opnsense.example.local"
-    opnsense_api_key: SecretStr
-    opnsense_api_secret: SecretStr
+    opnsense_api_key: SecretStr = Field(default=SecretStr(""))
+    opnsense_api_secret: SecretStr = Field(default=SecretStr(""))
     opnsense_verify_ssl: bool = True
     opnsense_ca_cert_path: str = ""
     opnsense_timeout_seconds: float = Field(default=10.0, gt=0.5, le=120.0)
@@ -59,7 +89,7 @@ class Settings(BaseSettings):
 
     # 3. Elasticsearch 9.4.3 Integration (Elastic pfSense Integration 1.25.4)
     elasticsearch_url: str = "https://elasticsearch.example.local:9200"
-    elasticsearch_api_key: SecretStr
+    elasticsearch_api_key: SecretStr = Field(default=SecretStr(""))
     elasticsearch_verify_ssl: bool = True
     elasticsearch_ca_cert_path: str = ""
     elasticsearch_timeout_seconds: float = Field(default=15.0, gt=0.5, le=120.0)
@@ -79,11 +109,20 @@ class Settings(BaseSettings):
     @classmethod
     def validate_admin_password(cls, value: SecretStr) -> SecretStr:
         raw = value.get_secret_value().strip()
-        if not raw or raw == "REPLACE_WITH_STRONG_ADMIN_PASSWORD":
-            raise ValueError(
-                "ADMIN_PASSWORD must be set to a real password, not empty or the placeholder."
-            )
+        if raw.lower() in PLACEHOLDER_ADMIN_PASSWORDS:
+            return SecretStr("")
         return SecretStr(raw)
+
+    @property
+    def has_configured_env_admin_password(self) -> bool:
+        """Return True if a non-placeholder ADMIN_PASSWORD was supplied in .env."""
+        raw_val = (
+            self.admin_password.get_secret_value()
+            if isinstance(self.admin_password, SecretStr)
+            else str(self.admin_password)
+        )
+        raw = raw_val.strip()
+        return bool(raw) and raw.lower() not in PLACEHOLDER_ADMIN_PASSWORDS
 
     @field_validator("opnsense_base_url", "elasticsearch_url")
     @classmethod
@@ -139,3 +178,20 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached singleton Settings instance."""
     return Settings()  # type: ignore[call-arg]
+
+
+def apply_runtime_overrides(base_settings: Settings) -> Settings:
+    """Return a `Settings` instance with active SQLite UI overrides applied over `.env` defaults."""
+    if not _runtime_overrides:
+        return base_settings
+    updates: dict[str, Any] = {}
+    for key, val in _runtime_overrides.items():
+        if key in (
+            "opnsense_api_key",
+            "opnsense_api_secret",
+            "elasticsearch_api_key",
+        ):
+            updates[key] = val if isinstance(val, SecretStr) else SecretStr(str(val))
+        else:
+            updates[key] = val
+    return base_settings.model_copy(update=updates)
