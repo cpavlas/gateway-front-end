@@ -23,6 +23,7 @@ import {
   formatClock24h,
   type TimeWindow,
 } from '../api/client'
+import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 
 interface DeviceAnalyticsDrawerProps {
@@ -47,6 +48,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
   const [windowKey, setWindowKey] = useState<TimeWindow>(initialWindow)
   const [domainSearch, setDomainSearch] = useState('')
   const [actionBanner, setActionBanner] = useState<string | null>(null)
+  const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const {
     data: analytics,
@@ -62,6 +64,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
         domain_search: domainSearch.trim() || undefined,
       }),
     enabled: deviceId !== null,
+    refetchInterval,
     placeholderData: (previousData) => previousData,
   })
 
@@ -250,24 +253,32 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
           </div>
 
           <div className="flex flex-col items-end gap-0.5">
-            <button
-              type="button"
-              data-testid="drawer-refresh-btn"
-              onClick={() => {
-                refreshMutation.mutate()
-                void refetch()
-              }}
-              disabled={isFetching || refreshMutation.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${
-                  isFetching || refreshMutation.isPending ? 'animate-spin' : ''
-                }`}
-                aria-hidden="true"
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="drawer-refresh-btn"
+                onClick={() => {
+                  refreshMutation.mutate()
+                  void refetch()
+                }}
+                disabled={isFetching || refreshMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${
+                    isFetching || refreshMutation.isPending ? 'animate-spin' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>Refresh Telemetry</span>
+              </button>
+              <AutoRefreshSelector
+                value={intervalOption}
+                onChange={setIntervalOption}
+                testId="drawer-auto-refresh-select"
+                compact
               />
-              <span>Refresh Telemetry</span>
-            </button>
+            </div>
             {lastUpdatedClock && (
               <span
                 data-testid="drawer-last-updated"

@@ -22,6 +22,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { StatusPage } from '../pages/StatusPage'
 import { DevicesPage } from '../pages/DevicesPage'
 import { AnalyticsPage } from '../pages/AnalyticsPage'
+import { FirewallPage } from '../pages/FirewallPage'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
 
@@ -149,7 +150,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
           editingSchedule={null}
           groups={[SAMPLE_GROUP]}
           devices={SAMPLE_DEVICES}
-          onClose={() => {}}
+          onClose={() => { }}
         />
       </QueryClientProvider>,
     )
@@ -530,7 +531,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     const qc = createTestQueryClient()
     const { unmount } = render(
       <QueryClientProvider client={qc}>
-        <DeviceAnalyticsDrawer deviceId={10} onClose={() => {}} />
+        <DeviceAnalyticsDrawer deviceId={10} onClose={() => { }} />
       </QueryClientProvider>,
     )
 
@@ -545,7 +546,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
 
     render(
       <QueryClientProvider client={qc}>
-        <GroupAnalyticsDrawer groupId={1} onClose={() => {}} />
+        <GroupAnalyticsDrawer groupId={1} onClose={() => { }} />
       </QueryClientProvider>,
     )
 
@@ -1007,5 +1008,228 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
       screen.getByTestId('audit-label-filter'),
       'DIAGNOSTIC_ERROR',
     )
+  })
+
+  it('Phase 10 (FB-P10-001): renders Firewall & Security tab, KPIs, timeline, noisy LAN 1-click block, open WAN ports, and log explorer', async () => {
+    vi.spyOn(apiClient, 'getSystemHealth').mockResolvedValue({
+      overall_status: 'healthy',
+      version: '1.0.4',
+      services: {
+        sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1, message: 'OK' },
+        opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 8, message: 'OK' },
+        elasticsearch: {
+          service: 'elasticsearch',
+          status: 'healthy',
+          latency_ms: 6,
+          message: 'OK',
+        },
+      },
+    })
+
+    const firewallSpy = vi.spyOn(apiClient, 'getFirewallOverview').mockResolvedValue({
+      window: '24h',
+      generated_at: '2026-11-04T15:30:00Z',
+      es_reachable: true,
+      warning: null,
+      summary: {
+        total_packets: 2500,
+        allowed_packets: 2000,
+        blocked_packets: 500,
+        inbound_packets: 600,
+        outbound_packets: 1900,
+        total_bytes: 5242880,
+        open_wan_port_count: 1,
+      },
+      timeline: [
+        {
+          timestamp: '2026-11-04T14:00:00Z',
+          total_events: 1500,
+          bytes: 3145728,
+          dns_queries: 0,
+          allowed_packets: 1200,
+          blocked_packets: 300,
+        },
+        {
+          timestamp: '2026-11-04T15:00:00Z',
+          total_events: 1000,
+          bytes: 2097152,
+          dns_queries: 0,
+          allowed_packets: 800,
+          blocked_packets: 200,
+        },
+      ],
+      noisy_lan_devices: [
+        {
+          device_id: 10,
+          ipv4_address: '192.168.1.55',
+          effective_name: 'Garage IoT Camera',
+          mac_address: 'AA:BB:CC:DD:EE:55',
+          is_online: true,
+          is_blocked: false,
+          is_protected: false,
+          blocked_packets: 320,
+          bytes: 32000,
+          target_ports: [443, 8883],
+          last_seen_at: '2026-11-04T15:28:00Z',
+        },
+      ],
+      external_scanners: [
+        {
+          source_ip: '185.220.101.9',
+          organization: 'Tor Exit Node Org',
+          blocked_packets: 180,
+          bytes: 10800,
+          target_ports: [22, 3389],
+          last_seen_at: '2026-11-04T15:25:00Z',
+        },
+      ],
+      open_wan_ports: [
+        {
+          device_id: 20,
+          destination_ip: '192.168.1.200',
+          effective_name: 'Media NAS Server',
+          destination_port: 32400,
+          protocol: 'tcp',
+          passed_packets: 45,
+          bytes: 512000,
+          unique_external_sources: 3,
+          last_seen_at: '2026-11-04T15:20:00Z',
+        },
+      ],
+      recent_events: [
+        {
+          timestamp: '2026-11-04T15:28:00Z',
+          action: 'block',
+          direction: 'outbound',
+          protocol: 'tcp',
+          interface: 'vtnet1',
+          source_ip: '192.168.1.55',
+          source_name: 'Garage IoT Camera',
+          source_port: 51234,
+          source_org: null,
+          destination_ip: '93.184.216.34',
+          destination_name: null,
+          destination_port: 443,
+          destination_org: 'Edgecast',
+          bytes: 60,
+          rule_id: 'rule-101',
+        },
+      ],
+    })
+
+    const blockSpy = vi.spyOn(apiClient, 'blockDevice').mockResolvedValue({
+      device: {
+        id: 10,
+        mac_address: 'AA:BB:CC:DD:EE:55',
+        ipv4_address: '192.168.1.55',
+        hostname: 'iot-camera',
+        display_name: 'Garage IoT Camera',
+        effective_name: 'Garage IoT Camera',
+        interface_name: 'lan',
+        lease_type: 'dynamic',
+        protection_reason: null,
+        notes: '',
+        vendor: null,
+        is_online: true,
+        is_blocked: true,
+        is_youtube_blocked: false,
+        is_protected: false,
+        first_seen_at: '2026-11-01T00:00:00Z',
+        last_seen_at: '2026-11-04T15:28:00Z',
+        updated_at: '2026-11-04T15:30:00Z',
+      },
+      action: 'block',
+      // reconciled_ip removed
+      states_killed: true,
+      warning: null,
+    })
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <FirewallPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // Verify KPIs
+    expect(await screen.findByTestId('firewall-kpi-total-packets')).toHaveTextContent(
+      '2,500',
+    )
+    expect(screen.getByTestId('firewall-kpi-allowed-packets')).toHaveTextContent(
+      '2,000',
+    )
+    expect(screen.getByTestId('firewall-kpi-blocked-pct')).toHaveTextContent('(20.0%)')
+    expect(screen.getByTestId('firewall-kpi-open-ports')).toHaveTextContent(
+      '1 Open WAN Ports',
+    )
+    expect(screen.getByTestId('firewall-last-updated')).toHaveTextContent(/Updated:/i)
+
+    // Verify Auto-Refresh Interval Selector (FB-P10-002)
+    const autoRefreshSelect = screen.getByTestId('firewall-auto-refresh-select')
+    expect(autoRefreshSelect).toHaveValue('30s')
+    await user.selectOptions(autoRefreshSelect, '5s')
+    expect(autoRefreshSelect).toHaveValue('5s')
+    await user.selectOptions(autoRefreshSelect, 'off')
+    expect(autoRefreshSelect).toHaveValue('off')
+    expect(screen.getByTestId('firewall-open-port-row-32400')).toHaveTextContent(
+      '32400:32400 / TCP',
+    )
+
+    // Verify Timeline Bar Chart (Allowed vs Blocked segments + Stacked | Total toggle)
+    expect(screen.getByTestId('firewall-timeline-y-axis')).toHaveTextContent('Events')
+    expect(screen.getAllByTestId('timeline-allowed-segment').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('timeline-blocked-segment').length).toBeGreaterThan(0)
+    await user.click(screen.getByTestId('firewall-timeline-mode-total'))
+    expect(screen.getAllByTestId('timeline-total-segment').length).toBeGreaterThan(0)
+
+    // Verify Noisy LAN Device & 1-click Block Device button
+    expect(
+      within(screen.getByTestId('firewall-noisy-lan-list')).getByText(
+        'Garage IoT Camera',
+      ),
+    ).toBeInTheDocument()
+    await user.click(screen.getByTestId('firewall-block-device-10'))
+    await waitFor(() => {
+      expect(blockSpy).toHaveBeenCalledWith(10)
+    })
+    expect(await screen.findByTestId('firewall-action-banner')).toHaveTextContent(
+      /Blocked Garage IoT Camera/i,
+    )
+
+    // Verify External Scanners & Open Inbound WAN Exposure table
+    expect(
+      within(screen.getByTestId('firewall-external-scanners-list')).getByText(
+        '185.220.101.9',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('firewall-open-port-row-32400')).toHaveTextContent(
+      'Media NAS Server',
+    )
+
+    // Verify Searchable & Filterable Firewall Log Explorer
+    expect(screen.getByTestId('firewall-events-table')).toHaveTextContent('Edgecast')
+    await user.selectOptions(screen.getByTestId('firewall-action-filter'), 'block')
+    await user.selectOptions(
+      screen.getByTestId('firewall-direction-filter'),
+      'outbound',
+    )
+    await user.selectOptions(screen.getByTestId('firewall-protocol-filter'), 'tcp')
+    await user.type(screen.getByTestId('firewall-search-input'), '443')
+    await user.click(screen.getByTestId('firewall-refresh-btn'))
+    await waitFor(() => {
+      expect(firewallSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          window: '24h',
+          action: 'block',
+          direction: 'outbound',
+          protocol: 'tcp',
+          search: '443',
+          refresh: true,
+        }),
+      )
+    })
   })
 })

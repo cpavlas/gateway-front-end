@@ -21,6 +21,7 @@ import {
   type TimeWindow,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 import { TimelineBarChart } from '../components/TelemetryBarChart'
 
@@ -43,6 +44,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
   const queryClient = useQueryClient()
   const [windowKey, setWindowKey] = useState<TimeWindow>('24h')
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
+  const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const {
     data: overview,
@@ -54,7 +56,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
   } = useQuery({
     queryKey: ['networkOverview', windowKey],
     queryFn: () => apiClient.getNetworkOverview({ window: windowKey }),
-    refetchInterval: 30_000,
+    refetchInterval,
     placeholderData: (previousData) => previousData,
   })
 
@@ -102,9 +104,9 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-start gap-2 self-start">
+          <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 self-start shrink-0">
             <div
-              className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1"
+              className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1 shrink-0"
               role="group"
               aria-label="Select network analytics time window"
             >
@@ -114,7 +116,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                   type="button"
                   data-testid={`overview-window-${w.key}`}
                   onClick={() => setWindowKey(w.key)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                     windowKey === w.key
                       ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-300 hover:bg-slate-800'
@@ -125,22 +127,29 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
               ))}
             </div>
 
-            <div className="flex flex-col items-start sm:items-end gap-1">
-              <button
-                type="button"
-                data-testid="overview-refresh-btn"
-                onClick={() => refreshMutation.mutate()}
-                disabled={isFetching || refreshMutation.isPending}
-                className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${
-                    isFetching || refreshMutation.isPending ? 'animate-spin' : ''
-                  }`}
-                  aria-hidden="true"
+            <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="overview-refresh-btn"
+                  onClick={() => refreshMutation.mutate()}
+                  disabled={isFetching || refreshMutation.isPending}
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${
+                      isFetching || refreshMutation.isPending ? 'animate-spin' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span>Refresh Analytics</span>
+                </button>
+                <AutoRefreshSelector
+                  value={intervalOption}
+                  onChange={setIntervalOption}
+                  testId="overview-auto-refresh-select"
                 />
-                <span>Refresh Analytics</span>
-              </button>
+              </div>
               {lastUpdatedClock && (
                 <span
                   data-testid="overview-last-updated"

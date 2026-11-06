@@ -40,6 +40,7 @@ import {
   type UserRole,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
 import { useAuth } from '../context/AuthContext'
 
 interface StatusPageProps {
@@ -287,6 +288,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const [newUserRole, setNewUserRole] = useState<UserRole>('operator')
   const [userMgmtMessage, setUserMgmtMessage] = useState<string | null>(null)
   const [userMgmtError, setUserMgmtError] = useState<string | null>(null)
+  const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const {
     data: healthReport,
@@ -299,7 +301,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   } = useQuery({
     queryKey: ['systemHealth'],
     queryFn: () => apiClient.getSystemHealth(),
-    refetchInterval: 30_000,
+    refetchInterval,
   })
 
   const {
@@ -589,20 +591,27 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-col items-start sm:items-end gap-1 self-start">
-            <button
-              type="button"
-              data-testid="status-refresh-btn"
-              onClick={() => void refetch()}
-              disabled={isFetching}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
-                aria-hidden="true"
+          <div className="flex flex-col items-start sm:items-end gap-1 self-start shrink-0">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="status-refresh-btn"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>{isFetching ? 'Refreshing...' : 'Refresh Status'}</span>
+              </button>
+              <AutoRefreshSelector
+                value={intervalOption}
+                onChange={setIntervalOption}
+                testId="status-auto-refresh-select"
               />
-              <span>{isFetching ? 'Refreshing...' : 'Refresh Status'}</span>
-            </button>
+            </div>
             {lastHealthClock && (
               <span
                 data-testid="status-last-updated"

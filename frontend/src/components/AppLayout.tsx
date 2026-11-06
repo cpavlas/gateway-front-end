@@ -7,12 +7,13 @@ import {
   LogOut,
   Server,
   Shield,
+  ShieldAlert,
   UserCheck,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import type { HealthLevel } from '../api/client'
 
-export type AppTab = 'devices' | 'schedules' | 'analytics' | 'status'
+export type AppTab = 'devices' | 'schedules' | 'analytics' | 'firewall' | 'status'
 
 interface AppLayoutProps {
   overallStatus?: HealthLevel
@@ -116,6 +117,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </button>
                 <button
                   type="button"
+                  data-testid="nav-tab-firewall"
+                  onClick={() => onSelectTab('firewall')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                    activeTab === 'firewall'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                  }`}
+                >
+                  <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Firewall &amp; Security</span>
+                </button>
+                <button
+                  type="button"
                   data-testid="nav-tab-status"
                   onClick={() => onSelectTab('status')}
                   className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
@@ -166,6 +180,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   }`}
                 >
                   Analytics
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('firewall')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                    activeTab === 'firewall'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  Firewall
                 </button>
                 <button
                   type="button"

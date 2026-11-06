@@ -473,3 +473,89 @@ class OPNsenseClient:
                     "block_alias": self._alias_name,
                 },
             )
+
+    async def get_destination_nat_mappings(
+        self,
+    ) -> dict[tuple[str, int, str], int]:
+        """Discover external WAN port -> internal `(lan_ip, lan_port, proto)` mappings
+        from OPNsense Destination NAT rules (`/api/firewall/d_nat/searchRule`) and
+        active PF state table entries (`/api/diagnostics/firewall/query_states`).
+        """
+        mappings: dict[tuple[str, int, str], int] = {}
+        try:
+            async with self._create_http_client() as client:
+                # 1. Try MVC Destination NAT rules if privilege is assigned
+                try:
+                    dnat_resp = await client.post(
+                        "/api/firewall/d_nat/searchRule", json={}
+                    )
+                    if dnat_resp.status_code == 200:
+                        rows = (dnat_resp.json() or {}).get("rows") or []
+                        for row in rows:
+                            if str(row.get("disabled", "0")) == "1":
+                                continue
+                            target_ip = str(
+                                row.get("target") or row.get("dst_addr") or ""
+                            ).strip()
+                            local_p = str(
+                                row.get("local-port")
+                                or row.get("local_port")
+                                or row.get("dst_port")
+                                or ""
+                            ).strip()
+                            ext_p = str(
+                                row.get("destination_port")
+                                or row.get("dst_port")
+                                or local_p
+                            ).strip()
+                            proto = (
+                                str(row.get("protocol") or row.get("proto") or "tcp")
+                                .strip()
+                                .lower()
+                            )
+                            if (
+                                target_ip
+                                and local_p.isdigit()
+                                and ext_p.isdigit()
+                            ):
+                                mappings[(target_ip, int(local_p), proto)] = int(ext_p)
+                except httpx.HTTPError:
+                    pass
+
+                # 2. Inspect active PF states for inbound NAT port translations
+                try:
+                    states_resp = await client.post(
+                        "/api/diagnostics/firewall/query_states",
+                        json={"rowCount": 1500},
+                    )
+                    if states_resp.status_code == 200:
+                        for row in (states_resp.json() or {}).get("rows") or []:
+                            if str(row.get("direction") or "").lower() != "in":
+                                continue
+                            nat_addr = str(row.get("nat_addr") or "").strip()
+                            nat_port = str(row.get("nat_port") or "").strip()
+                            dst_addr = str(row.get("dst_addr") or "").strip()
+                            dst_port = str(row.get("dst_port") or "").strip()
+                            proto = (
+                                str(row.get("proto") or "tcp").strip().lower()
+                            )
+                            if (
+                                not nat_addr
+                                or nat_addr.startswith("192.168.")
+                                or nat_addr.startswith("10.")
+                                or nat_addr.startswith("127.")
+                            ):
+                                continue
+                            if (
+                                dst_addr
+                                and nat_port.isdigit()
+                                and dst_port.isdigit()
+                            ):
+                                mappings[(dst_addr, int(dst_port), proto)] = int(
+                                    nat_port
+                                )
+                except httpx.HTTPError:
+                    pass
+        except Exception:
+            pass
+        return mappings

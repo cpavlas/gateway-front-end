@@ -40,6 +40,7 @@ interface TimelineBarChartProps {
   legendTestId?: string
   defaultMode?: BarChartMode
   compact?: boolean
+  variant?: 'network' | 'firewall'
 }
 
 export const TimelineBarChart: React.FC<TimelineBarChartProps> = ({
@@ -50,10 +51,17 @@ export const TimelineBarChart: React.FC<TimelineBarChartProps> = ({
   legendTestId,
   defaultMode = 'stacked',
   compact = false,
+  variant = 'network',
 }) => {
   const [mode, setMode] = useState<BarChartMode>(defaultMode)
+  const isFirewall = variant === 'firewall'
 
   const bucketTotals = timeline.map((b) => {
+    if (isFirewall) {
+      const allowedCount = Math.max(0, b.allowed_packets)
+      const blockedCount = Math.max(0, b.blocked_packets)
+      return Math.max(b.total_events, allowedCount + blockedCount)
+    }
     const dnsCount = Math.max(0, b.dns_queries)
     const fwCount = Math.max(0, b.total_events - dnsCount)
     return Math.max(b.total_events, dnsCount + fwCount)
@@ -83,20 +91,35 @@ export const TimelineBarChart: React.FC<TimelineBarChartProps> = ({
           className="flex flex-wrap items-center gap-3 text-xs text-slate-300"
         >
           {mode === 'stacked' ? (
-            <>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-xs bg-cyan-400" />
-                <span>DNS Queries</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-xs bg-indigo-500" />
-                <span>Firewall Events</span>
-              </span>
-            </>
+            isFirewall ? (
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-xs bg-emerald-500" />
+                  <span>Allowed Packets</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-xs bg-rose-500" />
+                  <span>Blocked Packets</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-xs bg-cyan-400" />
+                  <span>DNS Queries</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-xs bg-indigo-500" />
+                  <span>Firewall Events</span>
+                </span>
+              </>
+            )
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-xs bg-indigo-500" />
-              <span>Total Events (DNS + Firewall)</span>
+              <span>
+                {isFirewall ? 'Total Firewall Packets' : 'Total Events (DNS + Firewall)'}
+              </span>
             </span>
           )}
         </div>
@@ -184,22 +207,33 @@ export const TimelineBarChart: React.FC<TimelineBarChartProps> = ({
                 }`}
               >
                 {timeline.map((bucket, idx) => {
-                  const dnsCount = Math.max(0, bucket.dns_queries)
-                  const fwCount = Math.max(0, bucket.total_events - dnsCount)
-                  const combinedTotal = Math.max(bucket.total_events, dnsCount + fwCount)
+                  const primaryCount = isFirewall
+                    ? Math.max(0, bucket.blocked_packets)
+                    : Math.max(0, bucket.dns_queries)
+                  const secondaryCount = isFirewall
+                    ? Math.max(0, bucket.allowed_packets)
+                    : Math.max(0, bucket.total_events - primaryCount)
+                  const combinedTotal = Math.max(
+                    bucket.total_events,
+                    primaryCount + secondaryCount,
+                  )
                   const heightPct =
                     combinedTotal > 0
                       ? Math.max(6, Math.round((combinedTotal / maxEvents) * 100))
                       : 3
-                  const dnsSharePct =
-                    combinedTotal > 0 ? Math.round((dnsCount / combinedTotal) * 100) : 50
-                  const fwSharePct = Math.max(0, 100 - dnsSharePct)
+                  const primarySharePct =
+                    combinedTotal > 0
+                      ? Math.round((primaryCount / combinedTotal) * 100)
+                      : 50
+                  const secondarySharePct = Math.max(0, 100 - primarySharePct)
                   const showValueLabel =
                     combinedTotal > 0 &&
                     (timeline.length <= 16 ||
                       combinedTotal === maxEvents ||
                       tickIndices.has(idx))
-                  const tooltipText = `${new Date(bucket.timestamp).toLocaleString()}, Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${dnsCount.toLocaleString()} | Firewall Events: ${fwCount.toLocaleString()} (${formatBytes(bucket.bytes)})`
+                  const tooltipText = isFirewall
+                    ? `${new Date(bucket.timestamp).toLocaleString()}, Total: ${combinedTotal.toLocaleString()} packets | Allowed: ${secondaryCount.toLocaleString()} | Blocked: ${primaryCount.toLocaleString()} (${formatBytes(bucket.bytes)})`
+                    : `${new Date(bucket.timestamp).toLocaleString()}, Total: ${combinedTotal.toLocaleString()} events | DNS Queries: ${primaryCount.toLocaleString()} | Firewall Events: ${secondaryCount.toLocaleString()} (${formatBytes(bucket.bytes)})`
 
                   return (
                     <div
@@ -222,14 +256,30 @@ export const TimelineBarChart: React.FC<TimelineBarChartProps> = ({
                           className="w-full flex flex-col overflow-hidden rounded-t transition-all"
                         >
                           <div
-                            data-testid="timeline-dns-segment"
-                            style={{ height: `${dnsSharePct}%` }}
-                            className="w-full bg-cyan-400/85 group-hover:bg-cyan-300"
+                            data-testid={
+                              isFirewall
+                                ? 'timeline-blocked-segment'
+                                : 'timeline-dns-segment'
+                            }
+                            style={{ height: `${primarySharePct}%` }}
+                            className={`w-full ${
+                              isFirewall
+                                ? 'bg-rose-500/85 group-hover:bg-rose-400'
+                                : 'bg-cyan-400/85 group-hover:bg-cyan-300'
+                            }`}
                           />
                           <div
-                            data-testid="timeline-fw-segment"
-                            style={{ height: `${fwSharePct}%` }}
-                            className="w-full bg-indigo-500/85 group-hover:bg-indigo-400"
+                            data-testid={
+                              isFirewall
+                                ? 'timeline-allowed-segment'
+                                : 'timeline-fw-segment'
+                            }
+                            style={{ height: `${secondarySharePct}%` }}
+                            className={`w-full ${
+                              isFirewall
+                                ? 'bg-emerald-500/85 group-hover:bg-emerald-400'
+                                : 'bg-indigo-500/85 group-hover:bg-indigo-400'
+                            }`}
                           />
                         </div>
                       ) : (

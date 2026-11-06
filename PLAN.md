@@ -530,12 +530,13 @@ Following the completion of `v1.0.1`, the `v1.1` release cycle is organized into
   4. **UI Admin Panel for OPNsense & Elasticsearch Settings + Live Connectivity Diagnostics (`FB-P9-002`):** Persist UI-configured OPNsense and Elasticsearch connection variables in SQLite (encrypted at rest, taking runtime precedence over `.env` with a `Reset to .env` option) and provide a live Connectivity Test that surfaces detailed errors in the UI and logs diagnostic failures to `audit_logs`.
   5. **Per-User Action Attribution & `audit_label` Badges (`FB-P9-004`).**
 
-### Phase 10 (`v1.0.4`): Firewall Activity & Security Inspector Tab (`FB-P10-001`)
+### Phase 10 (`v1.0.4` — COMPLETE): Firewall Activity & Security Inspector Tab (`FB-P10-001`, `FB-P10-002`)
 - **Deliverables:**
-  1. **Dedicated `Firewall & Security` Navigation Tab (`FirewallPage.tsx`):** Pass/Block/Direction KPI summary, `Pass` vs. `Block` timeline bar graph (with `Stacked`/`Total` toggle and X/Y axes), and a searchable/filterable `filterlog` event explorer.
-  2. **Side-by-Side Security Insights Panels:**
+  1. **Dedicated `Firewall & Security` Navigation Tab (`FirewallPage.tsx`, `FB-P10-001`):** Pass/Block/Direction KPI summary, `Pass` vs. `Block` timeline bar graph (with `Stacked`/`Total` toggle and X/Y axes), and a searchable/filterable `filterlog` event explorer isolated via Elasticsearch `post_filter` and window-snapshot locking.
+  2. **Side-by-Side Security Insights Panels (`FB-P10-001`):**
      - **Noisy / Blocked LAN Devices & External Scanners** (with 1-click LAN device Block action).
-     - **Active Inbound WAN Exposure (Passed External -> Internal Ports)** highlighting any internal `IP:Port` accepting inbound traffic from public WAN IPs.
+     - **Active Inbound WAN Exposure (Open Ports)** highlighting internal `IP:Port` targets accepting inbound traffic from public WAN IPs with full `external_port:destination_port` mappings (`32400:32400 / TCP`, `32401:32400 / TCP`, `51820:51820 / UDP`).
+  3. **Compact Auto-Refresh Interval Selector (`FB-P10-002`):** Timer icon + timeframe selector (`Off`, `5s`, `30s`, `1m`, `5m`) persisted in `localStorage` across data-polling views.
 
 ### Phase 11 (`v1.1.0`): Custom Unicorn Rainbow Branding & User Color Themes (`FB-P11-001`, `FB-P11-002`)
 - **Deliverables:**

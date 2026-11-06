@@ -1,0 +1,69 @@
+"""Phase 10 Firewall & Security REST endpoints (`/api/v1/firewall/overview`)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.system import get_elasticsearch_client
+from app.auth import AuthUserResponse, require_admin_session
+from app.clients.elasticsearch import ElasticsearchServiceClient
+from app.config import Settings, get_settings
+from app.db import get_db_session
+from app.services.firewall_service import (
+    FirewallOverviewResponse,
+    get_firewall_overview_analytics,
+)
+
+router = APIRouter(prefix="/api/v1/firewall", tags=["firewall"])
+
+TimeWindowLiteral = Literal["1h", "24h", "7d", "30d"]
+
+
+@router.get("/overview", response_model=FirewallOverviewResponse)
+async def read_firewall_overview(
+    window: TimeWindowLiteral = Query(
+        default="24h",
+        description="Firewall telemetry time window: 1h, 24h, 7d, or 30d.",
+    ),
+    action: str | None = Query(
+        default=None,
+        description="Optional action filter: all, pass, or block.",
+    ),
+    direction: str | None = Query(
+        default=None,
+        description="Optional direction filter: all, inbound, or outbound.",
+    ),
+    protocol: str | None = Query(
+        default=None,
+        description="Optional transport protocol filter: all, tcp, udp, icmp, ipv6-icmp, igmp.",
+    ),
+    search: str | None = Query(
+        default=None,
+        description="Optional search string (IP, port, interface, protocol, or ASN organization).",
+    ),
+    refresh: bool = Query(
+        default=False,
+        description="If true, bypass the short-TTL cache and query Elasticsearch directly.",
+    ),
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    es_client: ElasticsearchServiceClient = Depends(get_elasticsearch_client),
+    settings: Settings = Depends(get_settings),
+) -> FirewallOverviewResponse:
+    """Return Firewall & Security KPIs, timeline, noisy LAN devices, WAN scanners,
+    open WAN ports, and recent events.
+    """
+    return await get_firewall_overview_analytics(
+        db=db,
+        settings=settings,
+        es_client=es_client,
+        window=window,
+        action=action,
+        direction=direction,
+        protocol=protocol,
+        search=search,
+        refresh=refresh,
+    )
