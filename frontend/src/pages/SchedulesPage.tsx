@@ -164,21 +164,27 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
 
           <div className="flex flex-wrap items-start gap-2 self-start shrink-0">
             <div className="flex flex-col items-start sm:items-end gap-1">
-              <button
-                type="button"
-                data-testid="reconcile-schedules-btn"
-                onClick={() => reconcileMutation.mutate()}
-                disabled={reconcileMutation.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${reconcileMutation.isPending ? 'animate-spin' : ''}`}
-                  aria-hidden="true"
-                />
-                <span>
-                  {reconcileMutation.isPending ? 'Evaluating...' : 'Evaluate Policies Now'}
-                </span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="reconcile-schedules-btn"
+                  onClick={() => reconcileMutation.mutate()}
+                  disabled={reconcileMutation.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${
+                      reconcileMutation.isPending ? 'animate-spin' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {reconcileMutation.isPending
+                      ? 'Evaluating...'
+                      : 'Evaluate Policies Now'}
+                  </span>
+                </button>
+              </div>
               {lastSchedulesClock && (
                 <span
                   data-testid="schedules-last-updated"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import time
 from datetime import datetime
@@ -15,6 +16,22 @@ from app.config import Settings
 
 RFC1918_CIDRS: list[str] = ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]
 
+NON_PUBLIC_WAN_CIDRS: list[str] = [
+    "192.168.0.0/16",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "0.0.0.0/8",
+    "224.0.0.0/4",
+    "255.255.255.255/32",
+    "fc00::/7",
+    "fe80::/10",
+    "ff00::/8",
+    "::/128",
+    "::1/128",
+]
+
 TIME_WINDOW_CONFIG: dict[str, dict[str, str]] = {
     "1h": {"es_gte": "now-1h", "interval": "5m", "label": "Last 1 Hour"},
     "24h": {"es_gte": "now-24h", "interval": "1h", "label": "Last 24 Hours"},
@@ -23,6 +40,7 @@ TIME_WINDOW_CONFIG: dict[str, dict[str, str]] = {
 }
 
 _SAFE_DOMAIN_SEARCH_RE = re.compile(r"[^a-zA-Z0-9._-]")
+_SAFE_FIREWALL_SEARCH_RE = re.compile(r"[^a-zA-Z0-9._:/-]")
 
 
 class ElasticsearchQueryError(Exception):
@@ -52,6 +70,29 @@ def sanitize_domain_search(raw_search: str | None) -> str | None:
     if not cleaned:
         return None
     return cleaned[:120]
+
+
+def sanitize_firewall_search(raw_search: str | None) -> str | None:
+    """Sanitize a user-supplied firewall log search string (IP, port, interface, protocol)."""
+    if not raw_search:
+        return None
+    cleaned = _SAFE_FIREWALL_SEARCH_RE.sub("", raw_search.strip().lower())
+    if not cleaned:
+        return None
+    return cleaned[:120]
+
+
+def is_private_lan_ip(raw_ip: str | None) -> bool:
+    """Return True if `raw_ip` is a unicast RFC1918/private/loopback/link-local address."""
+    if not raw_ip:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(raw_ip.strip())
+    except ValueError:
+        return False
+    if ip_obj.is_unspecified or ip_obj.is_multicast or str(ip_obj) == "255.255.255.255":
+        return False
+    return bool(ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
 
 
 def validate_ipv4_list(ipv4_addresses: list[str]) -> list[str]:
@@ -1079,6 +1120,389 @@ def normalize_group_analytics_response(
     return base
 
 
+def build_firewall_overview_query(
+    window: str = "24h",
+    tz_name: str = "UTC",
+    *,
+    action: str | None = None,
+    direction: str | None = None,
+    protocol: str | None = None,
+    search: str | None = None,
+    recent_limit: int = 80,
+) -> dict[str, Any]:
+    """Construct the Elasticsearch DSL for the Phase 10 Firewall & Security
+    overview (`FB-P10-001`).
+    """
+    _, es_gte, interval = resolve_time_window(window)
+    safe_tz = (tz_name or "UTC").strip() or "UTC"
+    safe_limit = max(1, min(int(recent_limit), 150))
+
+    filters: list[dict[str, Any]] = [
+        {"range": {"@timestamp": {"gte": f"{es_gte}/m"}}},
+        {"term": {"event.provider": "filterlog"}},
+    ]
+
+    post_filters: list[dict[str, Any]] = []
+
+    clean_action = (action or "").strip().lower()
+    if clean_action in ("pass", "block"):
+        post_filters.append({"term": {"event.action": clean_action}})
+
+    clean_dir = (direction or "").strip().lower()
+    if clean_dir in ("inbound", "in"):
+        post_filters.append({"terms": {"network.direction": ["inbound", "in"]}})
+    elif clean_dir in ("outbound", "out"):
+        post_filters.append({"terms": {"network.direction": ["outbound", "out"]}})
+
+    clean_proto = (protocol or "").strip().lower()
+    if clean_proto and clean_proto != "all":
+        post_filters.append({"term": {"network.transport": clean_proto}})
+
+    safe_search = sanitize_firewall_search(search)
+    if safe_search:
+        search_should: list[dict[str, Any]] = [
+            {
+                "wildcard": {
+                    "observer.ingress.interface.name": {
+                        "value": f"*{safe_search}*",
+                        "case_insensitive": True,
+                    }
+                }
+            },
+            {
+                "wildcard": {
+                    "network.transport": {
+                        "value": f"*{safe_search}*",
+                        "case_insensitive": True,
+                    }
+                }
+            },
+            {
+                "wildcard": {
+                    "source.as.organization.name": {
+                        "value": f"*{safe_search}*",
+                        "case_insensitive": True,
+                    }
+                }
+            },
+            {
+                "wildcard": {
+                    "destination.as.organization.name": {
+                        "value": f"*{safe_search}*",
+                        "case_insensitive": True,
+                    }
+                }
+            },
+        ]
+        if safe_search.isdigit():
+            port_num = int(safe_search)
+            search_should.append({"term": {"source.port": port_num}})
+            search_should.append({"term": {"destination.port": port_num}})
+        try:
+            ipaddress.ip_address(safe_search)
+            search_should.append({"term": {"source.ip": safe_search}})
+            search_should.append({"term": {"destination.ip": safe_search}})
+        except ValueError:
+            try:
+                ipaddress.ip_network(safe_search, strict=False)
+                search_should.append({"term": {"source.ip": safe_search}})
+                search_should.append({"term": {"destination.ip": safe_search}})
+            except ValueError:
+                pass
+        post_filters.append(
+            {"bool": {"should": search_should, "minimum_should_match": 1}}
+        )
+
+    query_body: dict[str, Any] = {
+        "size": safe_limit,
+        "track_total_hits": False,
+        "sort": [{"@timestamp": {"order": "desc"}}],
+        "_source": [
+            "@timestamp",
+            "event.action",
+            "network.direction",
+            "network.transport",
+            "network.bytes",
+            "observer.ingress.interface.name",
+            "source.ip",
+            "source.port",
+            "source.as.organization.name",
+            "destination.ip",
+            "destination.port",
+            "destination.as.organization.name",
+            "rule.id",
+        ],
+        "query": {"bool": {"filter": filters}},
+        "aggs": {
+            "total_bytes": {"sum": {"field": "network.bytes"}},
+            "by_action": {"terms": {"field": "event.action", "size": 10}},
+            "by_direction": {"terms": {"field": "network.direction", "size": 10}},
+            "timeline": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": interval,
+                    "time_zone": safe_tz,
+                    "min_doc_count": 0,
+                },
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "allowed_packets": {"filter": {"term": {"event.action": "pass"}}},
+                    "blocked_packets": {"filter": {"term": {"event.action": "block"}}},
+                },
+            },
+            "blocked_sources": {
+                "filter": {"term": {"event.action": "block"}},
+                "aggs": {
+                    "sources": {
+                        "terms": {"field": "source.ip", "size": 30},
+                        "aggs": {
+                            "bytes": {"sum": {"field": "network.bytes"}},
+                            "last_seen": {"max": {"field": "@timestamp"}},
+                            "top_ports": {
+                                "terms": {"field": "destination.port", "size": 5}
+                            },
+                            "top_org": {
+                                "terms": {
+                                    "field": "source.as.organization.name",
+                                    "size": 1,
+                                }
+                            },
+                        },
+                    }
+                },
+            },
+            "inbound_wan_passed": {
+                "filter": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"event.action": "pass"}},
+                            {"term": {"observer.ingress.interface.name": "vtnet1"}},
+                            {"exists": {"field": "source.as.number"}},
+                        ],
+                    }
+                },
+                "aggs": {
+                    "by_dest_ip": {
+                        "terms": {"field": "destination.ip", "size": 15},
+                        "aggs": {
+                            "by_port": {
+                                "terms": {"field": "destination.port", "size": 10},
+                                "aggs": {
+                                    "protocols": {
+                                        "terms": {
+                                            "field": "network.transport",
+                                            "size": 3,
+                                        }
+                                    },
+                                    "bytes": {"sum": {"field": "network.bytes"}},
+                                    "unique_sources": {
+                                        "cardinality": {
+                                            "field": "source.ip",
+                                            "execution_hint": "direct",
+                                        }
+                                    },
+                                    "last_seen": {"max": {"field": "@timestamp"}},
+                                },
+                            }
+                        },
+                    }
+                },
+            },
+        },
+    }
+    if post_filters:
+        query_body["post_filter"] = {"bool": {"filter": post_filters}}
+    return query_body
+
+
+def normalize_firewall_overview_response(
+    raw_resp: dict[str, Any],
+    window: str = "24h",
+) -> dict[str, Any]:
+    """Normalize Elasticsearch `filterlog` aggregations and hits for
+    `FirewallPage.tsx` (`FB-P10-001`).
+    """
+    hits_meta = raw_resp.get("hits") or {}
+    total_obj = hits_meta.get("total")
+    if isinstance(total_obj, dict):
+        total_packets = int(total_obj.get("value") or 0)
+    else:
+        total_packets = int(total_obj or 0)
+
+    aggs = raw_resp.get("aggregations") or {}
+    total_bytes = int(float((aggs.get("total_bytes") or {}).get("value") or 0))
+
+    action_counts: dict[str, int] = {}
+    for b in (aggs.get("by_action") or {}).get("buckets") or []:
+        key = str(b.get("key") or "")
+        action_counts[key] = int(b.get("doc_count") or 0)
+
+    direction_counts: dict[str, int] = {}
+    for b in (aggs.get("by_direction") or {}).get("buckets") or []:
+        key = str(b.get("key") or "").lower()
+        direction_counts[key] = int(b.get("doc_count") or 0)
+
+    allowed_packets = action_counts.get("pass", 0)
+    blocked_packets = action_counts.get("block", 0)
+    total_packets = max(total_packets, sum(action_counts.values()))
+    inbound_packets = direction_counts.get("inbound", 0) + direction_counts.get("in", 0)
+    outbound_packets = direction_counts.get("outbound", 0) + direction_counts.get(
+        "out", 0
+    )
+
+    timeline_buckets = (aggs.get("timeline") or {}).get("buckets") or []
+    timeline: list[dict[str, Any]] = []
+    for tb in timeline_buckets:
+        allowed_cnt = int((tb.get("allowed_packets") or {}).get("doc_count") or 0)
+        blocked_cnt = int((tb.get("blocked_packets") or {}).get("doc_count") or 0)
+        timeline.append(
+            {
+                "timestamp": tb.get("key_as_string") or str(tb.get("key") or ""),
+                "total_events": int(tb.get("doc_count") or 0),
+                "bytes": int(float((tb.get("bytes") or {}).get("value") or 0)),
+                "dns_queries": 0,
+                "allowed_packets": allowed_cnt,
+                "blocked_packets": blocked_cnt,
+            }
+        )
+
+    noisy_lan_sources: list[dict[str, Any]] = []
+    external_scanners: list[dict[str, Any]] = []
+    blocked_source_buckets = (
+        ((aggs.get("blocked_sources") or {}).get("sources") or {}).get("buckets") or []
+    )
+    for sb in blocked_source_buckets:
+        ip_str = str(sb.get("key") or "").strip()
+        if not ip_str or ip_str in ("0.0.0.0", "::", "255.255.255.255"):
+            continue
+        pkt_count = int(sb.get("doc_count") or 0)
+        byte_count = int(float((sb.get("bytes") or {}).get("value") or 0))
+        last_seen_str = (sb.get("last_seen") or {}).get("value_as_string")
+        top_ports = [
+            int(pb.get("key"))
+            for pb in (sb.get("top_ports") or {}).get("buckets") or []
+            if pb.get("key") is not None
+        ]
+        org_buckets = (sb.get("top_org") or {}).get("buckets") or []
+        org_name = str(org_buckets[0].get("key")) if org_buckets else None
+
+        if is_private_lan_ip(ip_str):
+            if len(noisy_lan_sources) < 12:
+                noisy_lan_sources.append(
+                    {
+                        "ipv4_address": ip_str,
+                        "blocked_packets": pkt_count,
+                        "bytes": byte_count,
+                        "target_ports": top_ports,
+                        "last_seen_at": last_seen_str,
+                    }
+                )
+        else:
+            if len(external_scanners) < 12:
+                external_scanners.append(
+                    {
+                        "source_ip": ip_str,
+                        "organization": org_name,
+                        "blocked_packets": pkt_count,
+                        "bytes": byte_count,
+                        "target_ports": top_ports,
+                        "last_seen_at": last_seen_str,
+                    }
+                )
+
+    open_wan_ports: list[dict[str, Any]] = []
+    dest_ip_buckets = (
+        ((aggs.get("inbound_wan_passed") or {}).get("by_dest_ip") or {}).get("buckets")
+        or []
+    )
+    for db_item in dest_ip_buckets:
+        dest_ip = str(db_item.get("key") or "").strip()
+        if not dest_ip or not is_private_lan_ip(dest_ip):
+            continue
+        for pb in (db_item.get("by_port") or {}).get("buckets") or []:
+            port_val = pb.get("key")
+            if port_val is None:
+                continue
+            d_port = int(port_val)
+            passed_cnt = int(pb.get("doc_count") or 0)
+            proto_buckets = (pb.get("protocols") or {}).get("buckets") or []
+            proto = str(proto_buckets[0].get("key") or "tcp") if proto_buckets else "tcp"
+            if proto.lower() == "udp" and d_port >= 52000 and passed_cnt < 2:
+                continue
+            open_wan_ports.append(
+                {
+                    "destination_ip": dest_ip,
+                    "destination_port": d_port,
+                    "protocol": proto,
+                    "passed_packets": passed_cnt,
+                    "bytes": int(float((pb.get("bytes") or {}).get("value") or 0)),
+                    "unique_external_sources": int(
+                        (pb.get("unique_sources") or {}).get("value") or 0
+                    ),
+                    "last_seen_at": (pb.get("last_seen") or {}).get("value_as_string"),
+                }
+            )
+    open_wan_ports.sort(key=lambda item: item["passed_packets"], reverse=True)
+
+    recent_events: list[dict[str, Any]] = []
+    for hit in hits_meta.get("hits") or []:
+        src = hit.get("_source") or {}
+        event_obj = src.get("event") or {}
+        net_obj = src.get("network") or {}
+        obs_obj = src.get("observer") or {}
+        ing_if = ((obs_obj.get("ingress") or {}).get("interface") or {}).get("name")
+        source_obj = src.get("source") or {}
+        dest_obj = src.get("destination") or {}
+        rule_obj = src.get("rule") or {}
+
+        src_org = ((source_obj.get("as") or {}).get("organization") or {}).get("name")
+        dst_org = ((dest_obj.get("as") or {}).get("organization") or {}).get("name")
+
+        recent_events.append(
+            {
+                "timestamp": str(src.get("@timestamp") or ""),
+                "action": str(event_obj.get("action") or "unknown"),
+                "direction": str(net_obj.get("direction") or "unknown"),
+                "protocol": str(net_obj.get("transport") or "unknown"),
+                "interface": str(ing_if or ""),
+                "source_ip": str(source_obj.get("ip") or ""),
+                "source_port": (
+                    int(source_obj["port"])
+                    if source_obj.get("port") is not None
+                    else None
+                ),
+                "source_org": str(src_org) if src_org else None,
+                "destination_ip": str(dest_obj.get("ip") or ""),
+                "destination_port": (
+                    int(dest_obj["port"])
+                    if dest_obj.get("port") is not None
+                    else None
+                ),
+                "destination_org": str(dst_org) if dst_org else None,
+                "bytes": int(net_obj.get("bytes") or 0),
+                "rule_id": str(rule_obj.get("id") or ""),
+            }
+        )
+
+    return {
+        "window": window,
+        "summary": {
+            "total_packets": total_packets,
+            "allowed_packets": allowed_packets,
+            "blocked_packets": blocked_packets,
+            "inbound_packets": inbound_packets,
+            "outbound_packets": outbound_packets,
+            "total_bytes": total_bytes,
+            "open_wan_port_count": len(open_wan_ports),
+        },
+        "timeline": timeline,
+        "noisy_lan_sources": noisy_lan_sources,
+        "external_scanners": external_scanners,
+        "open_wan_ports": open_wan_ports[:25],
+        "recent_events": recent_events,
+    }
+
+
 class ElasticsearchServiceClient:
     """Async client wrapper for Elasticsearch 9.4.3 read-only operations."""
 
@@ -1318,6 +1742,79 @@ class ElasticsearchServiceClient:
                 member_ips=clean_ips,
                 window=win_key,
             )
+        except (AuthenticationException, AuthorizationException) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch authentication/authorization failed: {exc.message}",
+                status_code=403,
+            ) from exc
+        except (TransportError, Exception) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch query failed: {exc.__class__.__name__}: {exc}",
+                status_code=503,
+            ) from exc
+        finally:
+            await client.close()
+
+
+    async def fetch_firewall_overview(
+        self,
+        window: str = "24h",
+        *,
+        action: str | None = None,
+        direction: str | None = None,
+        protocol: str | None = None,
+        search: str | None = None,
+        recent_limit: int = 80,
+    ) -> dict[str, Any]:
+        """Execute Phase 10 Firewall & Security overview query against
+        logs-pfsense.log* (`FB-P10-001`).
+        """
+        win_key, _, _ = resolve_time_window(window)
+        body = build_firewall_overview_query(
+            window=win_key,
+            tz_name=self._tz,
+            action=action,
+            direction=direction,
+            protocol=protocol,
+            search=search,
+            recent_limit=recent_limit,
+        )
+        post_f = body.pop("post_filter", None)
+        limit = int(body.get("size") or 80)
+        sort_spec = body.pop("sort", [{"@timestamp": {"order": "desc"}}])
+        src_spec = body.pop("_source", None)
+        body["size"] = 0
+        recent_filters = list(body["query"]["bool"]["filter"])
+        if post_f:
+            recent_filters.extend((post_f.get("bool") or {}).get("filter") or [])
+        recent_body: dict[str, Any] = {
+            "size": limit,
+            "track_total_hits": False,
+            "sort": sort_spec,
+            "query": {"bool": {"filter": recent_filters}},
+        }
+        if src_spec is not None:
+            recent_body["_source"] = src_spec
+
+        target_pattern = ",".join(self._index_patterns)
+        client = self.create_es_client()
+        try:
+            aggs_resp = await client.search(
+                index=target_pattern,
+                body=body,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+                request_cache=True,
+            )
+            recent_resp = await client.search(
+                index=target_pattern,
+                body=recent_body,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+            merged_resp = dict(aggs_resp)
+            merged_resp["hits"] = dict(recent_resp).get("hits", {})
+            return normalize_firewall_overview_response(merged_resp, window=win_key)
         except (AuthenticationException, AuthorizationException) as exc:
             raise ElasticsearchQueryError(
                 f"Elasticsearch authentication/authorization failed: {exc.message}",

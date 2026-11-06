@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { type AppTab } from './components/AppLayout'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { DevicesPage } from './pages/DevicesPage'
+import { FirewallPage } from './pages/FirewallPage'
 import { LoginPage } from './pages/LoginPage'
 import { SchedulesPage } from './pages/SchedulesPage'
 import { StatusPage } from './pages/StatusPage'
@@ -44,6 +45,10 @@ export const AuthenticatedRouter: React.FC<{ initialTab?: AppTab }> = ({
 
   if (activeTab === 'analytics') {
     return <AnalyticsPage activeTab={activeTab} onSelectTab={setActiveTab} />
+  }
+
+  if (activeTab === 'firewall') {
+    return <FirewallPage activeTab={activeTab} onSelectTab={setActiveTab} />
   }
 
   if (activeTab === 'status') {

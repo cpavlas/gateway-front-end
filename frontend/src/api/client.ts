@@ -556,6 +556,84 @@ export interface GroupAnalyticsResponse {
   recent_queries: RecentDomainQueryItem[]
 }
 
+export interface FirewallOverviewSummary {
+  total_packets: number
+  allowed_packets: number
+  blocked_packets: number
+  inbound_packets: number
+  outbound_packets: number
+  total_bytes: number
+  open_wan_port_count: number
+}
+
+export interface FirewallNoisyLanDeviceItem {
+  device_id: number | null
+  ipv4_address: string
+  effective_name: string
+  mac_address: string | null
+  is_online: boolean
+  is_blocked: boolean
+  is_protected: boolean
+  blocked_packets: number
+  bytes: number
+  target_ports: number[]
+  last_seen_at: string | null
+}
+
+export interface FirewallExternalScannerItem {
+  source_ip: string
+  organization: string | null
+  blocked_packets: number
+  bytes: number
+  target_ports: number[]
+  last_seen_at: string | null
+}
+
+export interface FirewallOpenWanPortItem {
+  device_id: number | null
+  destination_ip: string
+  effective_name: string
+  external_port?: number
+  destination_port: number
+  port_mapping?: string
+  protocol: string
+  passed_packets: number
+  bytes: number
+  unique_external_sources: number
+  last_seen_at: string | null
+}
+
+export interface FirewallLogEventItem {
+  timestamp: string
+  action: string
+  direction: string
+  protocol: string
+  interface: string
+  source_ip: string
+  source_name: string | null
+  source_port: number | null
+  source_org: string | null
+  destination_ip: string
+  destination_name: string | null
+  destination_port: number | null
+  destination_org: string | null
+  bytes: number
+  rule_id: string
+}
+
+export interface FirewallOverviewResponse {
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  summary: FirewallOverviewSummary
+  timeline: TimelineBucketItem[]
+  noisy_lan_devices: FirewallNoisyLanDeviceItem[]
+  external_scanners: FirewallExternalScannerItem[]
+  open_wan_ports: FirewallOpenWanPortItem[]
+  recent_events: FirewallLogEventItem[]
+}
+
 export function formatActiveMinutes(minutes: number): string {
   const safe = Math.max(0, Math.floor(minutes || 0))
   if (safe <= 0) return '0m'
@@ -1033,6 +1111,37 @@ export const apiClient = {
     }
     return requestJson<DeviceAnalyticsResponse>(
       `/api/v1/devices/${deviceId}/analytics?${query.toString()}`,
+      { method: 'GET' },
+    )
+  },
+
+  getFirewallOverview(params?: {
+    window?: TimeWindow
+    action?: string
+    direction?: string
+    protocol?: string
+    search?: string
+    refresh?: boolean
+  }): Promise<FirewallOverviewResponse> {
+    const query = new URLSearchParams()
+    query.set('window', params?.window ?? '24h')
+    if (params?.action && params.action !== 'all') {
+      query.set('action', params.action)
+    }
+    if (params?.direction && params.direction !== 'all') {
+      query.set('direction', params.direction)
+    }
+    if (params?.protocol && params.protocol !== 'all') {
+      query.set('protocol', params.protocol)
+    }
+    if (params?.search && params.search.trim()) {
+      query.set('search', params.search.trim())
+    }
+    if (params?.refresh) {
+      query.set('refresh', 'true')
+    }
+    return requestJson<FirewallOverviewResponse>(
+      `/api/v1/firewall/overview?${query.toString()}`,
       { method: 'GET' },
     )
   },

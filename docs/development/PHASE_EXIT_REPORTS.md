@@ -360,3 +360,31 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Feed-Forward into Phase 10 (`v1.0.4` — Dedicated `Firewall & Security` Tab):**
   - Phase 10 proceeds cleanly with `FB-P10-001` (Firewall & Security dashboard, pass/block/direction KPIs, timeline bar chart, Suspected Bad Actors / Scanners with 1-click LAN block, Active Inbound WAN Exposure / Open Ports, and searchable `filterlog` explorer).
 
+---
+
+## Phase 10 Exit Analysis & Unplanned-Information Retrospective (`v1.0.4` — 2026-11-06)
+
+### 1. Phase 10 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P10-001`, `FB-P10-002` & Gate 2 Refinements `BUG-P10-004`..`BUG-P10-008`):**
+  1. **`FB-P10-001` (Dedicated `Firewall & Security` Navigation Tab — `FirewallPage.tsx`, `firewall_service.py`, `firewall.py`, `elasticsearch.py`):**
+     - Added `GET /api/v1/firewall/overview` and the `Firewall & Security` navigation tab displaying Total/Passed/Blocked (`(XX.X%)`) and Inbound/Outbound KPI cards, `Allowed` vs. `Blocked` timeline bar chart (with `Stacked | Total` selector and X/Y axis labels), **Noisy LAN Devices** (with SQLite device correlation and 1-click **Block Device** / **Allowed** toggle) & **External WAN Scanners**, **Active Inbound WAN Exposure (Open Ports)** with full `external_port:destination_port` mappings (`32400:32400 / TCP`, `32401:32400 / TCP`, `51820:51820 / UDP`), and the **Searchable Firewall Packet Log Explorer**.
+  2. **`FB-P10-002` (Compact User-Configurable Auto-Refresh Interval Selector):**
+     - Added `<AutoRefreshSelector />` (`Off`, `5s`, `30s`, `1m`, `5m` next to the timer icon, persisted in `localStorage`) directly next to Refresh buttons across `Firewall & Security`, `Traffic & DNS Analytics`, `Devices & Access Control`, `System & Admin`, and the Device/Group Analytics Drawers (excluding `Schedules & Bedtime` per user feedback).
+  3. **Gate 2 Refinements (`BUG-P10-004` – `BUG-P10-008`):**
+     - Aligned the `Firewall & Security` header controls on a single horizontal row (`BUG-P10-004`).
+     - Isolated the Searchable Firewall Packet Log Explorer filters (`Action`, `Direction`, `Protocol`, `Search`) using Elasticsearch `post_filter`, split `size: 0` shard-cached `aggs` (`request_cache=True`) from `size: 80` `recent_events`, and locked window-level aggregations to `firewall_window:{win_key}` / `windowSnapshots[windowKey]` so changing log filters never alters `Noisy LAN Devices`, `External Scanners`, or `Active Inbound WAN Exposure` (`BUG-P10-005`, `BUG-P10-007`).
+     - Replaced BKD CIDR range scans in `inbound_wan_passed` with `exists: {"field": "source.as.number"}` + `observer.ingress.interface.name: "vtnet1"`, cutting `24h` query execution time from `7.7s+` to `0.11s–0.58s` (`BUG-P10-006`).
+     - Added `OPNsenseClient.get_destination_nat_mappings()` and `external_port:destination_port` resolution so shared internal redirect ports display their full external-to-internal port mappings (`32400:32400 / TCP`, `32401:32400 / TCP`, `51820:51820 / UDP` — `BUG-P10-008`).
+- **Final Automated Quality Metrics (`v1.0.4`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `121 / 121` passed (`85%` coverage; `firewall.py` `100%`, `elasticsearch.py` `93%`, `firewall_service.py` `93%`), `0` ruff errors, `0` mypy issues across `31` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `27 / 27` passed across `7` test suites (`90.49%` coverage; `FirewallPage.tsx` `93.4%`, `AutoRefreshSelector.tsx` `94.52%`), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward Adjustments
+- **Finding 1 — OPNsense Destination NAT (`rdr`) Logging Behavior in `filterlog` (`BUG-P10-006`, `BUG-P10-008`):**
+  - When OPNsense forwards an inbound WAN packet via Destination NAT (`rdr`), `pf` translates `destination.ip` and `destination.port` prior to `filterlog` emission and logs the `pass` event as the packet exits the LAN interface (`observer.ingress.interface.name: "vtnet1"`) with `network.direction: "outbound"` and the internal redirect port (`32400`). Matching `exists: source.as.number` + `destination.ip in RFC1918` + `observer.ingress.interface.name: "vtnet1"` and enriching with OPNsense NAT state/rule mappings (`external_port:destination_port`) accurately surfaces all active port-forward exposures without slow BKD CIDR exclusions.
+- **Finding 2 — Point-in-Time Snapshot Drift Across Separate Filter Cache Keys (`BUG-P10-007`):**
+  - Even when Elasticsearch aggregations are unaffected by `post_filter`, keying React Query and backend TTL caches by `{window}:{action}:{direction}:{protocol}:{search}` causes filter switches after TTL expiration to compare aggregations from different timestamps (`T=0` vs `T+20s`). Locking window-level aggregations to a window-only cache key (`firewall_window:{win_key}`) and React `windowSnapshots[windowKey]` guarantees 100% visual stability when exploring logs.
+- **Feed-Forward into Phase 11 (`v1.1.0` — Final Phase of `v1.1` Release Cycle):**
+  - Zero open bugs waterfalled from Phase 10. Phase 11 proceeds directly with **`FB-P11-001`** (Custom Side-Profile Unicorn with Rainbow Horn Logo & Browser Favicon) and **`FB-P11-002`** (Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes: `Default Slate`, `Crimson & Obsidian`, and `Ocean & Navy`).
+
+

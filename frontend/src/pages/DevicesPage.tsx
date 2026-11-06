@@ -28,6 +28,7 @@ import {
   type TimerStartPayload,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
 import { GroupFormModal, getGroupBadgeClasses } from '../components/GroupFormModal'
@@ -71,6 +72,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
   const [selectedAnalyticsGroupId, setSelectedAnalyticsGroupId] = useState<number | null>(null)
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<GroupItem | null>(null)
+  const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const {
     data: deviceList,
@@ -80,14 +82,14 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
   } = useQuery({
     queryKey: ['devices'],
     queryFn: () => apiClient.getDevices(),
-    refetchInterval: 30_000,
+    refetchInterval,
     placeholderData: (previousData) => previousData,
   })
 
   const { data: groupList } = useQuery({
     queryKey: ['groups'],
     queryFn: () => apiClient.getGroups(),
-    refetchInterval: 30_000,
+    refetchInterval,
     placeholderData: (previousData) => previousData,
   })
 
@@ -424,18 +426,27 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
           </div>
 
           <div className="flex flex-col items-start sm:items-end gap-1 self-start shrink-0">
-            <button
-              type="button"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
-                aria-hidden="true"
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>
+                  {syncMutation.isPending ? 'Syncing OPNsense...' : 'Sync from OPNsense'}
+                </span>
+              </button>
+              <AutoRefreshSelector
+                value={intervalOption}
+                onChange={setIntervalOption}
+                testId="devices-auto-refresh-select"
               />
-              <span>{syncMutation.isPending ? 'Syncing OPNsense...' : 'Sync from OPNsense'}</span>
-            </button>
+            </div>
             {deviceList?.last_synced_at && (
               <span
                 data-testid="last-synced-clock"

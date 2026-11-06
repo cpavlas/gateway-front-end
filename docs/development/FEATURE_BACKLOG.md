@@ -37,6 +37,7 @@
 | **`FB-P6-002`** | Top Page Header | Add live **system time** (updating every 1 second) directly below the `Logout` button in the top-right header | UI / Live Clock | `1 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
 | **`FB-P6-003`** | System Connectivity Tab | For the `Local SQLite Store` service card, display **storage size** (on-disk DB + WAL size) and **record count** stats | Observability / Telemetry | `1.5 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
 | **`FB-P6-004`** | Application Usage Stats (YouTube & Plex) | Track and display **active usage time** (minutes/hours, query/packet volume, and last active timestamp) for **YouTube** and **Plex** across devices, groups, and network overview | Application Analytics (`logs-pfsense.log*`) | `2.5 / 5` | **Phase 7** *(Scheduled Batch)* | `COMPLETED (Phase 7)` |
+| **`FB-P10-002`** | Global Auto-Refresh Controls | Add a user-configurable **Auto-Refresh Interval Selector (`Off`, `5s`, `30s`, `1m`, `5m`)** next to every Refresh button that auto-polls data across all tabs and analytics drawers (persisted in `localStorage`) | UX / Polling Control | `1.5 / 5` | **Phase 10 (`v1.0.4`)** | `COMPLETED (Phase 10)` |
 | **FB-P6-005** | Selective Application Blocking (YouTube vs. Plex) | Application blocking control to **prevent access to YouTube** while **allowing access to Plex and everything else** (per-device and per-group toggle via OPNsense alias enforcement) | New Control Feature (App Control) | 3.5 / 5 | **Phase 7** *(Scheduled Batch)* | COMPLETED (Phase 7) |
 | **FB-P8-001** | Traffic & DNS Analytics Tab | Fix YouTube & Plex near-100% active time inflation by aggregating 5m slots per LAN device (source.ip) with an active-streaming event threshold (min_doc_count >= 5) | Bug Fix / Analytics Accuracy | 2 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
 | **FB-P8-002** | Traffic & DNS Analytics Tab | Display the **Top 3 Devices** and their active usage duration inside each Application Usage Stats card (YouTube & Plex) | Analytics Enhancement | 1.5 / 5 | **Phase 8 (1.0.2)** | COMPLETED (Phase 8) |
@@ -49,7 +50,7 @@
 | **FB-P9-002** | System & Admin Tab (Integration Settings) | Expose OPNsense & Elasticsearch connection variables in the UI Admin Panel (persisted in SQLite with runtime precedence over .env + Reset to .env) and add a live **Connectivity Test** that surfaces errors in the UI and logs diagnostic failures to udit_logs | Admin Console & Diagnostics | 3.5 / 5 | **Phase 9 (1.0.3)** | COMPLETED (Phase 9) |
 | **FB-P9-003** | System & Admin Tab (User Management) | Multi-user account creation & password management via Admin Console (Admin vs. Standard User / Operator roles), strictly preventing the default dmin user from being deleted or disabled | Multi-User RBAC | 3 / 5 | **Phase 9 (1.0.3)** | COMPLETED (Phase 9) |
 | **FB-P9-004** | Audit Trail (udit_logs) | Track per-user attribution (ctor = current_user.username) and structured udit_label category badges across all UI actions | Security & Audit | 2 / 5 | **Phase 9 (1.0.3)** | COMPLETED (Phase 9) |
-| **FB-P10-001** | New Firewall & Security Tab | Dedicated Firewall log explorer & security dashboard showing passed/blocked packet metrics, direction, searchable ilterlog stream, **Suspected Bad Actors / Scanners** (with 1-click LAN block), and **Active Inbound WAN Exposure (Open Ports)** | Security & Firewall Telemetry | 3.5 / 5 | **Phase 10 (1.0.4)** | SCHEDULED (Phase 10) |
+| **FB-P10-001** | New Firewall & Security Tab | Dedicated Firewall log explorer & security dashboard showing passed/blocked packet metrics, direction, searchable ilterlog stream, **Suspected Bad Actors / Scanners** (with 1-click LAN block), and **Active Inbound WAN Exposure (Open Ports)** | Security & Firewall Telemetry | 3.5 / 5 | **Phase 10 (1.0.4)** | COMPLETED (Phase 10) |
 | **FB-P11-001** | Header Logo & Browser Favicon | Replace the shield icon with a custom **side-profile Unicorn with Rainbow Horn** SVG icon in the app header, login screen, and browser tab favicon | Branding & Iconography | 1.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
 | **FB-P11-002** | Header User Menu & Color Themes | Clicking the user's Name in the top header opens User Settings with **3 Eye-Friendly Dark-Room Color Themes** (Default Slate, Crimson & Obsidian light/dark red on black, and Ocean & Navy light/dark blue on deep navy) persisted per user | User Preferences & Theming | 2.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
 
@@ -416,6 +417,7 @@
 #### `FB-P10-001` — Dedicated `Firewall & Security` Tab (Bad Actors, Open Inbound WAN Ports & Searchable Log Explorer)
 - **User Feedback:** *"Since we have access to all the firewall logs, lets add a Firewall section that reports all of the firewall activity that is also searchable and shows number of packets passed, blocked, direction etc. The goal of the view is to also be able to easily see bad actors on the network that may need to be blocked and show open ports that could allow for unintentional access into the network from the WAN that could be dangerous."*
 - **Planned Change (Phase 10):** Add a `Firewall & Security` navigation tab with pass/block/direction KPIs, timeline bar chart, side-by-side security panels for **Noisy/Blocked LAN Devices & External Scanners** (with 1-click LAN block) and **Active Inbound WAN Exposure (Open Ports)**, and a searchable/filterable `filterlog` table.
+- **Status:** `COMPLETED (Phase 10 — v1.0.4)`
 
 #### `FB-P11-001` & `FB-P11-002` — Custom Unicorn Rainbow-Horn Logo/Favicon & Clickable Header User Name Menu with 3 Eye-Friendly Color Themes
 - **User Feedback:**
@@ -441,3 +443,11 @@
      - Poll `/status/sessions` and `/status/sessions/history/all` (or Plex SQLite/API playback history, just like Tautulli) to record exact per-device (`player.address` correlated to SQLite `Device.ipv4_address` / `mac_address`), per-user, and per-media-title playback duration, active stream state, bandwidth, transcode vs. direct-play status, and accurate `last_active_at` timestamps.
 - **Complexity:** `3.5 / 5`
 - **Status:** `OPEN — Planned for v1.2 / Dedicated Plex Integration Phase`
+
+#### `FB-P10-002` — User-Configurable Auto-Refresh Interval Selector (`Off`, `5s`, `30s`, `1m`, `5m`) Across All Refresh Buttons
+- **User Feedback (Phase 10 Gate 2 — `PHASE10-Verify.md`):** *"For all Refresh buttons that automatically poll data, add a selector next to the refresh button to change the poll time. Values should be Off, 5s, 30s, 1m, 5m."*
+- **Implemented Change (Phase 10 — `v1.0.4`):**
+  - Created [`frontend/src/components/AutoRefreshSelector.tsx`](frontend/src/components/AutoRefreshSelector.tsx) exporting `AutoRefreshSelector`, `useAutoRefresh()`, and `resolveRefetchInterval()` with options `Auto: Off`, `Auto: 5s`, `Auto: 30s`, `Auto: 1m`, and `Auto: 5m` persisted in `localStorage` (`gateway_auto_refresh_interval`).
+  - Placed `<AutoRefreshSelector />` directly adjacent to the Refresh button and wired `refetchInterval` into `useQuery` across `FirewallPage`, `AnalyticsPage`, `DevicesPage`, `SchedulesPage`, `StatusPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
+- **Complexity:** `1.5 / 5`
+- **Status:** `COMPLETED (Phase 10 — v1.0.4)`
