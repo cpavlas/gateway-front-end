@@ -473,3 +473,51 @@ async def delete_user_account(
     db.add(audit)
     await db.commit()
     return summary
+
+
+
+class UserPreferencesUpdatePayload(BaseModel):
+    """Payload for PATCH /api/v1/auth/preferences (`FB-P11-002`)."""
+
+    theme_preference: str = Field(default="default", min_length=1, max_length=32)
+
+
+def apply_self_theme_preference(
+    user_row: User | None,
+    username: str,
+    raw_theme: str,
+) -> tuple[str, AuditLog]:
+    """Validate and apply a user's self-selected color theme (`FB-P11-002`)."""
+    clean_theme = normalize_theme_preference(raw_theme)
+    if user_row is not None:
+        user_row.theme_preference = clean_theme
+    audit = AuditLog(
+        actor=username,
+        action="user.preferences",
+        audit_label="USER_MGMT",
+        target=username,
+        status="success",
+        details=f"Updated color theme preference to '{clean_theme}'",
+    )
+    return clean_theme, audit
+
+
+async def update_self_theme_preference(
+    db: AsyncSession,
+    settings: Settings,
+    username: str,
+    payload: UserPreferencesUpdatePayload,
+) -> str:
+    """Persist the signed-in user's theme preference in SQLite (`FB-P11-002`)."""
+    await ensure_default_admin_seeded(db, settings)
+    user_row = (
+        await db.execute(
+            select(User).where(func.lower(User.username) == username.lower())
+        )
+    ).scalar_one_or_none()
+    clean_theme, audit = apply_self_theme_preference(
+        user_row, username, payload.theme_preference
+    )
+    db.add(audit)
+    await db.commit()
+    return clean_theme

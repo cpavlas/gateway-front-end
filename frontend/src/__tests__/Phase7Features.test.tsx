@@ -1232,4 +1232,78 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
       )
     })
   })
+
+  it('Phase 11 (FB-P11-001, FB-P11-002): renders Unicorn Rainbow-Horn Logo and switches between 3 eye-friendly color themes via Header User Name Menu', async () => {
+    vi.spyOn(apiClient, 'getCurrentUser').mockResolvedValue({
+      username: 'admin',
+      authenticated: true,
+      expires_at: '2026-11-06T23:59:59Z',
+      role: 'admin',
+      theme_preference: 'default',
+    })
+    vi.spyOn(apiClient, 'getSystemHealth').mockResolvedValue({
+      overall_status: 'healthy',
+      version: '1.1.0',
+      services: {
+        sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1, message: 'OK' },
+        opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 5, message: 'OK' },
+        elasticsearch: {
+          service: 'elasticsearch',
+          status: 'healthy',
+          latency_ms: 4,
+          message: 'OK',
+        },
+      },
+    })
+    const prefSpy = vi
+      .spyOn(apiClient, 'updateUserPreferences')
+      .mockImplementation(async ({ theme_preference }) => ({
+        username: 'admin',
+        authenticated: true,
+        expires_at: '2026-11-06T23:59:59Z',
+        role: 'admin',
+        theme_preference,
+      }))
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <StatusPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // Verify Unicorn Rainbow-Horn Logo in header
+    expect(await screen.findByTestId('header-unicorn-logo')).toBeInTheDocument()
+    expect(screen.getByTestId('unicorn-rainbow-horn')).toBeInTheDocument()
+
+    // Click User Name button in header to open User Settings & Color Theme Popover
+    const userMenuBtn = await screen.findByTestId('header-user-menu-button')
+    expect(userMenuBtn).toHaveTextContent('admin')
+    await user.click(userMenuBtn)
+    expect(await screen.findByTestId('header-user-menu-popover')).toBeInTheDocument()
+
+    // Switch to Crimson & Obsidian theme
+    await user.click(screen.getByTestId('theme-option-crimson'))
+    await waitFor(() => {
+      expect(prefSpy).toHaveBeenCalledWith({ theme_preference: 'crimson' })
+      expect(document.documentElement.dataset.theme).toBe('crimson')
+    })
+
+    // Switch to Ocean & Navy theme
+    await user.click(screen.getByTestId('theme-option-ocean'))
+    await waitFor(() => {
+      expect(prefSpy).toHaveBeenCalledWith({ theme_preference: 'ocean' })
+      expect(document.documentElement.dataset.theme).toBe('ocean')
+    })
+
+    // Switch back to Default Slate theme
+    await user.click(screen.getByTestId('theme-option-default'))
+    await waitFor(() => {
+      expect(prefSpy).toHaveBeenCalledWith({ theme_preference: 'default' })
+      expect(document.documentElement.dataset.theme).toBe('default')
+    })
+  })
 })

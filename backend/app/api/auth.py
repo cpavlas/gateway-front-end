@@ -23,9 +23,11 @@ from app.config import Settings, get_settings
 from app.db import get_db_session
 from app.models import AuditLog, User
 from app.services.user_service import (
+    UserPreferencesUpdatePayload,
     authenticate_user_account,
     get_setup_status,
     setup_initial_admin_account,
+    update_self_theme_preference,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -243,3 +245,43 @@ async def get_current_user(
             expires_at=current_user.expires_at,
         )
     return current_user
+
+
+
+@router.patch("/preferences", response_model=AuthUserResponse)
+async def patch_current_user_preferences(
+    payload: UserPreferencesUpdatePayload,
+    request: Request,
+    response: Response,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> AuthUserResponse:
+    """Update the signed-in user's color theme preference (`FB-P11-002`)."""
+    try:
+        clean_theme = await update_self_theme_preference(
+            db, settings, current_user.username, payload
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    role_lit: Literal["admin", "operator"] = (
+        "operator" if current_user.role == "operator" else "admin"
+    )
+    token, expires_at = create_session_token(
+        current_user.username,
+        settings,
+        role=role_lit,
+        theme_preference=clean_theme,
+    )
+    _set_session_cookie(request, response, token, settings)
+    return AuthUserResponse(
+        username=current_user.username,
+        role=role_lit,
+        theme_preference=clean_theme,
+        authenticated=True,
+        expires_at=expires_at.isoformat(),
+    )

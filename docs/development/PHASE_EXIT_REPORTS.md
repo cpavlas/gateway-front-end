@@ -388,3 +388,29 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   - Zero open bugs waterfalled from Phase 10. Phase 11 proceeds directly with **`FB-P11-001`** (Custom Side-Profile Unicorn with Rainbow Horn Logo & Browser Favicon) and **`FB-P11-002`** (Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes: `Default Slate`, `Crimson & Obsidian`, and `Ocean & Navy`).
 
 
+
+
+---
+
+## Phase 11 Exit Analysis & `v1.1.0` Release Retrospective (`v1.1.0` — 2026-11-06)
+
+### 1. Phase 11 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P11-001` & `FB-P11-002`):**
+  1. **`FB-P11-001` (Custom Side-Profile Unicorn with Rainbow Horn Logo & Browser Favicon — `UnicornLogo.tsx`, `unicorn-favicon.svg`, `index.html`, `AppLayout.tsx`, `LoginPage.tsx`):**
+     - Created `<UnicornLogo />` and `/unicorn-favicon.svg` featuring a side-profile unicorn silhouette with a multi-stop rainbow-gradient horn (`#f43f5e -> #fb923c -> #facc15 -> #34d399 -> #38bdf8 -> #a855f7`).
+     - Replaced the shield brand icon in `AppLayout.tsx` and `LoginPage.tsx` and wired `<link rel="icon" type="image/svg+xml" href="/unicorn-favicon.svg" />` in `frontend/index.html`.
+  2. **`FB-P11-002` (Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes — `auth.py`, `user_service.py`, `index.css`, `AuthContext.tsx`, `AppLayout.tsx`):**
+     - Added `PATCH /api/v1/auth/preferences` and `update_self_theme_preference()` so any authenticated user (`admin` or `operator`) can persist their chosen `theme_preference` (`default`, `crimson`, or `ocean`) in SQLite (`User.theme_preference`) with `USER_MGMT` audit logging.
+     - Defined 3 dark-room-friendly color themes via Tailwind v4 CSS custom property overrides in `frontend/src/index.css` (`Default Slate`, `Crimson & Obsidian` soft light/dark red on black, and `Ocean & Navy` soft light/dark blue on deep navy) and made the signed-in user badge in `AppLayout.tsx` clickable to open the **User Preferences & View Theme** popover.
+- **Final Automated Quality Metrics (`v1.1.0`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `121 / 121` passed (`85%` coverage), `0` ruff errors, `0` mypy issues across `31` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `28 / 28` passed across `7` test suites (`90.70%` coverage; `UnicornLogo.tsx` `100%`, `AppLayout.tsx` `98.67%`, `AuthContext.tsx` `90.0%`), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward into `v1.2` Planning
+- **Captured `v1.2` Planning Items from `PHASE11-Verify.md` (`FB-P11-003` – `FB-P11-008` / `BUG-P11-001`):**
+  1. **`FB-P11-003` (`BUG-P11-001`):** Optimize cold-load Elasticsearch queries in `Traffic & DNS Analytics` (`track_total_hits: False`, `request_cache=True`, remove `*plex*` wildcard from `_build_app_usage_agg()`, tune `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s`) and automatically log runtime ES/OPNsense errors to `audit_logs` in the `System` tab.
+  2. **`FB-P11-004`:** Integrate automated SAST/SCA/Container & Route Auth-Bypass security scanning (`pip-audit`, `npm audit`, `bandit`/`ruff S`, `trivy`, and programmatic FastAPI route auth assertions) into local checks and CI/CD.
+  3. **`FB-P11-005`:** Streamline top header alignment (relocate clock so `Logout` aligns evenly), shorten tab labels to single words (`Devices`, `Schedules`, `Analytics`, `Firewall`, `System`) with larger icons, shorten title to `Gateway Control` with `Access & Telemetry Portal` + inline version badge, and enlarge `<UnicornLogo />` with a more defined border.
+  4. **`FB-P11-006`:** Replace `YT Allowed` / `YT Blocked` text buttons with a compact YouTube logo button (bright when allowed, dim when blocked) and include `is_youtube_blocked` devices in the `Blocked` filter view on `Devices & Access Control`.
+  5. **`FB-P11-007`:** Add a visual loading/refreshing state (greyed-out + slow pulse/blink) when waiting for Elasticsearch data so stale data is clearly distinguished during refreshes.
+  6. **`FB-P11-008` & `FB-P9-005`:** Present architectural/performance improvement proposals and Tautulli-style direct Plex API integration during the `v1.2` planning phase.
