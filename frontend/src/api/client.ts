@@ -7,13 +7,14 @@ export type OverrideMode = 'pause' | 'bonus'
 export type OverrideTargetType = 'device' | 'group'
 
 export type UserRole = 'admin' | 'operator'
+export type ThemePreference = 'default' | 'crimson' | 'ocean'
 
 export interface AuthUserResponse {
   username: string
   authenticated: boolean
   expires_at: string
   role?: UserRole
-  theme_preference?: string
+  theme_preference?: ThemePreference | string
 }
 
 export interface SetupStatusResponse {
@@ -753,6 +754,15 @@ export const apiClient = {
   logout(): Promise<{ status: string }> {
     return requestJson<{ status: string }>('/api/v1/auth/logout', {
       method: 'POST',
+    })
+  },
+
+  updateUserPreferences(payload: {
+    theme_preference: ThemePreference
+  }): Promise<AuthUserResponse> {
+    return requestJson<AuthUserResponse>('/api/v1/auth/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
     })
   },
 

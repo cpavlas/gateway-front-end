@@ -538,7 +538,7 @@ Following the completion of `v1.0.1`, the `v1.1` release cycle is organized into
      - **Active Inbound WAN Exposure (Open Ports)** highlighting internal `IP:Port` targets accepting inbound traffic from public WAN IPs with full `external_port:destination_port` mappings (`32400:32400 / TCP`, `32401:32400 / TCP`, `51820:51820 / UDP`).
   3. **Compact Auto-Refresh Interval Selector (`FB-P10-002`):** Timer icon + timeframe selector (`Off`, `5s`, `30s`, `1m`, `5m`) persisted in `localStorage` across data-polling views.
 
-### Phase 11 (`v1.1.0`): Custom Unicorn Rainbow Branding & User Color Themes (`FB-P11-001`, `FB-P11-002`)
+### Phase 11 (`v1.1.0` — COMPLETE): Custom Unicorn Rainbow Branding & User Color Themes (`FB-P11-001`, `FB-P11-002`)
 - **Deliverables:**
-  1. **Unicorn Side-Profile with Rainbow Horn Icon & Browser Favicon (`FB-P11-001`):** Replace the shield icon in the header, login screen, and browser tab `<link rel="icon">` with a custom SVG side-profile Unicorn featuring a rainbow horn.
-  2. **Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes (`FB-P11-002`):** Clicking the user's Name in the top header opens User Settings with a per-user persisted selector for **3 Dark-Room-Friendly Color Themes** (`Default Slate`, `Crimson & Obsidian` soft light/dark red on black, and `Ocean & Navy` soft light/dark blue on deep navy).
+  1. **Unicorn Side-Profile with Rainbow Horn Icon & Browser Favicon (`FB-P11-001`):** Replaced the shield icon in the header, login screen, and browser tab `<link rel="icon">` with `<UnicornLogo />` and `/unicorn-favicon.svg` featuring a custom SVG side-profile Unicorn with a rainbow horn.
+  2. **Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes (`FB-P11-002`):** Clicking the user's Name in the top header opens User Settings with a per-user persisted selector (`PATCH /api/v1/auth/preferences`) for **3 Dark-Room-Friendly Color Themes** (`Default Slate`, `Crimson & Obsidian` soft light/dark red on black, and `Ocean & Navy` soft light/dark blue on deep navy).

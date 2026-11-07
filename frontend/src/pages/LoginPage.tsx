@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { AlertCircle, KeyRound, Lock, ShieldCheck, User } from 'lucide-react'
+import { AlertCircle, KeyRound, Lock, User } from 'lucide-react'
 import { apiClient } from '../api/client'
+import { UnicornLogo } from '../components/UnicornLogo'
 import { useAuth } from '../context/AuthContext'
 
 export interface LoginPageProps {
@@ -89,7 +90,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialSetupRequired = fal
       <div className="w-full max-w-md space-y-6 rounded-2xl border border-slate-800 bg-slate-900/90 p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center space-y-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
-            <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+            <UnicornLogo className="h-8 w-8" testId="login-unicorn-logo" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-100">
             OPNsense Gateway Control

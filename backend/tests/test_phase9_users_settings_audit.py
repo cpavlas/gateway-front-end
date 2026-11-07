@@ -42,6 +42,7 @@ from app.services.runtime_settings_service import (
 from app.services.user_service import (
     UserCreatePayload,
     UserUpdatePayload,
+    apply_self_theme_preference,
     apply_user_updates,
     build_sorted_user_list_response,
     enforce_protected_admin_mutation,
@@ -195,6 +196,9 @@ def test_secret_encryption_and_pure_validators() -> None:
     assert normalize_theme_preference("crimson") == "crimson"
     with pytest.raises(ValueError):
         normalize_theme_preference("neon-green")
+    clean_t, theme_audit = apply_self_theme_preference(None, "admin", "ocean")
+    assert clean_t == "ocean"
+    assert theme_audit.audit_label == "USER_MGMT"
 
     assert validate_initial_admin_passwords("StrongPass!123", "StrongPass!123") == "StrongPass!123"
     with pytest.raises(ValueError, match="do not match"):
@@ -502,6 +506,21 @@ async def test_multi_user_management_rbac_and_protected_admin(
     assert op_users.status_code == 403
     op_settings = await async_client.get("/api/v1/system/settings")
     assert op_settings.status_code == 403
+
+    # Operator CAN update their own theme preference via PATCH /api/v1/auth/preferences (FB-P11-002)
+    op_theme = await async_client.patch(
+        "/api/v1/auth/preferences",
+        json={"theme_preference": "crimson"},
+    )
+    assert op_theme.status_code == 200
+    assert op_theme.json()["theme_preference"] == "crimson"
+    assert op_theme.json()["role"] == "operator"
+
+    bad_theme = await async_client.patch(
+        "/api/v1/auth/preferences",
+        json={"theme_preference": "neon_green"},
+    )
+    assert bad_theme.status_code == 400
 
     # Switch back to admin to disable and then delete alice_op
     await async_client.post(

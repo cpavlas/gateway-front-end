@@ -1,2 +1,58 @@
 @import "tailwindcss";
 
+/*
+ * Phase 11 (FB-P11-002): 3 Eye-Friendly Dark-Room Color Themes
+ * - "default"  : Default Slate (Deep slate surfaces + soft indigo/cyan accents)
+ * - "crimson"  : Crimson & Obsidian (Deep obsidian/black surfaces + muted dark/light red accents)
+ * - "ocean"    : Ocean & Navy (Deep midnight navy surfaces + soft dark/light blue accents)
+ */
+
+html[data-theme="crimson"] {
+  --color-slate-950: #080506;
+  --color-slate-900: #120a0d;
+  --color-slate-800: #1e1116;
+  --color-slate-700: #301b22;
+  --color-slate-600: #462731;
+  --color-slate-500: #6b424f;
+  --color-slate-400: #a6848f;
+  --color-slate-300: #cfb3bc;
+  --color-slate-200: #ead9df;
+  --color-slate-100: #f8f0f2;
+  --color-slate-50: #fdfafb;
+
+  --color-indigo-950: #290810;
+  --color-indigo-900: #450d1b;
+  --color-indigo-800: #631427;
+  --color-indigo-700: #821b33;
+  --color-indigo-600: #9f2440;
+  --color-indigo-500: #be3453;
+  --color-indigo-400: #d95b76;
+  --color-indigo-300: #eb8fa3;
+  --color-indigo-200: #f5bcc8;
+  --color-indigo-100: #fbe2e7;
+}
+
+html[data-theme="ocean"] {
+  --color-slate-950: #040914;
+  --color-slate-900: #091326;
+  --color-slate-800: #10203b;
+  --color-slate-700: #1b3154;
+  --color-slate-600: #294570;
+  --color-slate-500: #4b6a96;
+  --color-slate-400: #849ec2;
+  --color-slate-300: #b0c4de;
+  --color-slate-200: #d5e2f2;
+  --color-slate-100: #eef4fb;
+  --color-slate-50: #f7faff;
+
+  --color-indigo-950: #061936;
+  --color-indigo-900: #0b2954;
+  --color-indigo-800: #113a73;
+  --color-indigo-700: #174e96;
+  --color-indigo-600: #1e62b8;
+  --color-indigo-500: #2b7ad9;
+  --color-indigo-400: #559be8;
+  --color-indigo-300: #87bcf2;
+  --color-indigo-200: #b8d8f8;
+  --color-indigo-100: #e0effc;
+}

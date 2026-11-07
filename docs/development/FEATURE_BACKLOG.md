@@ -451,3 +451,61 @@
   - Placed `<AutoRefreshSelector />` directly adjacent to the Refresh button and wired `refetchInterval` into `useQuery` across `FirewallPage`, `AnalyticsPage`, `DevicesPage`, `SchedulesPage`, `StatusPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
 - **Complexity:** `1.5 / 5`
 - **Status:** `COMPLETED (Phase 10 — v1.0.4)`
+
+
+---
+
+### Area 10 — `v1.2` Planning Backlog (Captured at Phase 11 / `v1.1.0` Release Sign-Off — `PHASE11-Verify.md`)
+
+#### `FB-P11-003` (`BUG-P11-001`) — Elasticsearch Analytics Cold-Load Query Optimization, Timeout Tuning & Runtime Error Audit Logging
+- **User Feedback (`PHASE11-Verify.md`):**
+  - *"Sometimes when we attempt to load data from ES for analytics, or on first load and refresh, we will get a timeout error. When this happens, I can typically refresh the page, and that will resolve the issue. What is the default timeout set for ES analytics requests? Addittionally, evaluate if we are using the most optimal calls to get the data we need efficiently, or if perhaps there is a more optimal way to retrieve this data based on Elastic search best practices."*
+  - *"When we do get errors when trying to access ES or OPNsense, be sure those errors are logged in our System tab logs."*
+- **Technical Evaluation & Planned Changes (`v1.2`):**
+  1. **Current Default Timeout:** `ELASTICSEARCH_TIMEOUT_SECONDS` in `backend/app/config.py` defaults to **`10.0` seconds** (`ge=1.0, le=60.0`).
+  2. **Why Cold Loads Occasionally Exceed `10.0s` on `Traffic & DNS Analytics`:**
+     - Unlike `fetch_firewall_overview()` (which we optimized in Phase 10 with `track_total_hits: False` and `request_cache=True`), `build_network_overview_query()`, `build_device_analytics_query()`, and `build_group_analytics_query()` in `backend/app/clients/elasticsearch.py` currently omit `"track_total_hits": False` and `request_cache=True`.
+     - Additionally, `_build_app_usage_agg()` executes a wildcard `query_string: {"query": "*plex*"}` and a nested `terms(source.ip, size=100) -> date_histogram(5m)` (`28,800` sub-buckets on `24h`) across all `1,638` shards. On a cold query, shard coordination takes `8–12s`, whereas the second refresh hits the OS/shard page cache and completes in `< 1s`.
+  3. **Planned Elasticsearch Best-Practice Optimizations:**
+     - Add `"track_total_hits": False` and `request_cache=True` to `fetch_network_overview`, `fetch_device_analytics`, and `fetch_group_analytics`.
+     - Remove the expensive wildcard `query_string: "*plex*"` from `_build_app_usage_agg()` (relying on exact `terms` on `dns.question.registered_domain` and `destination.port: 32400`), reduce `by_device` `size` from `100` to `20`, and use `_msearch` or background cache pre-warming.
+     - Increase the default `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s`.
+     - Automatically write a deduplicated/throttled `AuditLog` (`audit_label="DIAGNOSTIC_ERROR"`, `action="upstream.elasticsearch.error"` / `"upstream.opnsense.error"`) whenever a runtime ES or OPNsense request fails or times out so all upstream errors are visible in the `System` tab's Audit & Event History.
+- **Complexity:** `2 / 5`
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
+
+#### `FB-P11-004` — Automated Code & Dependency Security Scanning (SAST, SCA, Container & Auth-Bypass Auditing in CI/CD)
+- **User Feedback (`PHASE11-Verify.md`):** *"Code security scanning to ensure we do not have any open source vulnerabilites or code paths that could be used to bypass security or gain access to systems. We should determine the best methods for testing this, and the best tools to use. Perhaps there is a way to integrate this into our CI/CD pipeline."*
+- **Technical Evaluation & Planned Changes (`v1.2`):**
+  - Integrate a multi-layer security gate into local quality checks and `.github/workflows/ci.yml`:
+    1. **Dependency Vulnerability Scanning (SCA):** `pip-audit` for Python packages and `npm audit --audit-level=moderate` for Node/frontend packages.
+    2. **Static Application Security Testing (SAST):** Enable `ruff` flake8-bandit security rules (`select = [..., "S"]`), `bandit -r backend/app`, and `semgrep` OWASP Top 10 / FastAPI / React rulesets.
+    3. **Container Image & Secret Scanning:** `trivy image` / `trivy fs` in GitHub Actions to catch OS package CVEs and accidental secret leaks.
+    4. **Automated Route Auth-Bypass & RBAC Security Suite (`test_security_audit.py`):** Programmatically iterate over every registered FastAPI route in `app.routes`, asserting that zero `/api/v1/*` endpoints (outside `/api/v1/auth/{login,setup-status,setup-admin}`) accept unauthenticated requests (`401`) or allow `operator` role privilege escalation onto admin-only endpoints (`403`).
+- **Complexity:** `2 / 5`
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
+
+#### `FB-P11-005` — Top Header Alignment, Single-Word Tab Labels with Larger Icons, Streamlined Title & Larger Unicorn Icon
+- **User Feedback (`PHASE11-Verify.md`):**
+  - *"Page Header alignment is not even. Currently the logout button is sitting higher than the other elements in the header. This is probably due to the clocks location, perhaps we should find a better place to put the clock so that it does not cause the alignment to be skewed."*
+  - *"Page Header labels are too verbose, I would rather increase the size of the icons for each item and reduce the label text to single words like Devices, Schedules, Analytics, Firewall, and System."*
+  - *"Page header label OPNSense Gateway Control is too long. Lets change this to just say Gateway Control and also remove the OPNsense and Elasticsearch version labels, since this is available in the system tab. Leave Access & Telemetry portal though and move the current version of the code to be in line with the Access & Telemetry Portal label"*
+  - *"The Unicorn icon in the page header is slightly difficult to make out. Perhaps we can make it slightly larger, and with a more defined border."*
+- **Complexity:** `1.5 / 5`
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
+
+#### `FB-P11-006` — Compact YouTube Logo Toggle Button & Unified `Blocked` Filter Including `YT Blocked` Devices
+- **User Feedback (`PHASE11-Verify.md`):**
+  - *"The buttons for YT Allowed are rather large. Change this to just be the Youtube logo and have it be bright if its allowing YT, but dim when it is not, like the Allowed button already operates"*
+  - *"When clicking blocked in Devices & Access Control within the show list (All, Online,...) the blocked view should also include devices that have YT blocked for easier view and access."*
+- **Complexity:** `1.5 / 5`
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
+
+#### `FB-P11-007` — Visual Loading / Refreshing State (Greyed-Out + Slow Blink/Pulse) for Analytics Windows
+- **User Feedback (`PHASE11-Verify.md`):** *"In the next planning phase, for the discussion, lets also include determining better ways of showing data that is is waiting to load from ES for presentation. Sometimes stale data, or no data, will show while the system is refreshing and it is not obvious that the stale data is bad. Perhaps we could do something like grey out the windows of where the data loads and slowly blink the data as it is loaded."*
+- **Complexity:** `1.5 / 5`
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
+
+#### `FB-P11-008` — Application Improvement & Performance Enhancement Proposals for Next (`v1.2`) Planning Phase
+- **User Feedback (`PHASE11-Verify.md`):** *"Additionally as part of the next planning phase, present improvement options, performance enhancements or other changes that you think would improve the application for discussion."*
+- **Status:** `OPEN — Scheduled for v1.2 Planning`
