@@ -185,7 +185,7 @@ def decode_session_token(token: str, settings: Settings) -> AuthUserResponse:
     sub = payload.get("sub")
     token_type = payload.get("type")
     exp = payload.get("exp")
-    if not sub or exp is None or token_type != "admin_session":
+    if not sub or exp is None or token_type != "admin_session":  # noqa: S105
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session subject.",

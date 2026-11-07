@@ -22,11 +22,13 @@ import {
   formatBlockedPercentage,
   formatBytes,
   formatClock24h,
+  type FirewallOpenWanPortItem,
   type FirewallOverviewResponse,
   type TimeWindow,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
+import { FirewallOpenPortSessionsDrawer } from '../components/FirewallOpenPortSessionsDrawer'
 import { TelemetryLoadingShell } from '../components/TelemetryLoadingShell'
 import { TimelineBarChart } from '../components/TelemetryBarChart'
 
@@ -53,6 +55,8 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
   const [protocolFilter, setProtocolFilter] = useState<string>('all')
   const [searchInput, setSearchInput] = useState<string>('')
   const [actionBanner, setActionBanner] = useState<string | null>(null)
+  const [selectedOpenPort, setSelectedOpenPort] =
+    useState<FirewallOpenWanPortItem | null>(null)
   const [windowSnapshots, setWindowSnapshots] = useState<
     Partial<Record<TimeWindow, FirewallOverviewResponse>>
   >({})
@@ -652,8 +656,17 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
                             <td className="py-2.5 px-3 text-right font-mono text-slate-300">
                               {formatBytes(wp.bytes)}
                             </td>
-                            <td className="py-2.5 pl-3 text-right font-mono text-amber-300">
-                              {wp.unique_external_sources.toLocaleString()}
+                            <td className="py-2.5 pl-3 text-right">
+                              <button
+                                type="button"
+                                data-testid={`firewall-open-port-ext-ips-${wp.destination_port}`}
+                                onClick={() => setSelectedOpenPort(wp)}
+                                title={`Inspect ${wp.unique_external_sources} connected external WAN IP${wp.unique_external_sources === 1 ? '' : 's'} for port ${wp.destination_port}`}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 font-mono text-xs font-semibold text-amber-300 transition hover:bg-amber-500/25 hover:border-amber-400 cursor-pointer"
+                              >
+                                <span>{wp.unique_external_sources.toLocaleString()}</span>
+                                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -841,6 +854,12 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
             </section>
           </TelemetryLoadingShell>
         )}
+
+        <FirewallOpenPortSessionsDrawer
+          openPort={selectedOpenPort}
+          initialWindow={windowKey}
+          onClose={() => setSelectedOpenPort(null)}
+        />
       </div>
     </AppLayout>
   )

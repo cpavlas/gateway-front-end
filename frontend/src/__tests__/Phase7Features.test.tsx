@@ -1307,4 +1307,215 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
       expect(document.documentElement.dataset.theme).toBe('default')
     })
   })
+
+  it('Phase 14 (FB-P13-001, FB-P13-002): opens FirewallOpenPortSessionsDrawer when clicking External IPs and filters PERFORMANCE_ANALYSIS audit logs', async () => {
+    vi.spyOn(apiClient, 'getSystemHealth').mockResolvedValue({
+      overall_status: 'healthy',
+      version: '1.2.0-rc3',
+      services: {
+        sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1, message: 'OK' },
+        opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 5, message: 'OK' },
+        elasticsearch: {
+          service: 'elasticsearch',
+          status: 'healthy',
+          latency_ms: 4,
+          message: 'OK',
+        },
+      },
+    })
+    vi.spyOn(apiClient, 'getFirewallOverview').mockResolvedValue({
+      window: '24h',
+      generated_at: '2026-11-06T18:00:00Z',
+      es_reachable: true,
+      warning: null,
+      summary: {
+        total_packets: 1200,
+        allowed_packets: 950,
+        blocked_packets: 250,
+        inbound_packets: 600,
+        outbound_packets: 600,
+        total_bytes: 5242880,
+        open_wan_port_count: 1,
+      },
+      timeline: [],
+      noisy_lan_devices: [],
+      external_scanners: [],
+      open_wan_ports: [
+        {
+          device_id: 20,
+          destination_ip: '192.168.1.252',
+          effective_name: 'Plex Media Server',
+          external_port: 32400,
+          destination_port: 32400,
+          port_mapping: '32400:32400',
+          protocol: 'tcp',
+          passed_packets: 420,
+          bytes: 2097152,
+          unique_external_sources: 2,
+          last_seen_at: '2026-11-06T17:58:00Z',
+        },
+      ],
+      recent_events: [],
+    })
+
+    const openPortSessionsSpy = vi
+      .spyOn(apiClient, 'getFirewallOpenPortSessions')
+      .mockResolvedValue({
+        window: '24h',
+        generated_at: '2026-11-06T18:00:00Z',
+        es_reachable: true,
+        warning: null,
+        device_id: 20,
+        destination_ip: '192.168.1.252',
+        effective_name: 'Plex Media Server',
+        external_port: 32400,
+        destination_port: 32400,
+        port_mapping: '32400:32400',
+        protocol: 'tcp',
+        summary: {
+          total_passed_packets: 420,
+          total_bytes: 2097152,
+          unique_external_ips: 2,
+          top_country: 'United States',
+        },
+        external_ips: [
+          {
+            source_ip: '8.8.8.8',
+            organization: 'T-Mobile USA, Inc.',
+            asn: 21928,
+            city_name: 'Montrose',
+            region_name: 'Colorado',
+            country_name: 'United States',
+            country_iso_code: 'US',
+            continent_name: 'North America',
+            location_label: 'Montrose, Colorado, United States',
+            latitude: 38.4783,
+            longitude: -107.8762,
+            passed_packets: 380,
+            bytes: 1966080,
+            first_seen_at: '2026-11-06T16:00:00Z',
+            last_seen_at: '2026-11-06T17:15:20Z',
+            connection_duration_seconds: 4520,
+            connection_duration_label: '1h 15m 20s',
+            active_duration_minutes: 35,
+            source_ports: [51422, 51423],
+            tcp_flags: 'PA',
+            ttl: 54,
+          },
+        ],
+        recent_events: [
+          {
+            timestamp: '2026-11-06T17:15:20Z',
+            source_ip: '8.8.8.8',
+            source_port: 51422,
+            organization: 'T-Mobile USA, Inc.',
+            location_label: 'Montrose, Colorado, United States',
+            protocol: 'tcp',
+            tcp_flags: 'PA',
+            ttl: 54,
+            bytes: 1420,
+            interface: 'igc0',
+            rule_id: 'nat-32400',
+          },
+        ],
+      })
+
+    const auditSpy = vi.spyOn(apiClient, 'getAuditLogs').mockResolvedValue({
+      total_count: 1,
+      items: [
+        {
+          id: 901,
+          action: 'telemetry.analytics.overview',
+          actor: 'admin',
+          target: 'analytics.overview (window=30d)',
+          status: 'success',
+          audit_label: 'PERFORMANCE_ANALYSIS',
+          details: '[30d] 2,418.2 ms • cache=MISS • refresh=manual • events=14,280,000',
+          created_at: '2026-11-06T18:01:00Z',
+        },
+      ],
+    })
+
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    const { unmount } = render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <FirewallPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // Click External IPs count button on port 32400
+    const extIpsBtn = await screen.findByTestId('firewall-open-port-ext-ips-32400')
+    expect(extIpsBtn).toHaveTextContent('2')
+    await user.click(extIpsBtn)
+
+    // Verify FirewallOpenPortSessionsDrawer opens and renders GeoIP + Connection Length
+    const drawer = await screen.findByTestId('firewall-open-port-sessions-drawer')
+    expect(drawer).toBeInTheDocument()
+    expect(await screen.findByTestId('open-port-kpi-external-ips')).toHaveTextContent('2')
+    expect(screen.getByTestId('open-port-kpi-top-country')).toHaveTextContent(
+      'United States',
+    )
+    const extIpTable = screen.getByTestId('open-port-external-ips-table')
+    expect(within(extIpTable).getByText('8.8.8.8')).toBeInTheDocument()
+    expect(within(extIpTable).getByText('T-Mobile USA, Inc.')).toBeInTheDocument()
+    expect(within(extIpTable).getByText('AS21928')).toBeInTheDocument()
+    expect(
+      within(extIpTable).getByText('Montrose, Colorado, United States'),
+    ).toBeInTheDocument()
+    expect(within(extIpTable).getByText('1h 15m 20s')).toBeInTheDocument()
+    expect(within(extIpTable).getByText('TTL 54')).toBeInTheDocument()
+
+    // Switch window & filter inside drawer
+    await user.click(screen.getByTestId('open-port-drawer-window-7d'))
+    await user.type(screen.getByTestId('open-port-sessions-search-input'), 'Montrose')
+    await user.click(screen.getByTestId('open-port-drawer-refresh-btn'))
+    await waitFor(() => {
+      expect(openPortSessionsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          destination_ip: '192.168.1.252',
+          destination_port: 32400,
+          window: '7d',
+          search: 'Montrose',
+          refresh: true,
+        }),
+      )
+    })
+
+    // Close drawer
+    await user.click(screen.getByTestId('close-open-port-drawer-btn'))
+    expect(
+      screen.queryByTestId('firewall-open-port-sessions-drawer'),
+    ).not.toBeInTheDocument()
+
+    unmount()
+
+    // Render StatusPage and verify PERFORMANCE_ANALYSIS audit label filter & badge
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <StatusPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(await screen.findByTestId('load-audit-logs-btn'))
+    await user.selectOptions(
+      await screen.findByTestId('audit-label-filter'),
+      'PERFORMANCE_ANALYSIS',
+    )
+    await waitFor(() => {
+      expect(auditSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audit_label: 'PERFORMANCE_ANALYSIS',
+        }),
+      )
+    })
+    expect(await screen.findByTestId('audit-label-badge')).toHaveTextContent(
+      'PERFORMANCE_ANALYSIS',
+    )
+    expect(screen.getByTestId('audit-logs-table')).toHaveTextContent('2,418.2 ms')
+  })
 })

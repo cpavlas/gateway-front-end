@@ -37,7 +37,7 @@ def extract_sqlite_file_path(database_url: str) -> Path | None:
         url_obj = make_url(database_url)
         if url_obj.database and url_obj.database != ":memory:":
             return Path(url_obj.database)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     prefix = "sqlite+aiosqlite:///"
     if database_url.startswith(prefix):

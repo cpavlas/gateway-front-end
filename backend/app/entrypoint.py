@@ -15,7 +15,7 @@ GATEWAY_UID = 10001
 GATEWAY_GID = 10001
 GATEWAY_USER = "gateway"
 DEFAULT_DATA_DIR = Path("/app/data")
-DEFAULT_CMD = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+DEFAULT_CMD = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]  # noqa: S104
 
 
 def resolve_target_data_dirs(env: dict[str, str] | None = None) -> list[Path]:
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> None:
 
     args = list(argv) if argv is not None else sys.argv[1:]
     cmd = args if args else list(DEFAULT_CMD)
-    os.execvp(cmd[0], cmd)
+    os.execvp(cmd[0], cmd)  # noqa: S606
 
 
 if __name__ == "__main__":  # pragma: no cover

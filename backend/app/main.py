@@ -27,7 +27,10 @@ from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.clients.opnsense import OPNsenseClient
 from app.config import apply_runtime_overrides, get_settings
 from app.db import dispose_db, get_session_factory, init_db
-from app.services.analytics_service import get_network_overview_analytics
+from app.services.analytics_service import (
+    get_analytics_cache,
+    get_network_overview_analytics,
+)
 from app.services.firewall_service import get_firewall_overview_analytics
 from app.services.runtime_settings_service import load_runtime_settings_from_db
 from app.services.schedule_service import reconcile_schedules_and_policies
@@ -48,8 +51,12 @@ async def run_scheduled_override_reconciliation() -> None:
         await reconcile_schedules_and_policies(session, opnsense, effective_settings)
 
 
-async def run_telemetry_cache_prewarm(*, force: bool = False) -> bool:
-    """Background task tick: pre-warm default 24h NetworkOverview and FirewallOverview caches."""
+async def run_telemetry_cache_prewarm(
+    *,
+    force: bool = False,
+    include_extended_windows: bool = False,
+) -> bool:
+    """Background task tick: pre-warm 24h (and 7d/30d when expired) caches."""
     base_settings = get_settings()
     session_factory = get_session_factory(base_settings)
     async with session_factory() as session:
@@ -67,6 +74,7 @@ async def run_telemetry_cache_prewarm(*, force: bool = False) -> bool:
             es_client=es_client,
             window="24h",
             refresh=True,
+            record_perf=False,
         )
         await get_firewall_overview_analytics(
             db=session,
@@ -74,7 +82,32 @@ async def run_telemetry_cache_prewarm(*, force: bool = False) -> bool:
             es_client=es_client,
             window="24h",
             refresh=True,
+            record_perf=False,
         )
+        if include_extended_windows or not force:
+            cache = get_analytics_cache()
+            for ext_win in ("7d", "30d"):
+                if include_extended_windows or cache.get(f"overview:{ext_win}") is None:
+                    await get_network_overview_analytics(
+                        db=session,
+                        settings=effective_settings,
+                        es_client=es_client,
+                        window=ext_win,
+                        refresh=True,
+                        record_perf=False,
+                    )
+                if (
+                    include_extended_windows
+                    or cache.get(f"firewall_window:{ext_win}") is None
+                ):
+                    await get_firewall_overview_analytics(
+                        db=session,
+                        settings=effective_settings,
+                        es_client=es_client,
+                        window=ext_win,
+                        refresh=True,
+                        record_perf=False,
+                    )
         return True
 
 
@@ -98,10 +131,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         replace_existing=True,
     )
     scheduler.start()
-    try:
+    with suppress(Exception):
         await run_scheduled_override_reconciliation()
-    except Exception:
-        pass
     prewarm_task = asyncio.create_task(run_telemetry_cache_prewarm())
     try:
         yield

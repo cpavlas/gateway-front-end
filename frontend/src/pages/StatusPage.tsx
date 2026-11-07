@@ -1440,6 +1440,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   <option value="TIMER_OVERRIDE">TIMER_OVERRIDE</option>
                   <option value="SCHEDULE_CHANGE">SCHEDULE_CHANGE</option>
                   <option value="CONFIG_BACKUP">CONFIG_BACKUP</option>
+                  <option value="PERFORMANCE_ANALYSIS">
+                    Performance Analysis (PERFORMANCE_ANALYSIS)
+                  </option>
                 </select>
 
                 <select
@@ -1494,10 +1497,12 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                               className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
                                 log.audit_label === 'DIAGNOSTIC_ERROR'
                                   ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                                  : log.audit_label === 'USER_MGMT' ||
-                                      log.audit_label === 'SETTINGS_CHANGE'
-                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                                    : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                                  : log.audit_label === 'PERFORMANCE_ANALYSIS'
+                                    ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                                    : log.audit_label === 'USER_MGMT' ||
+                                        log.audit_label === 'SETTINGS_CHANGE'
+                                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                      : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
                               }`}
                             >
                               {log.audit_label ?? 'SYSTEM'}
@@ -1510,7 +1515,14 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                             {log.actor}
                           </td>
                           <td className="py-2 px-3 font-mono text-slate-400">
-                            {log.target} ({log.status})
+                            <div>
+                              {log.target} ({log.status})
+                            </div>
+                            {log.details && (
+                              <div className="mt-0.5 text-[11px] text-slate-300">
+                                {log.details}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}

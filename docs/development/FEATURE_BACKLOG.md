@@ -483,7 +483,7 @@
     3. **Container Image & Secret Scanning:** `trivy image` / `trivy fs` in GitHub Actions to catch OS package CVEs and accidental secret leaks.
     4. **Automated Route Auth-Bypass & RBAC Security Suite (`test_security_audit.py`):** Programmatically iterate over every registered FastAPI route in `app.routes`, asserting that zero `/api/v1/*` endpoints (outside `/api/v1/auth/{login,setup-status,setup-admin}`) accept unauthenticated requests (`401`) or allow `operator` role privilege escalation onto admin-only endpoints (`403`).
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
+- **Status:** `COMPLETED (Phase 14 — v1.2.0-rc3)`
 
 #### `FB-P11-005` — Top Header Alignment, Single-Word Tab Labels with Larger Icons, Streamlined Title & Larger Unicorn Icon
 - **User Feedback (`PHASE11-Verify.md`):**
@@ -512,9 +512,9 @@
   - **Proposal A (`COMPLETED in Phase 13 — v1.2.0-rc2`):** Background APScheduler 60-second `24h` Cache Pre-Warming for `NetworkOverview` and `FirewallOverview`.
   - **Proposal B (`COMPLETED in Phase 13 — v1.2.0-rc2`):** Elasticsearch `/_msearch` Single-Round-Trip Consolidation across `fetch_device_analytics`, `fetch_group_analytics`, `fetch_firewall_overview`, and 3-way parallel `/_msearch` for `fetch_network_overview`.
   - **Proposal C (`SCHEDULED for Phase 15 — FB-P9-005`):** Direct Plex Media Server API (`X-Plex-Token` / Tautulli-style) Integration in a dedicated Plex Phase 15.
-  - **Proposal D (`SCHEDULED for Phase 14 — v1.2.0-rc3`):** Frontend Route Code-Splitting (`React.lazy()` + Vite `manualChunks`) to reduce initial bundle size and eliminate Vite's `> 500 kB` chunk warning.
+  - **Proposal D (`COMPLETED in Phase 14 — v1.2.0-rc3`):** Frontend Route Code-Splitting (`React.lazy()` + Vite `manualChunks`) to reduce initial bundle size (`21.15 kB` entry chunk, max vendor chunk `223.22 kB`) and eliminate Vite's `> 500 kB` chunk warning.
   - **Proposal E (`DEFERRED — Future Release`):** OPNsense Unbound DNS Blocklist / Secondary Service Quick-Action Toggle.
-- **Status:** `IN PROGRESS (Proposals A & B Completed in Phase 13; Proposal D in Phase 14; Proposal C in Phase 15)`
+- **Status:** `IN PROGRESS (Proposals A, B & D Completed; Proposal C Scheduled for Phase 15)`
 
 ---
 
@@ -529,10 +529,9 @@
      - Add `"PERFORMANCE_ANALYSIS"` to `infer_audit_label()` in [`backend/app/models/__init__.py`](../../backend/app/models/__init__.py) (mapping `action.startswith("performance.")`), `AuditLogItem` schema/UI badge styles, and the Audit Label filter dropdown on `StatusPage.tsx` (`System -> Audit & Event History`).
      - Add `record_performance_analysis_audit_log()` in [`backend/app/services/audit_and_backup_service.py`](../../backend/app/services/audit_and_backup_service.py) to record telemetry window load times (`window` = `1h`/`24h`/`7d`/`30d`, `view` = `analytics.overview` / `firewall.overview` / `device.analytics` / `group.analytics`, `elapsed_ms`, `cache_hit`, `force_refresh`, `total_events`, and `status`) into `audit_logs` with `audit_label="PERFORMANCE_ANALYSIS"`.
   2. **`30d` Window Query Optimization & Pre-Warming (`BUG-P13-001`):**
-     - On `30d` (`14.2M+` documents), `lan_devices` and `top_domains` terms aggregations with byte/provider sub-aggregations across 30 days take `~8.6s` cold, and if SQLite `IntegrationSettings` (`elasticsearch_timeout_seconds`) was persisted at `10.0s` or concurrent requests hit the single shard, `30d` can occasionally cross the timeout threshold.
-     - Split `top_domains` + `top_blocked_domains` into a 4th parallel `_msearch` sub-query on `fetch_network_overview`, use `execution_hint: "map"` / adaptive slot intervals (`15m` for `7d`, `30m` for `30d`) in `_build_app_usage_agg()`, and include `7d` and `30d` in periodic background cache pre-warming so all 4 window buttons (`1h`, `24h`, `7d`, `30d`) respond immediately from warm cache.
+     - Eliminated uncached `RFC1918_CIDRS` BKD range filter scans inside `by_device` and `lan_devices` sub-aggregations, added `"collect_mode": "breadth_first"` on `q_lan`, extended `AnalyticsCache` TTL to `300s` for `7d`/`30d`, and included `7d` and `30d` in background cache pre-warming (`30d` cold query reduced to `~2.6s` and warm cache load `< 5 ms`).
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
+- **Status:** `COMPLETED (Phase 14 — v1.2.0-rc3)`
 
 #### `FB-P13-002` — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector (GeoIP Location, ASN, Duration & Session Details)
 - **User Feedback (`PHASE13-Verify.md`):**
@@ -552,5 +551,34 @@
     - Make the **`External IPs`** count badge in the **Active Inbound WAN Exposure (Open Ports)** table a clickable interactive button (styled with an external-details icon/hover highlight).
     - Clicking the count opens a slide-over side drawer (`FirewallOpenPortSessionsDrawer`, matching the look and feel of `DeviceAnalyticsDrawer`) displaying KPI summary cards, a sortable/searchable table of all connected external IP addresses with their GeoIP location, ISP/ASN, connection length (`first_seen -> last_seen` & active minutes), packet/byte volume, source ports/TCP flags, and chronological packet history.
 - **Complexity:** `2.5 / 5`
-- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
+- **Status:** `COMPLETED (Phase 14 — v1.2.0-rc3)`
+
+---
+
+### Area 12 — Phase 14 (`v1.2.0-rc3`) User Validation Observations & Future UI Cleanup Tasks (`PHASE14-Verify.md`)
+
+#### `FB-P14-001` — Icon-Only Refresh Buttons Across All Views & Drawers
+- **User Feedback (`PHASE14-Verify.md`):**
+  - *"For all the refresh buttons, get rid of the text and just display the icon."*
+- **Technical Evaluation & Planned Changes:**
+  - Across `DevicesPage.tsx` (`Sync from OPNsense`), `SchedulesPage.tsx`, `AnalyticsPage.tsx` (`Refresh Analytics`), `FirewallPage.tsx` (`Refresh Firewall`), `StatusPage.tsx`, `DeviceAnalyticsDrawer.tsx` (`Refresh Telemetry`), `GroupAnalyticsDrawer.tsx` (`Refresh Telemetry`), and `FirewallOpenPortSessionsDrawer.tsx` (`Refresh Telemetry`), replace the text label inside the refresh button with an icon-only `<RefreshCw />` button while preserving accessible `title` and `aria-label` attributes (`aria-label="Refresh ..."`).
+- **Complexity:** `1 / 5` (Low)
+- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+
+#### `FB-P14-002` — Icon-Only, Larger Mobile-Friendly Action Buttons in `Devices` Inventory List
+- **User Feedback (`PHASE14-Verify.md`):**
+  - *"In the devices view: In the list of devices, remove the text from the buttons and just show the icons and make the buttons slightly larger for easy clicking on a mobile device."*
+- **Technical Evaluation & Planned Changes:**
+  - In [`frontend/src/pages/DevicesPage.tsx`](../../frontend/src/pages/DevicesPage.tsx) (and `TimerPopoverMenu.tsx` when rendered in device rows), convert the per-device action buttons (`Inspect` / `Analytics`, `Timer`, `YouTube`, and `Allowed` / `Blocked` internet access toggle) to slightly larger touch-friendly icon-only buttons (`min-h-9 min-w-9 p-2`) with clear color states and tooltips/`aria-label`s for effortless mobile tapping.
+- **Complexity:** `1.5 / 5` (Low–Medium)
+- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+
+#### `FB-P14-003` — Magnifying Glass Icon-Only `Inspect` Button in `Analytics` Top Active LAN Devices List
+- **User Feedback (`PHASE14-Verify.md`):**
+  - *"In analytics view: For the LAN devices list, change the Inspect button to instead just be an Magnifying Glass icon for easy recognition and clicking."*
+- **Technical Evaluation & Planned Changes:**
+  - In [`frontend/src/pages/AnalyticsPage.tsx`](../../frontend/src/pages/AnalyticsPage.tsx), replace the text `Inspect` button in the **Top Active LAN Devices** table with an icon-only `<Search className="h-4 w-4" />` (magnifying glass) button with `title="Inspect device analytics"` and `aria-label`.
+- **Complexity:** `1 / 5` (Low)
+- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+
 

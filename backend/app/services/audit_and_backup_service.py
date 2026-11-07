@@ -538,3 +538,107 @@ async def record_upstream_error_audit_log(
     except Exception:
         return False
 
+
+_PERFORMANCE_LOG_DEDUP: dict[tuple[str, str], float] = {}
+_PERFORMANCE_CACHE_HIT_DEDUP_SECONDS = 30.0
+
+
+def clear_performance_analysis_dedup_cache() -> None:
+    """Clear the performance analysis deduplication cache (used in unit tests)."""
+    _PERFORMANCE_LOG_DEDUP.clear()
+
+
+def _should_record_performance_analysis(
+    view: str,
+    window: str,
+    *,
+    cache_hit: bool,
+    force_refresh: bool = False,
+) -> bool:
+    """Determine whether to persist a `PERFORMANCE_ANALYSIS` window load-time audit entry.
+
+    Always records live Elasticsearch queries (`cache_hit=False`) and explicit manual
+    refreshes (`force_refresh=True`), and deduplicates repeated warm-cache polls for the
+    same `(view, window)` within 30 seconds so switching windows (`1h`, `24h`, `7d`, `30d`)
+    is always tracked without flooding SQLite during 5s auto-refresh (`FB-P13-001`).
+    """
+    now_mono = time.monotonic()
+    dedup_key = (view, window)
+    if force_refresh or not cache_hit:
+        _PERFORMANCE_LOG_DEDUP[dedup_key] = now_mono
+        return True
+    last_logged = _PERFORMANCE_LOG_DEDUP.get(dedup_key)
+    if (
+        last_logged is not None
+        and (now_mono - last_logged) < _PERFORMANCE_CACHE_HIT_DEDUP_SECONDS
+    ):
+        return False
+    _PERFORMANCE_LOG_DEDUP[dedup_key] = now_mono
+    return True
+
+
+def format_performance_analysis_details(
+    *,
+    window: str,
+    elapsed_ms: float,
+    cache_hit: bool,
+    force_refresh: bool = False,
+    total_events: int = 0,
+) -> tuple[str, str]:
+    """Build `(status, details)` for a `PERFORMANCE_ANALYSIS` audit log entry."""
+    source_str = (
+        "forced live ES refresh"
+        if force_refresh
+        else ("warm cache" if cache_hit else "live ES query")
+    )
+    status_val = "warning" if elapsed_ms >= 5000.0 else "success"
+    details_str = (
+        f"Window {window} loaded in {elapsed_ms:.1f} ms "
+        f"({source_str}, {int(total_events):,} events)."
+    )
+    return status_val, details_str
+
+
+async def record_performance_analysis_audit_log(
+    db: AsyncSession,
+    *,
+    view: str,
+    window: str,
+    elapsed_ms: float,
+    cache_hit: bool,
+    force_refresh: bool = False,
+    total_events: int = 0,
+    actor: str = "system",
+) -> bool:
+    """Persist a `PERFORMANCE_ANALYSIS` audit log entry tracking window load latency."""
+    if not _should_record_performance_analysis(
+        view,
+        window,
+        cache_hit=cache_hit,
+        force_refresh=force_refresh,
+    ):
+        return False
+    status_val, details_str = format_performance_analysis_details(
+        window=window,
+        elapsed_ms=elapsed_ms,
+        cache_hit=cache_hit,
+        force_refresh=force_refresh,
+        total_events=total_events,
+    )
+    try:
+        db.add(
+            AuditLog(
+                actor=actor,
+                action=f"performance.{view}",
+                audit_label="PERFORMANCE_ANALYSIS",
+                target=f"{view}:{window}",
+                status=status_val,
+                details=details_str[:500],
+            )
+        )
+        await db.commit()
+        return True
+    except Exception:
+        return False
+
+

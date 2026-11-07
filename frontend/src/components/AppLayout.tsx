@@ -96,7 +96,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   Gateway Control
                 </span>
                 {version ? (
-                  <span className="inline-flex items-center rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-300 whitespace-nowrap leading-none">
+                  <span className="inline-flex w-full items-center justify-center rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono tabular-nums text-slate-300 whitespace-nowrap leading-none">
                     v{version}
                   </span>
                 ) : (
@@ -107,7 +107,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </span>
                 <span
                   data-testid="header-system-clock"
-                  className="font-mono text-xs tracking-wider text-slate-300 whitespace-nowrap leading-tight"
+                  className="inline-flex w-full items-center justify-center px-1.5 py-0.5 text-[11px] font-mono tabular-nums tracking-[0.1em] text-slate-300 whitespace-nowrap leading-none"
                 >
                   {systemClock}
                 </span>

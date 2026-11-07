@@ -635,6 +635,76 @@ export interface FirewallOverviewResponse {
   recent_events: FirewallLogEventItem[]
 }
 
+export interface FirewallOpenPortSessionsSummary {
+  total_passed_packets: number
+  total_bytes: number
+  unique_external_ips: number
+  top_country: string | null
+  first_seen_at?: string | null
+  last_seen_at?: string | null
+}
+
+export interface FirewallConnectedExternalIpItem {
+  source_ip: string
+  organization: string | null
+  asn: number | null
+  city_name: string | null
+  region_name: string | null
+  region_iso_code?: string | null
+  country_name: string | null
+  country_iso_code: string | null
+  continent_name: string | null
+  location_label: string
+  latitude: number | null
+  longitude: number | null
+  passed_packets: number
+  bytes: number
+  first_seen_at: string | null
+  last_seen_at: string | null
+  connection_duration_seconds: number
+  connection_duration_label: string
+  active_duration_minutes: number
+  source_ports: number[]
+  tcp_flags: string | null
+  ttl: number | null
+  interface?: string | null
+  rule_id?: string | null
+  community_id?: string | null
+}
+
+export interface FirewallOpenPortSessionEventItem {
+  timestamp: string
+  source_ip: string
+  source_port: number | null
+  asn?: number | null
+  organization: string | null
+  location_label: string
+  country_iso_code?: string | null
+  protocol: string
+  tcp_flags: string | null
+  ttl: number | null
+  bytes: number
+  interface: string
+  rule_id: string
+}
+
+export interface FirewallOpenPortSessionsResponse {
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  device_id: number | null
+  destination_ip: string
+  effective_name: string
+  external_port: number
+  destination_port: number
+  port_mapping: string
+  protocol: string
+  summary: FirewallOpenPortSessionsSummary
+  external_ips: FirewallConnectedExternalIpItem[]
+  recent_events: FirewallOpenPortSessionEventItem[]
+}
+
 export function formatActiveMinutes(minutes: number): string {
   const safe = Math.max(0, Math.floor(minutes || 0))
   if (safe <= 0) return '0m'
@@ -1152,6 +1222,35 @@ export const apiClient = {
     }
     return requestJson<FirewallOverviewResponse>(
       `/api/v1/firewall/overview?${query.toString()}`,
+      { method: 'GET' },
+    )
+  },
+
+  getFirewallOpenPortSessions(params: {
+    destination_ip: string
+    destination_port: number
+    external_port?: number
+    protocol?: string
+    window?: TimeWindow
+    search?: string
+    refresh?: boolean
+  }): Promise<FirewallOpenPortSessionsResponse> {
+    const query = new URLSearchParams()
+    query.set('destination_ip', params.destination_ip)
+    query.set('destination_port', String(params.destination_port))
+    if (params.external_port !== undefined) {
+      query.set('external_port', String(params.external_port))
+    }
+    query.set('protocol', params.protocol ?? 'tcp')
+    query.set('window', params.window ?? '24h')
+    if (params.search && params.search.trim()) {
+      query.set('search', params.search.trim())
+    }
+    if (params.refresh) {
+      query.set('refresh', 'true')
+    }
+    return requestJson<FirewallOpenPortSessionsResponse>(
+      `/api/v1/firewall/open-ports/sessions?${query.toString()}`,
       { method: 'GET' },
     )
   },

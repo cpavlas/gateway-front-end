@@ -25,6 +25,7 @@ VALID_AUDIT_LABELS = frozenset(
         "USER_MGMT",
         "SETTINGS_CHANGE",
         "DIAGNOSTIC_ERROR",
+        "PERFORMANCE_ANALYSIS",
         "DEVICE_CONTROL",
         "YOUTUBE_CONTROL",
         "GROUP_CONTROL",
@@ -51,6 +52,8 @@ def infer_audit_label(action: str, audit_label: str | None = None) -> str:
         return "USER_MGMT"
     if act.startswith(("diagnostic", "upstream.")):
         return "DIAGNOSTIC_ERROR"
+    if act.startswith("performance."):
+        return "PERFORMANCE_ANALYSIS"
     if act.startswith("settings"):
         return "SETTINGS_CHANGE"
     if "youtube" in act:

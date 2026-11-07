@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,12 +16,16 @@ from app.clients.elasticsearch import (
     ElasticsearchServiceClient,
     resolve_time_window,
     sanitize_firewall_search,
+    validate_ipv4_address,
 )
 from app.clients.opnsense import OPNsenseClient
 from app.config import Settings
 from app.models import Device
 from app.services.analytics_service import TimelineBucketItem, get_analytics_cache
-from app.services.audit_and_backup_service import record_upstream_error_audit_log
+from app.services.audit_and_backup_service import (
+    record_performance_analysis_audit_log,
+    record_upstream_error_audit_log,
+)
 
 _LAST_GOOD_WINDOW_AGGS: dict[str, dict[str, Any]] = {}
 _LAST_KNOWN_NAT_MAPPINGS: dict[tuple[str, int, str], int] = {}
@@ -311,14 +316,14 @@ async def _get_nat_port_mappings(
         settings.opnsense_api_key
         and settings.opnsense_api_key != "changeme"
         and settings.opnsense_api_secret
-        and settings.opnsense_api_secret != "changeme"
+        and settings.opnsense_api_secret != "changeme"  # noqa: S105
     ):
         try:
             opn_client = OPNsenseClient(settings)
             live_mappings = await opn_client.get_destination_nat_mappings()
             if live_mappings:
                 _LAST_KNOWN_NAT_MAPPINGS.update(live_mappings)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     cache.set(nat_cache_key, {"loaded": True})
     return dict(_LAST_KNOWN_NAT_MAPPINGS)
@@ -335,8 +340,10 @@ async def get_firewall_overview_analytics(
     protocol: str | None = None,
     search: str | None = None,
     refresh: bool = False,
+    record_perf: bool = True,
 ) -> FirewallOverviewResponse:
     """Fetch Phase 10 Firewall & Security telemetry and enrich LAN IPs with SQLite devices."""
+    start_t = time.perf_counter()
     try:
         win_key, _, _ = resolve_time_window(window)
     except ValueError as exc:
@@ -380,7 +387,7 @@ async def get_firewall_overview_analytics(
                 if window_aggs is not None
                 else cached_es
             )
-            return build_firewall_overview_response(
+            resp = build_firewall_overview_response(
                 merged_cached,
                 sqlite_devices,
                 settings,
@@ -388,6 +395,18 @@ async def get_firewall_overview_analytics(
                 es_reachable=True,
                 nat_port_mappings=nat_mappings,
             )
+            if record_perf and not has_active_filter:
+                elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                await record_performance_analysis_audit_log(
+                    db,
+                    view="firewall_overview",
+                    window=win_key,
+                    elapsed_ms=elapsed_ms,
+                    cache_hit=True,
+                    force_refresh=False,
+                    total_events=resp.summary.total_packets,
+                )
+            return resp
 
     try:
         es_data = await es_client.fetch_firewall_overview(
@@ -397,6 +416,7 @@ async def get_firewall_overview_analytics(
             protocol=clean_proto if clean_proto != "all" else None,
             search=clean_search or None,
         )
+        ttl = 300.0 if win_key in ("7d", "30d") else 90.0
         if window_aggs is None:
             window_aggs = {
                 "summary": es_data.get("summary"),
@@ -405,7 +425,7 @@ async def get_firewall_overview_analytics(
                 "external_scanners": es_data.get("external_scanners"),
                 "open_wan_ports": es_data.get("open_wan_ports"),
             }
-            cache.set(window_cache_key, window_aggs)
+            cache.set(window_cache_key, window_aggs, ttl_seconds=ttl)
             _LAST_GOOD_WINDOW_AGGS[win_key] = window_aggs
         else:
             es_data = {
@@ -413,8 +433,8 @@ async def get_firewall_overview_analytics(
                 **window_aggs,
                 "recent_events": es_data.get("recent_events", []),
             }
-        cache.set(cache_key, es_data)
-        return build_firewall_overview_response(
+        cache.set(cache_key, es_data, ttl_seconds=ttl)
+        resp = build_firewall_overview_response(
             es_data,
             sqlite_devices,
             settings,
@@ -422,6 +442,18 @@ async def get_firewall_overview_analytics(
             es_reachable=True,
             nat_port_mappings=nat_mappings,
         )
+        if record_perf and not has_active_filter:
+            elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+            await record_performance_analysis_audit_log(
+                db,
+                view="firewall_overview",
+                window=win_key,
+                elapsed_ms=elapsed_ms,
+                cache_hit=False,
+                force_refresh=refresh,
+                total_events=resp.summary.total_packets,
+            )
+        return resp
     except ElasticsearchQueryError as exc:
         await record_upstream_error_audit_log(
             db,
@@ -438,3 +470,278 @@ async def get_firewall_overview_analytics(
             warning=f"Elasticsearch telemetry temporarily unavailable ({exc}).",
             nat_port_mappings=nat_mappings,
         )
+
+
+class FirewallOpenPortSessionsSummary(BaseModel):
+    """Summary KPIs for external WAN IPs connected to a specific open WAN port (`FB-P13-002`)."""
+
+    total_passed_packets: int = 0
+    total_bytes: int = 0
+    unique_external_ips: int = 0
+    top_country: str | None = None
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+
+
+class FirewallConnectedExternalIpItem(BaseModel):
+    """Per-external-IP GeoIP, ASN, connection duration, and packet telemetry (`FB-P13-002`)."""
+
+    source_ip: str
+    asn: int | None = None
+    organization: str | None = None
+    city_name: str | None = None
+    region_name: str | None = None
+    region_iso_code: str | None = None
+    country_name: str | None = None
+    country_iso_code: str | None = None
+    continent_name: str | None = None
+    location_label: str = "Unknown Location"
+    latitude: float | None = None
+    longitude: float | None = None
+    passed_packets: int = 0
+    bytes: int = 0
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    connection_duration_seconds: int = 0
+    connection_duration_label: str = "< 1s"
+    active_duration_minutes: int = 0
+    source_ports: list[int] = Field(default_factory=list)
+    tcp_flags: str | None = None
+    ttl: int | None = None
+    interface: str | None = None
+    rule_id: str | None = None
+    community_id: str | None = None
+
+
+class FirewallOpenPortSessionEventItem(BaseModel):
+    """Individual chronological `filterlog` packet event for an open WAN port (`FB-P13-002`)."""
+
+    timestamp: str
+    source_ip: str
+    source_port: int | None = None
+    asn: int | None = None
+    organization: str | None = None
+    location_label: str = "Unknown Location"
+    country_iso_code: str | None = None
+    protocol: str = "tcp"
+    bytes: int = 0
+    tcp_flags: str | None = None
+    ttl: int | None = None
+    interface: str = ""
+    rule_id: str = ""
+
+
+class FirewallOpenPortSessionsResponse(BaseModel):
+    """Response model for `GET /api/v1/firewall/open-ports/sessions` (`FB-P13-002`)."""
+
+    window: str
+    generated_at: str
+    es_reachable: bool
+    warning: str | None = None
+    device_id: int | None = None
+    effective_name: str
+    destination_ip: str
+    external_port: int
+    destination_port: int
+    port_mapping: str
+    protocol: str
+    summary: FirewallOpenPortSessionsSummary
+    external_ips: list[FirewallConnectedExternalIpItem]
+    recent_events: list[FirewallOpenPortSessionEventItem]
+
+
+def build_open_wan_port_sessions_response(
+    es_data: dict[str, Any] | None,
+    sqlite_devices: list[Device],
+    *,
+    destination_ip: str,
+    destination_port: int,
+    external_port: int | None = None,
+    protocol: str = "tcp",
+    window: str = "24h",
+    es_reachable: bool = True,
+    warning: str | None = None,
+) -> FirewallOpenPortSessionsResponse:
+    """Pure synchronous helper assembling `FirewallOpenPortSessionsResponse` (`FB-P13-002`)."""
+    generated_at = datetime.now(UTC).isoformat()
+    clean_proto = (protocol or "tcp").strip().lower()
+    ext_port = (
+        int(external_port)
+        if external_port and int(external_port) > 0
+        else int(destination_port)
+    )
+    port_mapping = f"{ext_port}:{int(destination_port)}"
+
+    dev = next(
+        (d for d in sqlite_devices if d.ipv4_address == destination_ip),
+        None,
+    )
+    effective_name = (
+        ((dev.display_name or "").strip() or (dev.hostname or "").strip() or destination_ip)
+        if dev is not None
+        else destination_ip
+    )
+
+    if not es_reachable or es_data is None:
+        return FirewallOpenPortSessionsResponse(
+            window=window,
+            generated_at=generated_at,
+            es_reachable=False,
+            warning=warning,
+            device_id=dev.id if dev is not None else None,
+            effective_name=effective_name,
+            destination_ip=destination_ip,
+            external_port=ext_port,
+            destination_port=int(destination_port),
+            port_mapping=port_mapping,
+            protocol=clean_proto,
+            summary=FirewallOpenPortSessionsSummary(),
+            external_ips=[],
+            recent_events=[],
+        )
+
+    raw_sum = es_data.get("summary") or {}
+    summary = FirewallOpenPortSessionsSummary(
+        total_passed_packets=int(raw_sum.get("total_passed_packets") or 0),
+        total_bytes=int(raw_sum.get("total_bytes") or 0),
+        unique_external_ips=int(raw_sum.get("unique_external_ips") or 0),
+        top_country=raw_sum.get("top_country"),
+        first_seen_at=raw_sum.get("first_seen_at"),
+        last_seen_at=raw_sum.get("last_seen_at"),
+    )
+    external_ips = [
+        FirewallConnectedExternalIpItem(**item)
+        for item in (es_data.get("external_ips") or [])
+    ]
+    recent_events = [
+        FirewallOpenPortSessionEventItem(**ev)
+        for ev in (es_data.get("recent_events") or [])
+    ]
+
+    return FirewallOpenPortSessionsResponse(
+        window=window,
+        generated_at=generated_at,
+        es_reachable=True,
+        warning=warning,
+        device_id=dev.id if dev is not None else None,
+        effective_name=effective_name,
+        destination_ip=destination_ip,
+        external_port=ext_port,
+        destination_port=int(destination_port),
+        port_mapping=port_mapping,
+        protocol=clean_proto,
+        summary=summary,
+        external_ips=external_ips,
+        recent_events=recent_events,
+    )
+
+
+async def get_open_wan_port_sessions(
+    db: AsyncSession,
+    es_client: ElasticsearchServiceClient,
+    *,
+    destination_ip: str,
+    destination_port: int,
+    external_port: int | None = None,
+    protocol: str = "tcp",
+    window: str = "24h",
+    search: str | None = None,
+    refresh: bool = False,
+) -> FirewallOpenPortSessionsResponse:
+    """Fetch connected external WAN IP details for an open WAN port (`FB-P13-002`)."""
+    start_t = time.perf_counter()
+    try:
+        win_key, _, _ = resolve_time_window(window)
+        valid_ip = validate_ipv4_address(destination_ip)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    clean_proto = (protocol or "tcp").strip().lower()
+    clean_search = sanitize_firewall_search(search) or ""
+    cache = get_analytics_cache()
+    cache_key = (
+        f"wan_port_sessions:{valid_ip}:{int(destination_port)}:{clean_proto}:{win_key}:{clean_search}"
+    )
+
+    sqlite_devices = list((await db.execute(select(Device))).scalars().all())
+
+    if not refresh:
+        cached_es = cache.get(cache_key)
+        if isinstance(cached_es, dict):
+            resp = build_open_wan_port_sessions_response(
+                cached_es,
+                sqlite_devices,
+                destination_ip=valid_ip,
+                destination_port=destination_port,
+                external_port=external_port,
+                protocol=clean_proto,
+                window=win_key,
+                es_reachable=True,
+            )
+            if not clean_search:
+                elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                await record_performance_analysis_audit_log(
+                    db,
+                    view="wan_port_sessions",
+                    window=win_key,
+                    elapsed_ms=elapsed_ms,
+                    cache_hit=True,
+                    force_refresh=False,
+                    total_events=resp.summary.total_passed_packets,
+                )
+            return resp
+
+    try:
+        es_data = await es_client.fetch_open_wan_port_sessions(
+            destination_ip=valid_ip,
+            destination_port=int(destination_port),
+            protocol=clean_proto,
+            window=win_key,
+            search=clean_search or None,
+        )
+        ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+        cache.set(cache_key, es_data, ttl_seconds=ttl)
+        resp = build_open_wan_port_sessions_response(
+            es_data,
+            sqlite_devices,
+            destination_ip=valid_ip,
+            destination_port=destination_port,
+            external_port=external_port,
+            protocol=clean_proto,
+            window=win_key,
+            es_reachable=True,
+        )
+        if not clean_search:
+            elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+            await record_performance_analysis_audit_log(
+                db,
+                view="wan_port_sessions",
+                window=win_key,
+                elapsed_ms=elapsed_ms,
+                cache_hit=False,
+                force_refresh=refresh,
+                total_events=resp.summary.total_passed_packets,
+            )
+        return resp
+    except ElasticsearchQueryError as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="elasticsearch",
+            operation=f"wan_port_sessions:{valid_ip}:{destination_port}:{win_key}",
+            error_message=str(exc),
+        )
+        return build_open_wan_port_sessions_response(
+            None,
+            sqlite_devices,
+            destination_ip=valid_ip,
+            destination_port=destination_port,
+            external_port=external_port,
+            protocol=clean_proto,
+            window=win_key,
+            es_reachable=False,
+            warning=f"Elasticsearch telemetry temporarily unavailable ({exc}).",
+        )
+
