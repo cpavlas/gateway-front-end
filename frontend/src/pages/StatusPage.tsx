@@ -277,6 +277,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const [esKey, setEsKey] = useState('')
   const [esVerifySsl, setEsVerifySsl] = useState(false)
   const [esIndexPatterns, setEsIndexPatterns] = useState('')
+  const [plexUrl, setPlexUrl] = useState('')
+  const [plexToken, setPlexToken] = useState('')
+  const [plexVerifySsl, setPlexVerifySsl] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [diagnosticResult, setDiagnosticResult] = useState<ConnectivityTestResponse | null>(null)
@@ -321,6 +324,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       setEsKey(data.elasticsearch_api_key_masked)
       setEsVerifySsl(data.elasticsearch_verify_ssl)
       setEsIndexPatterns(data.elasticsearch_index_patterns)
+      setPlexUrl(data.plex_base_url ?? '')
+      setPlexToken(data.plex_api_token_masked ?? '')
+      setPlexVerifySsl(Boolean(data.plex_verify_ssl))
       return data
     },
     enabled: settingsExpanded && isAdmin,
@@ -363,6 +369,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     elasticsearch_api_key: esKey.trim() || undefined,
     elasticsearch_verify_ssl: esVerifySsl,
     elasticsearch_index_patterns: esIndexPatterns.trim() || undefined,
+    plex_base_url: plexUrl.trim(),
+    plex_api_token: plexToken.trim() || undefined,
+    plex_verify_ssl: plexVerifySsl,
   })
 
   const saveSettingsMutation = useMutation({
@@ -394,6 +403,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       setEsKey(resetView.elasticsearch_api_key_masked)
       setEsVerifySsl(resetView.elasticsearch_verify_ssl)
       setEsIndexPatterns(resetView.elasticsearch_index_patterns)
+      setPlexUrl(resetView.plex_base_url ?? '')
+      setPlexToken(resetView.plex_api_token_masked ?? '')
+      setPlexVerifySsl(Boolean(resetView.plex_verify_ssl))
       setSettingsMessage('Reset integration settings to .env defaults.')
       void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
       void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
@@ -420,6 +432,16 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     },
     onError: (err) => {
       setSettingsError(err instanceof Error ? err.message : 'Elasticsearch connectivity test failed.')
+    },
+  })
+
+  const testPlexMutation = useMutation({
+    mutationFn: () => apiClient.testPlexConnectivity(buildSettingsPayload()),
+    onSuccess: (res) => {
+      setDiagnosticResult(res)
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'Plex connectivity test failed.')
     },
   })
 
@@ -596,15 +618,16 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               <button
                 type="button"
                 data-testid="status-refresh-btn"
+                aria-label="Refresh Status"
+                title="Refresh Status"
                 onClick={() => void refetch()}
                 disabled={isFetching}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer shrink-0"
               >
                 <RefreshCw
-                  className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+                  className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
                   aria-hidden="true"
                 />
-                <span>{isFetching ? 'Refreshing...' : 'Refresh Status'}</span>
               </button>
               <AutoRefreshSelector
                 value={intervalOption}
@@ -853,7 +876,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-slate-400">
-                    Configure OPNsense &amp; Elasticsearch connection parameters and run live connectivity diagnostics
+                    Configure OPNsense, Elasticsearch &amp; Plex Media Server connection parameters and run live connectivity diagnostics
                   </p>
                 </div>
               </div>
@@ -861,6 +884,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               <button
                 type="button"
                 data-testid="toggle-integration-settings-btn"
+                aria-label={settingsExpanded ? 'Refresh Settings' : 'Configure Connections'}
+                title={settingsExpanded ? 'Refresh Settings' : 'Configure Connections'}
                 onClick={() => {
                   if (!settingsExpanded) {
                     setSettingsExpanded(true)
@@ -869,19 +894,15 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   }
                 }}
                 disabled={isFetchingSettings}
-                className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+                className={`inline-flex items-center justify-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 ${
+                  settingsExpanded ? 'h-8 w-8' : 'px-3.5 py-2'
+                } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${isFetchingSettings ? 'animate-spin' : ''}`}
                   aria-hidden="true"
                 />
-                <span>
-                  {settingsExpanded
-                    ? isFetchingSettings
-                      ? 'Loading...'
-                      : 'Refresh Settings'
-                    : 'Configure Connections'}
-                </span>
+                {!settingsExpanded && <span>Configure Connections</span>}
               </button>
             </div>
 
@@ -1091,6 +1112,75 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                           data-testid="input-elasticsearch-verify-ssl"
                           checked={esVerifySsl}
                           onChange={(e) => setEsVerifySsl(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                        />
+                        <span>Verify TLS Certificate</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Plex Media Server Settings (FB-P9-005) */}
+                  <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 lg:col-span-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                          Plex Media Server (Optional — Tautulli-Style Watch Telemetry)
+                        </h3>
+                        <p className="text-[11px] text-slate-400">
+                          Enables exact active watch minutes &amp; live Now Playing stream detection for same-VLAN Smart TVs (e.g. LGwebOSTV) that bypass OPNsense
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="test-plex-btn"
+                        onClick={() => testPlexMutation.mutate()}
+                        disabled={testPlexMutation.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-600/20 px-2.5 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-600/30 disabled:opacity-60 cursor-pointer"
+                      >
+                        <span>
+                          {testPlexMutation.isPending
+                            ? 'Testing...'
+                            : 'Test Plex Connection'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Plex Base URL
+                        </label>
+                        <input
+                          type="text"
+                          data-testid="input-plex-url"
+                          value={plexUrl}
+                          onChange={(e) => setPlexUrl(e.target.value)}
+                          placeholder="http://192.168.1.100:32400"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Plex API Token (X-Plex-Token)
+                        </label>
+                        <input
+                          type="password"
+                          data-testid="input-plex-token"
+                          value={plexToken}
+                          onChange={(e) => setPlexToken(e.target.value)}
+                          placeholder="X-Plex-Token"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          data-testid="input-plex-verify-ssl"
+                          checked={plexVerifySsl}
+                          onChange={(e) => setPlexVerifySsl(e.target.checked)}
                           className="rounded border-slate-700 bg-slate-900 text-indigo-600"
                         />
                         <span>Verify TLS Certificate</span>
@@ -1371,6 +1461,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               <button
                 type="button"
                 data-testid="load-audit-logs-btn"
+                aria-label={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
+                title={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
                 onClick={() => {
                   if (!auditEnabled) {
                     setAuditEnabled(true)
@@ -1379,19 +1471,15 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   }
                 }}
                 disabled={isFetchingAudit}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 ${
+                  auditEnabled ? 'h-8 w-8' : 'px-3.5 py-2'
+                } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
                   aria-hidden="true"
                 />
-                <span>
-                  {auditEnabled
-                    ? isFetchingAudit
-                      ? 'Refreshing...'
-                      : 'Refresh Audit Logs'
-                    : 'Load Audit Logs'}
-                </span>
+                {!auditEnabled && <span>Load Audit Logs</span>}
               </button>
               {auditEnabled && lastAuditClock && (
                 <span

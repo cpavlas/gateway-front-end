@@ -177,18 +177,18 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
               <button
                 type="button"
                 data-testid="open-port-drawer-refresh-btn"
+                aria-label="Refresh Telemetry"
+                title="Refresh Telemetry"
                 onClick={() => refreshMutation.mutate()}
                 disabled={isFetching || refreshMutation.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
-                title="Refresh connected external IPs"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer shrink-0"
               >
                 <RefreshCw
-                  className={`h-3.5 w-3.5 ${
+                  className={`h-4 w-4 ${
                     isFetching || refreshMutation.isPending ? 'animate-spin' : ''
                   }`}
                   aria-hidden="true"
                 />
-                <span>Refresh Telemetry</span>
               </button>
               <AutoRefreshSelector
                 value={intervalOption}
@@ -311,7 +311,7 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                     data-testid="open-port-sessions-search-input"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
-                    placeholder="Filter by external IP, city, country, or ISP/ASN..."
+                    placeholder="Filter by external IP, city, country, or ISP"
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>

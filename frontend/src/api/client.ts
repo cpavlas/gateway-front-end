@@ -75,6 +75,11 @@ export interface IntegrationSettingsView {
   elasticsearch_ca_cert_path: string
   elasticsearch_timeout_seconds: number
   elasticsearch_index_patterns: string
+  plex_base_url?: string
+  has_plex_api_token?: boolean
+  plex_api_token_masked?: string
+  plex_verify_ssl?: boolean
+  plex_timeout_seconds?: number
   updated_by?: string | null
   updated_at?: string | null
 }
@@ -93,10 +98,14 @@ export interface IntegrationSettingsUpdatePayload {
   elasticsearch_ca_cert_path?: string
   elasticsearch_timeout_seconds?: number
   elasticsearch_index_patterns?: string
+  plex_base_url?: string
+  plex_api_token?: string
+  plex_verify_ssl?: boolean
+  plex_timeout_seconds?: number
 }
 
 export interface ConnectivityTestResponse {
-  service: 'opnsense' | 'elasticsearch'
+  service: 'opnsense' | 'elasticsearch' | 'plex'
   reachable: boolean
   status: HealthLevel
   latency_ms: number
@@ -351,6 +360,23 @@ export interface AppUsageDeviceItem {
   bytes: number
 }
 
+export interface PlexActiveSessionItem {
+  session_key: string
+  client_ip: string
+  device_id: number | null
+  effective_name: string
+  player_title: string
+  player_product: string
+  player_platform: string
+  state: string
+  user_name: string
+  media_title: string
+  media_type: string
+  stream_decision: string
+  bandwidth_kbps: number
+  progress_percent: number
+}
+
 export interface AppUsageItem {
   app_key: 'youtube' | 'plex'
   display_name: string
@@ -360,6 +386,7 @@ export interface AppUsageItem {
   bytes: number
   last_active_at: string | null
   top_devices?: AppUsageDeviceItem[]
+  active_sessions?: PlexActiveSessionItem[]
 }
 
 export interface AuditLogItem {
@@ -1138,6 +1165,18 @@ export const apiClient = {
   ): Promise<ConnectivityTestResponse> {
     return requestJson<ConnectivityTestResponse>(
       '/api/v1/system/settings/test-elasticsearch',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
+  },
+
+  testPlexConnectivity(
+    payload?: IntegrationSettingsUpdatePayload,
+  ): Promise<ConnectivityTestResponse> {
+    return requestJson<ConnectivityTestResponse>(
+      '/api/v1/system/settings/test-plex',
       {
         method: 'POST',
         body: JSON.stringify(payload ?? {}),

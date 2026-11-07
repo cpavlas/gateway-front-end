@@ -213,17 +213,18 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
                 <button
                   type="button"
                   data-testid="firewall-refresh-btn"
+                  aria-label="Refresh Firewall"
+                  title="Refresh Firewall"
                   onClick={() => refreshMutation.mutate()}
                   disabled={isFetching || refreshMutation.isPending}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500/40 bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer shrink-0"
                 >
                   <RefreshCw
-                    className={`h-3.5 w-3.5 ${
+                    className={`h-4 w-4 ${
                       isFetching || refreshMutation.isPending ? 'animate-spin' : ''
                     }`}
                     aria-hidden="true"
                   />
-                  <span>Refresh Firewall</span>
                 </button>
                 <AutoRefreshSelector
                   value={intervalOption}

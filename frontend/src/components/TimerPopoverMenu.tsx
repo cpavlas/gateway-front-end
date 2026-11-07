@@ -14,6 +14,7 @@ interface TimerPopoverMenuProps {
   activeOverride?: ActiveOverrideInfo | null
   disabled?: boolean
   isPending?: boolean
+  iconOnly?: boolean
   onStartTimer: (payload: TimerStartPayload) => void
   onCancelTimer: (overrideId: number) => void
 }
@@ -39,6 +40,7 @@ export function TimerPopoverMenu({
   activeOverride,
   disabled = false,
   isPending = false,
+  iconOnly = false,
   onStartTimer,
   onCancelTimer,
 }: TimerPopoverMenuProps) {
@@ -118,11 +120,22 @@ export function TimerPopoverMenu({
             data-testid={`open-timer-menu-${targetType}-${targetId}`}
             disabled={isPending}
             onClick={() => setIsOpen((prev) => !prev)}
+            aria-label={
+              hasActiveOverride && activeOverride
+                ? `${activeOverride.mode === 'pause' ? 'Paused' : 'Bonus'} · ${formatRemainingDuration(liveRemainingSeconds)}`
+                : 'Timer'
+            }
             title={`Timed Pause / Bonus controls for ${targetName}`}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50"
+            className={`inline-flex items-center justify-center gap-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
+              iconOnly && !hasActiveOverride
+                ? 'h-9 w-9 min-h-9 min-w-9 p-2'
+                : iconOnly
+                  ? 'min-h-9 px-2.5 py-1.5'
+                  : 'px-2.5 py-1'
+            }`}
           >
             <Clock
-              className={`h-3.5 w-3.5 shrink-0 ${
+              className={`${iconOnly ? 'h-4 w-4' : 'h-3.5 w-3.5'} shrink-0 ${
                 hasActiveOverride && activeOverride
                   ? activeOverride.mode === 'pause'
                     ? 'text-amber-300'
@@ -137,7 +150,7 @@ export function TimerPopoverMenu({
                 {formatRemainingDuration(liveRemainingSeconds)}
               </span>
             ) : (
-              <span>Timer</span>
+              !iconOnly && <span>Timer</span>
             )}
           </button>
 

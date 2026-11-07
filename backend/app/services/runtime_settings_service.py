@@ -1,4 +1,4 @@
-"""Runtime integration settings persistence, secret encryption, and diagnostics (`FB-P9-002`)."""
+"""Runtime integration settings persistence, secret encryption & diagnostics (`FB-P9-005`)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.clients.opnsense import OPNsenseClient, ServiceHealthStatus
+from app.clients.plex import PlexServiceClient
 from app.config import (
     DEFAULT_GATEWAY_IP,
     Settings,
@@ -31,6 +32,7 @@ SECRET_SETTING_KEYS = frozenset(
         "opnsense_api_key",
         "opnsense_api_secret",
         "elasticsearch_api_key",
+        "plex_api_token",
     }
 )
 
@@ -38,6 +40,7 @@ BOOL_SETTING_KEYS = frozenset(
     {
         "opnsense_verify_ssl",
         "elasticsearch_verify_ssl",
+        "plex_verify_ssl",
     }
 )
 
@@ -45,6 +48,7 @@ FLOAT_SETTING_KEYS = frozenset(
     {
         "opnsense_timeout_seconds",
         "elasticsearch_timeout_seconds",
+        "plex_timeout_seconds",
     }
 )
 
@@ -69,6 +73,11 @@ class IntegrationSettingsView(BaseModel):
     elasticsearch_ca_cert_path: str
     elasticsearch_timeout_seconds: float
     elasticsearch_index_patterns: str
+    plex_base_url: str = ""
+    has_plex_api_token: bool = False
+    plex_api_token_masked: str = ""
+    plex_verify_ssl: bool = False
+    plex_timeout_seconds: float = 8.0
     updated_by: str | None = None
     updated_at: str | None = None
 
@@ -89,12 +98,16 @@ class IntegrationSettingsUpdatePayload(BaseModel):
     elasticsearch_ca_cert_path: str | None = None
     elasticsearch_timeout_seconds: float | None = Field(default=None, gt=0.5, le=120.0)
     elasticsearch_index_patterns: str | None = None
+    plex_base_url: str | None = None
+    plex_api_token: str | None = None
+    plex_verify_ssl: bool | None = None
+    plex_timeout_seconds: float | None = Field(default=None, gt=0.5, le=60.0)
 
 
 class ConnectivityTestResponse(BaseModel):
-    """Detailed connectivity diagnostic result for OPNsense or Elasticsearch."""
+    """Detailed connectivity diagnostic result for OPNsense, Elasticsearch, or Plex."""
 
-    service: Literal["opnsense", "elasticsearch"]
+    service: Literal["opnsense", "elasticsearch", "plex"]
     reachable: bool
     status: Literal["healthy", "degraded", "unhealthy"]
     latency_ms: float
@@ -182,7 +195,7 @@ def validate_and_normalize_protected_ips(raw_ips: str) -> str:
 
 
 def build_troubleshooting_hint(
-    service: Literal["opnsense", "elasticsearch"],
+    service: Literal["opnsense", "elasticsearch", "plex"],
     message: str,
     details: dict[str, Any],
 ) -> tuple[str, str]:
@@ -197,6 +210,11 @@ def build_troubleshooting_hint(
                 "Verify the OPNsense API Key and Secret belong to an active user "
                 "(e.g. svc_gateway_ui) with Diagnostics: ARP Table, Dnsmasq Leases, "
                 "Firewall: Alias: Edit, and Firewall: States privileges."
+            )
+        elif service == "plex":
+            hint = (
+                "Verify the X-Plex-Token belongs to the Plex Media Server administrator "
+                "account and has not been rotated via account password reset."
             )
         else:
             hint = (
@@ -269,6 +287,12 @@ def sync_runtime_cache_and_build_view(
     has_opn_key = bool(effective.opnsense_api_key.get_secret_value().strip())
     has_opn_secret = bool(effective.opnsense_api_secret.get_secret_value().strip())
     has_es_key = bool(effective.elasticsearch_api_key.get_secret_value().strip())
+    raw_plex_tok = (
+        effective.plex_api_token.get_secret_value()
+        if isinstance(effective.plex_api_token, SecretStr)
+        else str(effective.plex_api_token)
+    )
+    has_plex_tok = bool(raw_plex_tok.strip())
 
     latest_row = max(rows, key=lambda r: r.updated_at) if rows else None
     return IntegrationSettingsView(
@@ -289,6 +313,11 @@ def sync_runtime_cache_and_build_view(
         elasticsearch_ca_cert_path=effective.elasticsearch_ca_cert_path,
         elasticsearch_timeout_seconds=effective.elasticsearch_timeout_seconds,
         elasticsearch_index_patterns=effective.elasticsearch_index_patterns,
+        plex_base_url=effective.plex_base_url,
+        has_plex_api_token=has_plex_tok,
+        plex_api_token_masked=MASKED_SECRET_PLACEHOLDER if has_plex_tok else "",
+        plex_verify_ssl=effective.plex_verify_ssl,
+        plex_timeout_seconds=effective.plex_timeout_seconds,
         updated_by=latest_row.updated_by if latest_row else None,
         updated_at=latest_row.updated_at.isoformat() if latest_row else None,
     )
@@ -360,6 +389,24 @@ def build_temporary_settings_for_test(
             payload.elasticsearch_index_patterns.strip()
         )
 
+    if payload.plex_base_url is not None:
+        clean_plex_url = payload.plex_base_url.strip()
+        if clean_plex_url:
+            updates["plex_base_url"] = validate_and_normalize_url(
+                clean_plex_url, "plex_base_url"
+            )
+        else:
+            updates["plex_base_url"] = ""
+    if (
+        payload.plex_api_token is not None
+        and payload.plex_api_token.strip() != MASKED_SECRET_PLACEHOLDER
+    ):
+        updates["plex_api_token"] = SecretStr(payload.plex_api_token.strip())
+    if payload.plex_verify_ssl is not None:
+        updates["plex_verify_ssl"] = bool(payload.plex_verify_ssl)
+    if payload.plex_timeout_seconds is not None:
+        updates["plex_timeout_seconds"] = float(payload.plex_timeout_seconds)
+
     return effective.model_copy(update=updates)
 
 
@@ -381,6 +428,11 @@ def prepare_persisted_settings_rows(
         )
     merged = build_temporary_settings_for_test(base_settings, payload)
     secret_key_str = base_settings.app_secret_key.get_secret_value()
+    raw_plex_tok = (
+        merged.plex_api_token.get_secret_value()
+        if isinstance(merged.plex_api_token, SecretStr)
+        else str(merged.plex_api_token)
+    )
 
     values_to_persist: dict[str, tuple[str, bool]] = {
         "opnsense_base_url": (merged.opnsense_base_url, False),
@@ -423,6 +475,19 @@ def prepare_persisted_settings_rows(
             merged.elasticsearch_index_patterns,
             False,
         ),
+        "plex_base_url": (merged.plex_base_url, False),
+        "plex_api_token": (
+            encrypt_secret_value(raw_plex_tok, secret_key_str),
+            True,
+        ),
+        "plex_verify_ssl": (
+            "true" if merged.plex_verify_ssl else "false",
+            False,
+        ),
+        "plex_timeout_seconds": (
+            str(merged.plex_timeout_seconds),
+            False,
+        ),
     }
 
     new_rows: list[SystemSetting] = []
@@ -450,14 +515,15 @@ def prepare_persisted_settings_rows(
         status="success",
         details=(
             f"Updated runtime integration settings "
-            f"(OPNsense={merged.opnsense_base_url}, ES={merged.elasticsearch_url})"
+            f"(OPNsense={merged.opnsense_base_url}, ES={merged.elasticsearch_url}, "
+            f"Plex={merged.plex_base_url or 'disabled'})"
         ),
     )
     return new_rows, audit
 
 
 def evaluate_connectivity_diagnostic_result(
-    service: Literal["opnsense", "elasticsearch"],
+    service: Literal["opnsense", "elasticsearch", "plex"],
     target_url: str,
     health: ServiceHealthStatus,
     *,
@@ -540,7 +606,7 @@ async def update_integration_settings(
     *,
     actor: str,
 ) -> IntegrationSettingsView:
-    """Validate and persist OPNsense & Elasticsearch settings in SQLite (`FB-P9-002`)."""
+    """Validate and persist OPNsense, Elasticsearch & Plex settings in SQLite (`FB-P9-005`)."""
     existing_rows_list = list(
         (await db.execute(select(SystemSetting))).scalars().all()
     )
@@ -579,18 +645,21 @@ async def reset_integration_settings_to_env(
 async def run_connectivity_diagnostic(
     db: AsyncSession,
     base_settings: Settings,
-    service: Literal["opnsense", "elasticsearch"],
+    service: Literal["opnsense", "elasticsearch", "plex"],
     payload: IntegrationSettingsUpdatePayload,
     *,
     actor: str,
 ) -> ConnectivityTestResponse:
-    """Execute a live connectivity check for OPNsense or Elasticsearch (`FB-P9-002`)."""
+    """Execute a live connectivity check for OPNsense, Elasticsearch, or Plex (`FB-P9-005`)."""
     await load_runtime_settings_from_db(db, base_settings)
     temp_settings = build_temporary_settings_for_test(base_settings, payload)
 
     if service == "opnsense":
         target_url = temp_settings.opnsense_base_url
         health = await OPNsenseClient(temp_settings).check_health()
+    elif service == "plex":
+        target_url = temp_settings.plex_base_url or "plex://unconfigured"
+        health = await PlexServiceClient(temp_settings).check_health()
     else:
         target_url = temp_settings.elasticsearch_url
         health = await ElasticsearchServiceClient(temp_settings).check_health()

@@ -417,3 +417,28 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class PlexSessionLog(Base):
+    """Tautulli-style Plex playback heartbeat log for per-device watch time (`FB-P9-005`)."""
+
+    __tablename__ = "plex_session_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    client_ip: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    player_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    player_product: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    player_platform: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="playing", index=True)
+    user_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    media_title: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    media_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    stream_decision: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="direct play"
+    )
+    bandwidth_kbps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False, index=True
+    )

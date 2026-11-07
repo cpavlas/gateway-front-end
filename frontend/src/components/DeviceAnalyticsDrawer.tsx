@@ -258,20 +258,21 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
               <button
                 type="button"
                 data-testid="drawer-refresh-btn"
+                aria-label="Refresh Telemetry"
+                title="Refresh Telemetry"
                 onClick={() => {
                   refreshMutation.mutate()
                   void refetch()
                 }}
                 disabled={isFetching || refreshMutation.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer shrink-0"
               >
                 <RefreshCw
-                  className={`h-3.5 w-3.5 ${
+                  className={`h-4 w-4 ${
                     isFetching || refreshMutation.isPending ? 'animate-spin' : ''
                   }`}
                   aria-hidden="true"
                 />
-                <span>Refresh Telemetry</span>
               </button>
               <AutoRefreshSelector
                 value={intervalOption}
@@ -400,6 +401,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {appUsage.map((app) => {
                     const isYoutube = app.app_key === 'youtube'
+                    const activeSessions = app.active_sessions ?? []
                     return (
                       <div
                         key={app.app_key}
@@ -432,6 +434,27 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                             <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
                           </div>
                         </div>
+
+                        {!isYoutube && activeSessions.length > 0 && (
+                          <div
+                            data-testid="drawer-plex-now-playing"
+                            className="mt-2.5 rounded-md border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] space-y-1"
+                          >
+                            {activeSessions.map((sess) => (
+                              <div
+                                key={sess.session_key}
+                                className="flex items-center justify-between gap-2"
+                              >
+                                <span className="truncate font-semibold text-amber-200">
+                                  Now Playing: {sess.media_title}
+                                </span>
+                                <span className="shrink-0 font-mono text-[10px] uppercase text-slate-300">
+                                  {sess.state} · {sess.stream_decision}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {isYoutube && device && !device.is_protected && (
                           <div className="mt-3 flex items-center justify-between border-t border-slate-800/80 pt-2.5">

@@ -442,7 +442,7 @@
      - Expose `PLEX_BASE_URL` and `PLEX_API_TOKEN` (`X-Plex-Token`) in `.env` and the `System & Admin` Integration Settings UI (`FB-P9-002` pattern) with a live **Test Plex Connection** diagnostic button.
      - Poll `/status/sessions` and `/status/sessions/history/all` (or Plex SQLite/API playback history, just like Tautulli) to record exact per-device (`player.address` correlated to SQLite `Device.ipv4_address` / `mac_address`), per-user, and per-media-title playback duration, active stream state, bandwidth, transcode vs. direct-play status, and accurate `last_active_at` timestamps.
 - **Complexity:** `3.5 / 5`
-- **Status:** `OPEN — Planned for v1.2 / Dedicated Plex Integration Phase`
+- **Status:** `COMPLETED (Phase 15 — v1.2.0)`
 
 #### `FB-P10-002` — User-Configurable Auto-Refresh Interval Selector (`Off`, `5s`, `30s`, `1m`, `5m`) Across All Refresh Buttons
 - **User Feedback (Phase 10 Gate 2 — `PHASE10-Verify.md`):** *"For all Refresh buttons that automatically poll data, add a selector next to the refresh button to change the poll time. Values should be Off, 5s, 30s, 1m, 5m."*
@@ -514,7 +514,7 @@
   - **Proposal C (`SCHEDULED for Phase 15 — FB-P9-005`):** Direct Plex Media Server API (`X-Plex-Token` / Tautulli-style) Integration in a dedicated Plex Phase 15.
   - **Proposal D (`COMPLETED in Phase 14 — v1.2.0-rc3`):** Frontend Route Code-Splitting (`React.lazy()` + Vite `manualChunks`) to reduce initial bundle size (`21.15 kB` entry chunk, max vendor chunk `223.22 kB`) and eliminate Vite's `> 500 kB` chunk warning.
   - **Proposal E (`DEFERRED — Future Release`):** OPNsense Unbound DNS Blocklist / Secondary Service Quick-Action Toggle.
-- **Status:** `IN PROGRESS (Proposals A, B & D Completed; Proposal C Scheduled for Phase 15)`
+- **Status:** `COMPLETED (Proposals A, B, C & D Completed in v1.2.0)`
 
 ---
 
@@ -563,7 +563,7 @@
 - **Technical Evaluation & Planned Changes:**
   - Across `DevicesPage.tsx` (`Sync from OPNsense`), `SchedulesPage.tsx`, `AnalyticsPage.tsx` (`Refresh Analytics`), `FirewallPage.tsx` (`Refresh Firewall`), `StatusPage.tsx`, `DeviceAnalyticsDrawer.tsx` (`Refresh Telemetry`), `GroupAnalyticsDrawer.tsx` (`Refresh Telemetry`), and `FirewallOpenPortSessionsDrawer.tsx` (`Refresh Telemetry`), replace the text label inside the refresh button with an icon-only `<RefreshCw />` button while preserving accessible `title` and `aria-label` attributes (`aria-label="Refresh ..."`).
 - **Complexity:** `1 / 5` (Low)
-- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+- **Status:** `COMPLETED (Phase 15 — v1.2.0)`
 
 #### `FB-P14-002` — Icon-Only, Larger Mobile-Friendly Action Buttons in `Devices` Inventory List
 - **User Feedback (`PHASE14-Verify.md`):**
@@ -571,7 +571,7 @@
 - **Technical Evaluation & Planned Changes:**
   - In [`frontend/src/pages/DevicesPage.tsx`](../../frontend/src/pages/DevicesPage.tsx) (and `TimerPopoverMenu.tsx` when rendered in device rows), convert the per-device action buttons (`Inspect` / `Analytics`, `Timer`, `YouTube`, and `Allowed` / `Blocked` internet access toggle) to slightly larger touch-friendly icon-only buttons (`min-h-9 min-w-9 p-2`) with clear color states and tooltips/`aria-label`s for effortless mobile tapping.
 - **Complexity:** `1.5 / 5` (Low–Medium)
-- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+- **Status:** `COMPLETED (Phase 15 — v1.2.0)`
 
 #### `FB-P14-003` — Magnifying Glass Icon-Only `Inspect` Button in `Analytics` Top Active LAN Devices List
 - **User Feedback (`PHASE14-Verify.md`):**
@@ -579,6 +579,13 @@
 - **Technical Evaluation & Planned Changes:**
   - In [`frontend/src/pages/AnalyticsPage.tsx`](../../frontend/src/pages/AnalyticsPage.tsx), replace the text `Inspect` button in the **Top Active LAN Devices** table with an icon-only `<Search className="h-4 w-4" />` (magnifying glass) button with `title="Inspect device analytics"` and `aria-label`.
 - **Complexity:** `1 / 5` (Low)
-- **Status:** `OPEN (Scheduled for Next UI Cleanup / Phase 15)`
+- **Status:** `COMPLETED (Phase 15 — v1.2.0)`
 
 
+#### `FB-P14-004` — Clean Up Search Placeholder Text in External Connection Side-Drawer (`FirewallOpenPortSessionsDrawer.tsx`)
+- **User Feedback:**
+  - *"In the search field for the External Connection side drawer, the field ends with 'or ISP/,' instead of just 'or ISP'."*
+- **Technical Evaluation & Planned Changes:**
+  - In [`frontend/src/components/FirewallOpenPortSessionsDrawer.tsx`](../../frontend/src/components/FirewallOpenPortSessionsDrawer.tsx), change the search input `placeholder` from `"Filter by external IP, city, country, or ISP/ASN..."` (which clips after `"or ISP/"` inside the input width) to `"Filter by external IP, city, country, or ISP"`.
+- **Complexity:** `1 / 5` (Low)
+- **Status:** `COMPLETED (Phase 15 — v1.2.0)`

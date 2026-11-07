@@ -504,7 +504,36 @@ At the completion of every phase (before Git check-in and unlocking the next pha
     2. **`FB-P14-002`:** Icon-only, slightly larger mobile-friendly action buttons in the `Devices` inventory list.
     3. **`FB-P14-003`:** Magnifying Glass (`<Search />`) icon-only `Inspect` button in the `Analytics` Top Active LAN Devices list.
 - **Feed-Forward into Phase 15 (`v1.2.0` Final Release):**
-  - Phase 15 (`v1.2.0`) combines the dedicated **Direct Plex Media Server API & Tautulli-Style Session/History Integration (`FB-P9-005` / `FB-P11-008` Proposal C)** with the three UI cleanup items (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`).
+  - Phase 15 (`v1.2.0`) combines the dedicated **Direct Plex Media Server API & Tautulli-Style Session/History Integration (`FB-P9-005` / `FB-P11-008` Proposal C)** with the four UI cleanup items (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`, `FB-P14-004`).
+
+---
+
+## Phase 15 Exit Analysis & Unplanned-Information Retrospective (`v1.2.0` Final Release — 2026-11-07)
+
+### 1. Phase 15 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C, `FB-P14-001`, `FB-P14-002`, `FB-P14-003`, `FB-P14-004`):**
+  1. **`FB-P9-005` (`BUG-P9-002` / `FB-P11-008` Proposal C) — Direct Plex Media Server API & Tautulli-Style Session / Playback History Integration (`clients/plex.py`, `services/plex_service.py`, `models/__init__.py`, `services/runtime_settings_service.py`, `api/system.py`, `StatusPage.tsx`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):**
+     - Added `PLEX_BASE_URL`, `PLEX_API_TOKEN` (`SecretStr`, encrypted at rest in SQLite), `PLEX_VERIFY_SSL`, and `PLEX_TIMEOUT_SECONDS` to `.env.example`, `backend/app/config.py`, `runtime_settings_service.py`, and `StatusPage.tsx` (`System -> Integration Settings`) with a live **Test Plex Connection** diagnostic button (`POST /api/v1/system/settings/test-plex`).
+     - Built `PlexServiceClient` (`backend/app/clients/plex.py`) querying `/identity`, `/status/sessions`, `/status/sessions/history/all`, and `/devices`, paired with SQLite `PlexSessionLog` (`plex_session_logs`) and a 30-second APScheduler heartbeat poller (`run_plex_session_poller()` in `backend/app/main.py`).
+     - Enriched `application_usage` (`plex`) across `analytics_service.py` and `group_service.py` so same-subnet Layer-2 Smart TVs (`LGwebOSTV`, Apple TV, Roku) report exact watch duration, Top 3 Devices, and live **Now Playing** stream details (`player_name`, `media_title`, `state`, `video_resolution`, `stream_decision`).
+  2. **`FB-P14-001` — Icon-Only Refresh Buttons Across All Views & Drawers:**
+     - Removed text labels from all Refresh buttons across `DevicesPage.tsx`, `SchedulesPage.tsx`, `AnalyticsPage.tsx`, `FirewallPage.tsx`, `StatusPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, and `FirewallOpenPortSessionsDrawer.tsx`, rendering `<RefreshCw />` with accessible `aria-label` and `title` attributes.
+  3. **`FB-P14-002` — Icon-Only, Larger Mobile-Friendly Action Buttons in `Devices` Inventory List:**
+     - Converted per-device row action buttons (`Analytics`, `Timer`, `YouTube`, and `Allowed`/`Blocked`/`Always Allowed` internet access toggle) in `DevicesPage.tsx` and `TimerPopoverMenu.tsx` (`iconOnly` prop) to larger (`h-9 w-9`) touch-friendly icon-only buttons.
+  4. **`FB-P14-003` — Magnifying Glass Icon-Only `Inspect` Button in `Analytics` Top Active LAN Devices List:**
+     - Replaced the text `Inspect` button in the `Top Active LAN Devices` table on `AnalyticsPage.tsx` with an icon-only Magnifying Glass (`<Search className="h-4 w-4" />`) button.
+  5. **`FB-P14-004` — Clean Up Search Field Placeholder in External Connection Side-Drawer (`FirewallOpenPortSessionsDrawer.tsx`):**
+     - Changed the search input placeholder on `open-port-sessions-search-input` from `"Filter by external IP, city, country, or ISP/ASN..."` to `"Filter by external IP, city, country, or ISP"`.
+- **Final Automated Quality Metrics (`v1.2.0` Final Release):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `129 / 129` passed (`85%` coverage across `33` backend modules; `clients/plex.py` `94%`, `services/plex_service.py` `87%`), `0` ruff/SAST errors, `0` mypy issues across `33` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `30 / 30` passed across `7` test suites (`91.03%` statement/line coverage), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Release Retrospective (`v1.2.0`)
+- **Finding 1 — Runtime UI Settings Override in Background Pollers (`run_plex_session_poller` & `plex_service.py`):**
+  - Because `get_settings()` is `@lru_cached` from `.env` at process startup, background APScheduler jobs (`run_plex_session_poller`) and analytics enrichment calls (`fetch_plex_telemetry_for_analytics`) must apply `load_runtime_settings_from_db()` + `apply_runtime_overrides(settings)` on each execution so configuring Plex URL and `X-Plex-Token` via `System -> Integration Settings` takes effect immediately without requiring a container restart.
+- **Release Sign-Off (`v1.2.0`):**
+  - All 5 verification sections (`Section A` through `Section E`) in `docs/development/Validation/PHASE15-Verify.md` passed user live validation on the first pass (`Validation complete with everything passing`).
+
 
 
 

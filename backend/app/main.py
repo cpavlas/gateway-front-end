@@ -32,6 +32,7 @@ from app.services.analytics_service import (
     get_network_overview_analytics,
 )
 from app.services.firewall_service import get_firewall_overview_analytics
+from app.services.plex_service import poll_and_record_plex_sessions
 from app.services.runtime_settings_service import load_runtime_settings_from_db
 from app.services.schedule_service import reconcile_schedules_and_policies
 from app.services.timer_service import reconcile_expired_overrides
@@ -51,6 +52,24 @@ async def run_scheduled_override_reconciliation() -> None:
         await reconcile_schedules_and_policies(session, opnsense, effective_settings)
 
 
+async def run_plex_session_poller() -> int:
+    """Background task tick: poll Plex /status/sessions and record 30s heartbeats (`FB-P9-005`)."""
+    base_settings = get_settings()
+    session_factory = get_session_factory(base_settings)
+    async with session_factory() as session:
+        await load_runtime_settings_from_db(session, base_settings)
+        effective_settings = apply_runtime_overrides(base_settings)
+        if not effective_settings.has_plex_configured:
+            return 0
+        with suppress(Exception):
+            return await poll_and_record_plex_sessions(
+                session,
+                effective_settings,
+                poll_interval_seconds=30,
+            )
+        return 0
+
+
 async def run_telemetry_cache_prewarm(
     *,
     force: bool = False,
@@ -67,6 +86,13 @@ async def run_telemetry_cache_prewarm(
             effective_settings.app_env == "testing" or es_key in ("", "changeme")
         ):
             return False
+        if effective_settings.has_plex_configured:
+            with suppress(Exception):
+                await poll_and_record_plex_sessions(
+                    session,
+                    effective_settings,
+                    poll_interval_seconds=30,
+                )
         es_client = ElasticsearchServiceClient(effective_settings)
         await get_network_overview_analytics(
             db=session,
@@ -113,7 +139,7 @@ async def run_telemetry_cache_prewarm(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Initialize SQLite schema, reconcile expired overrides on boot, and run 60s APScheduler."""
+    """Initialize SQLite schema, reconcile expired overrides on boot, and run APScheduler."""
     await init_db()
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -121,6 +147,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         "interval",
         seconds=60,
         id="reconcile_expired_overrides",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_plex_session_poller,
+        "interval",
+        seconds=30,
+        id="poll_plex_active_sessions",
         replace_existing=True,
     )
     scheduler.add_job(
