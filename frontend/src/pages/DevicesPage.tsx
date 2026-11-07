@@ -33,6 +33,7 @@ import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
 import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
 import { GroupFormModal, getGroupBadgeClasses } from '../components/GroupFormModal'
 import { TimerPopoverMenu } from '../components/TimerPopoverMenu'
+import { YouTubeLogoIcon } from '../components/YouTubeLogoIcon'
 
 interface DevicesPageProps {
   activeTab?: AppTab
@@ -344,7 +345,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     return items.filter((dev) => {
       const devGroups = dev.groups ?? []
       if (statusFilter === 'online' && !dev.is_online) return false
-      if (statusFilter === 'blocked' && !dev.is_blocked) return false
+      if (statusFilter === 'blocked' && !dev.is_blocked && !dev.is_youtube_blocked) return false
       if (statusFilter === 'protected' && !dev.is_protected) return false
       if (statusFilter === 'unassigned' && devGroups.length > 0) return false
 
@@ -1043,10 +1044,15 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               type="button"
                               data-testid={`youtube-toggle-${dev.id}`}
                               disabled={isBusy || !dev.ipv4_address}
+                              aria-label={
+                                dev.is_youtube_blocked
+                                  ? `YouTube Blocked for ${dev.effective_name}. Click to allow YouTube`
+                                  : `YouTube Allowed for ${dev.effective_name}. Click to block YouTube`
+                              }
                               title={
                                 dev.is_youtube_blocked
-                                  ? 'YouTube blocked (Plex & Internet allowed), Click to allow YouTube'
-                                  : 'Click to block YouTube only (keeps Plex & Internet allowed)'
+                                  ? 'YouTube Blocked (Plex & Internet allowed) — Click to allow YouTube'
+                                  : 'YouTube Allowed — Click to block YouTube only (keeps Plex & Internet allowed)'
                               }
                               onClick={() =>
                                 deviceYoutubeMutation.mutate({
@@ -1054,14 +1060,13 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                   action: dev.is_youtube_blocked ? 'unblock' : 'block',
                                 })
                               }
-                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-50 ${
                                 dev.is_youtube_blocked
-                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
-                                  : 'border-slate-700 bg-slate-950/60 text-slate-300 hover:bg-slate-800'
+                                  ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
+                                  : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
                               }`}
                             >
-                              <VideoOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                              <span>{dev.is_youtube_blocked ? 'YT Blocked' : 'YT Allowed'}</span>
+                              <YouTubeLogoIcon className="h-4 w-4" testId={`yt-icon-${dev.id}`} />
                             </button>
                           )}
                           <TimerPopoverMenu

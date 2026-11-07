@@ -56,3 +56,35 @@ html[data-theme="ocean"] {
   --color-indigo-200: #b8d8f8;
   --color-indigo-100: #e0effc;
 }
+
+@keyframes telemetry-slow-pulse {
+  0%, 100% {
+    opacity: 0.42;
+    filter: saturate(0.35);
+  }
+  50% {
+    opacity: 0.72;
+    filter: saturate(0.65);
+  }
+}
+
+.telemetry-loading-pulse {
+  animation: telemetry-slow-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes telemetry-gentle-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(5px);
+  }
+}
+
+.telemetry-gentle-bounce {
+  animation: telemetry-gentle-bounce 2s ease-in-out infinite;
+}
+
+

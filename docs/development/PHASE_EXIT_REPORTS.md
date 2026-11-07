@@ -414,3 +414,31 @@ At the completion of every phase (before Git check-in and unlocking the next pha
   4. **`FB-P11-006`:** Replace `YT Allowed` / `YT Blocked` text buttons with a compact YouTube logo button (bright when allowed, dim when blocked) and include `is_youtube_blocked` devices in the `Blocked` filter view on `Devices & Access Control`.
   5. **`FB-P11-007`:** Add a visual loading/refreshing state (greyed-out + slow pulse/blink) when waiting for Elasticsearch data so stale data is clearly distinguished during refreshes.
   6. **`FB-P11-008` & `FB-P9-005`:** Present architectural/performance improvement proposals and Tautulli-style direct Plex API integration during the `v1.2` planning phase.
+
+---
+
+## Phase 12 Exit Analysis & Unplanned-Information Retrospective (`v1.2.0-rc1` — 2026-11-06)
+
+### 1. Phase 12 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P11-005`, `FB-P11-006`, `FB-P11-007`):**
+  1. **`FB-P11-005` (Streamlined Header Brand Grid, Single-Word Tabs with Larger Icons, Even Vertical Alignment & Defined Unicorn Logo — `AppLayout.tsx`, `UnicornLogo.tsx`):**
+     - Restructured the header brand block into a 2×2 left-justified CSS Grid (`grid grid-cols-[auto_auto] items-center justify-items-start gap-x-2.5 gap-y-0.5`): `Gateway Control` and `Access & Telemetry Portal` in Column 1, and `v1.2.0-rc1` + live `HH:MM:SS` clock (`text-xs leading-tight whitespace-nowrap`) in Column 2.
+     - Removed the clock from underneath `Logout` so `Logout`, the User Name menu button, the `HEALTHY` badge, and the Navigation tabs share a single vertical center line.
+     - Shortened navigation tabs to single-word labels (`Devices`, `Schedules`, `Analytics`, `Firewall`, `System`) with larger `h-4.5 w-4.5` icons, and enlarged `<UnicornLogo />` (`h-11 w-11`) with a defined indigo border and crisp silhouette stroke.
+  2. **`FB-P11-006` (Compact YouTube Logo Toggle Button & Unified `Blocked` Filter — `YouTubeLogoIcon.tsx`, `DevicesPage.tsx`, `device_service.py`):**
+     - Replaced the wide `YT Allowed` / `YT Blocked` text button on device rows with `<YouTubeLogoIcon />` inside a compact `h-8 w-8` button (vivid red when YouTube is allowed, dim/muted slate when YouTube is blocked).
+     - Updated `status_filter == "blocked"` and `summary.blocked_devices` in `backend/app/services/device_service.py` and `DevicesPage.tsx` so the `Blocked` filter pill includes both full-internet blocked devices (`is_blocked`) and YouTube-blocked devices (`is_youtube_blocked`).
+  3. **`FB-P11-007` (Visual Loading / Refreshing State with Slow Pulse & Centered Notification Pill — `TelemetryLoadingShell.tsx`, `index.css`, `AnalyticsPage.tsx`, `FirewallPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):**
+     - Created `<TelemetryLoadingShell />` applying `@keyframes telemetry-slow-pulse` (`opacity: 0.42..0.72`, `saturate(0.35..0.65)`) and a centered gentle-bouncing notification pill (`fixed top-28 left-1/2 -translate-x-1/2`) while preserving `space-y-6` vertical card spacing across all wrapped views.
+- **Final Automated Quality Metrics (`v1.2.0-rc1`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `122 / 122` passed (`84.4%` coverage), `0` ruff errors, `0` mypy issues across `31` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `28 / 28` passed across `7` test suites (`90.78%` coverage; `TelemetryLoadingShell.tsx` `100%`, `YouTubeLogoIcon.tsx` `100%`, `AppLayout.tsx` `98.65%`), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward into Phase 13 (`v1.2.0-rc2`)
+- **Finding 1 — Wrapper Components & Tailwind `space-y-*` Direct-Child Combinators (`BUG-P12-001`):**
+  - Wrapping multiple sibling sections inside a layout wrapper component (`<TelemetryLoadingShell>`) breaks parent `space-y-6` (`> :not([hidden]) ~ :not([hidden])`) spacing unless the wrapper's internal container explicitly re-applies `space-y-6`.
+- **Finding 2 — Left-Justified Multi-Row Alignment Requires CSS Grid over Flex Rows (`BUG-P12-002`):**
+  - When aligning two stacked labels of different widths (`Gateway Control` vs. `Access & Telemetry Portal`) alongside two right-hand indicators (`v1.2.0-rc1` vs. `HH:MM:SS`), separate flex rows cannot left-align the second column. A 2-column CSS Grid (`grid-cols-[auto_auto] justify-items-start`) guarantees strict vertical left-justification across both rows without text wrapping.
+- **Feed-Forward into Phase 13 (`v1.2.0-rc2`):**
+  - Zero open bugs waterfalled from Phase 12. Phase 13 proceeds with **`FB-P11-003` (`BUG-P11-001`)** (Elasticsearch cold-load query optimization, `ELASTICSEARCH_TIMEOUT_SECONDS` bump from `10.0s` to `20.0s`, and automatic runtime ES/OPNsense error logging to SQLite `audit_logs`) plus **`FB-P11-008` Proposals A & B** (background APScheduler cache pre-warming for `24h` Analytics & Firewall, and Elasticsearch `_msearch` consolidation).
+

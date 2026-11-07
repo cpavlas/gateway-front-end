@@ -26,6 +26,7 @@ import {
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { getGroupBadgeClasses } from './GroupFormModal'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
+import { TelemetryLoadingShell } from './TelemetryLoadingShell'
 
 interface GroupAnalyticsDrawerProps {
   groupId: number | null
@@ -319,7 +320,12 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
               Querying combined group telemetry from Elasticsearch 9.4.3...
             </div>
           ) : (
-            <>
+            <TelemetryLoadingShell
+              isLoading={isLoading}
+              isFetching={isFetching || refreshMutation.isPending}
+              loadingMessage="Refreshing group telemetry..."
+              testId="group-drawer-telemetry-shell"
+            >
               {/* Summary KPI Cards */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5">
@@ -755,7 +761,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                   </div>
                 )}
               </div>
-            </>
+            </TelemetryLoadingShell>
           )}
         </div>
       </div>

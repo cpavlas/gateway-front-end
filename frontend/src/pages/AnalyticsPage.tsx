@@ -23,6 +23,7 @@ import {
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
 import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
+import { TelemetryLoadingShell } from '../components/TelemetryLoadingShell'
 import { TimelineBarChart } from '../components/TelemetryBarChart'
 
 interface AnalyticsPageProps {
@@ -177,8 +178,15 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
           </div>
         )}
 
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {/* KPI Summary Cards & Main Content Wrapped in TelemetryLoadingShell */}
+        <TelemetryLoadingShell
+          isLoading={isLoading}
+          isFetching={isFetching || refreshMutation.isPending}
+          loadingMessage="Refreshing telemetry from Elasticsearch..."
+          testId="overview-telemetry-shell"
+        >
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <div
             data-testid="overview-kpi-events"
             className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow"
@@ -640,6 +648,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
             </div>
           </>
         )}
+        </TelemetryLoadingShell>
 
         {/* Per-Device Analytics Slide-Over Drawer */}
         <DeviceAnalyticsDrawer

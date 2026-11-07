@@ -25,6 +25,7 @@ import {
 } from '../api/client'
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
+import { TelemetryLoadingShell } from './TelemetryLoadingShell'
 
 interface DeviceAnalyticsDrawerProps {
   deviceId: number | null
@@ -311,7 +312,12 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
               Querying Elasticsearch 9.4.3 (`logs-pfsense.log*`) for device telemetry...
             </div>
           ) : (
-            <>
+            <TelemetryLoadingShell
+              isLoading={isLoading}
+              isFetching={isFetching || refreshMutation.isPending}
+              loadingMessage="Refreshing device telemetry..."
+              testId="drawer-telemetry-shell"
+            >
               {/* Summary KPI Row */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div
@@ -655,7 +661,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                   </div>
                 )}
               </div>
-            </>
+            </TelemetryLoadingShell>
           )}
         </div>
       </div>

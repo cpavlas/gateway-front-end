@@ -412,7 +412,7 @@ def _filter_and_summarize_devices(
     summary = DeviceSummaryStats(
         total_devices=len(all_responses),
         online_devices=sum(1 for d in all_responses if d.is_online),
-        blocked_devices=sum(1 for d in all_responses if d.is_blocked),
+        blocked_devices=sum(1 for d in all_responses if d.is_blocked or d.is_youtube_blocked),
         protected_devices=sum(1 for d in all_responses if d.is_protected),
     )
 
@@ -420,7 +420,7 @@ def _filter_and_summarize_devices(
     if status_filter == "online":
         filtered = [d for d in filtered if d.is_online]
     elif status_filter == "blocked":
-        filtered = [d for d in filtered if d.is_blocked]
+        filtered = [d for d in filtered if d.is_blocked or d.is_youtube_blocked]
     elif status_filter == "protected":
         filtered = [d for d in filtered if d.is_protected]
     elif status_filter == "unassigned":

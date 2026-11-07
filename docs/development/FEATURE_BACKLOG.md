@@ -492,19 +492,19 @@
   - *"Page header label OPNSense Gateway Control is too long. Lets change this to just say Gateway Control and also remove the OPNsense and Elasticsearch version labels, since this is available in the system tab. Leave Access & Telemetry portal though and move the current version of the code to be in line with the Access & Telemetry Portal label"*
   - *"The Unicorn icon in the page header is slightly difficult to make out. Perhaps we can make it slightly larger, and with a more defined border."*
 - **Complexity:** `1.5 / 5`
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Status:** `COMPLETED (Phase 12 — v1.2.0-rc1)`
 
 #### `FB-P11-006` — Compact YouTube Logo Toggle Button & Unified `Blocked` Filter Including `YT Blocked` Devices
 - **User Feedback (`PHASE11-Verify.md`):**
   - *"The buttons for YT Allowed are rather large. Change this to just be the Youtube logo and have it be bright if its allowing YT, but dim when it is not, like the Allowed button already operates"*
   - *"When clicking blocked in Devices & Access Control within the show list (All, Online,...) the blocked view should also include devices that have YT blocked for easier view and access."*
 - **Complexity:** `1.5 / 5`
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Status:** `COMPLETED (Phase 12 — v1.2.0-rc1)`
 
 #### `FB-P11-007` — Visual Loading / Refreshing State (Greyed-Out + Slow Blink/Pulse) for Analytics Windows
 - **User Feedback (`PHASE11-Verify.md`):** *"In the next planning phase, for the discussion, lets also include determining better ways of showing data that is is waiting to load from ES for presentation. Sometimes stale data, or no data, will show while the system is refreshing and it is not obvious that the stale data is bad. Perhaps we could do something like grey out the windows of where the data loads and slowly blink the data as it is loaded."*
 - **Complexity:** `1.5 / 5`
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Status:** `COMPLETED (Phase 12 — v1.2.0-rc1)`
 
 #### `FB-P11-008` — Application Improvement & Performance Enhancement Proposals for Next (`v1.2`) Planning Phase
 - **User Feedback (`PHASE11-Verify.md`):** *"Additionally as part of the next planning phase, present improvement options, performance enhancements or other changes that you think would improve the application for discussion."*
