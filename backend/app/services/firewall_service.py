@@ -20,6 +20,7 @@ from app.clients.opnsense import OPNsenseClient
 from app.config import Settings
 from app.models import Device
 from app.services.analytics_service import TimelineBucketItem, get_analytics_cache
+from app.services.audit_and_backup_service import record_upstream_error_audit_log
 
 _LAST_GOOD_WINDOW_AGGS: dict[str, dict[str, Any]] = {}
 _LAST_KNOWN_NAT_MAPPINGS: dict[tuple[str, int, str], int] = {}
@@ -422,6 +423,12 @@ async def get_firewall_overview_analytics(
             nat_port_mappings=nat_mappings,
         )
     except ElasticsearchQueryError as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="elasticsearch",
+            operation=f"firewall_overview:{win_key}",
+            error_message=str(exc),
+        )
         return build_firewall_overview_response(
             None,
             sqlite_devices,

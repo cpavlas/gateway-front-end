@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     elasticsearch_api_key: SecretStr = Field(default=SecretStr(""))
     elasticsearch_verify_ssl: bool = True
     elasticsearch_ca_cert_path: str = ""
-    elasticsearch_timeout_seconds: float = Field(default=15.0, gt=0.5, le=120.0)
+    elasticsearch_timeout_seconds: float = Field(default=20.0, gt=0.5, le=120.0)
     elasticsearch_index_patterns: str = "logs-pfsense.log*"
 
     @field_validator("app_secret_key")

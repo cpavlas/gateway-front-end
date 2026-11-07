@@ -1,7 +1,7 @@
 {
   "name": "gateway-front-end-ui",
   "private": true,
-  "version": "1.2.0-rc1",
+  "version": "1.2.0-rc2",
   "type": "module",
   "scripts": {
     "dev": "vite",

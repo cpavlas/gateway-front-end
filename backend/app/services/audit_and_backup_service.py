@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -481,3 +482,59 @@ async def restore_configuration_backup(
         schedules_upserted=schedules_upserted,
         restored_at=now.isoformat(),
     )
+
+
+_UPSTREAM_ERROR_DEDUP: dict[tuple[str, str], float] = {}
+_UPSTREAM_ERROR_DEDUP_SECONDS = 60.0
+
+
+def clear_upstream_error_dedup_cache() -> None:
+    """Clear the 60-second upstream error deduplication cache (used in unit tests)."""
+    _UPSTREAM_ERROR_DEDUP.clear()
+
+
+def _should_record_upstream_error(
+    service: Literal["elasticsearch", "opnsense"],
+    operation: str,
+) -> bool:
+    """Return True if `(service, operation)` has not been logged within the last 60 seconds."""
+    now_mono = time.monotonic()
+    dedup_key = (service, operation)
+    last_logged = _UPSTREAM_ERROR_DEDUP.get(dedup_key)
+    if last_logged is not None and (now_mono - last_logged) < _UPSTREAM_ERROR_DEDUP_SECONDS:
+        return False
+    _UPSTREAM_ERROR_DEDUP[dedup_key] = now_mono
+    return True
+
+
+async def record_upstream_error_audit_log(
+    db: AsyncSession,
+    *,
+    service: Literal["elasticsearch", "opnsense"],
+    operation: str,
+    error_message: str,
+    actor: str = "system",
+) -> bool:
+    """Record a deduplicated DIAGNOSTIC_ERROR audit log entry for runtime upstream failures.
+
+    Suppresses duplicate logs for the same `(service, operation)` within 60 seconds so burst
+    requests during an outage do not flood SQLite (`BUG-P11-001`).
+    """
+    if not _should_record_upstream_error(service, operation):
+        return False
+    try:
+        db.add(
+            AuditLog(
+                actor=actor,
+                action=f"upstream.{service}.error",
+                audit_label="DIAGNOSTIC_ERROR",
+                target=operation,
+                status="failed",
+                details=str(error_message)[:500],
+            )
+        )
+        await db.commit()
+        return True
+    except Exception:
+        return False
+

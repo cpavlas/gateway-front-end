@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
@@ -22,9 +23,12 @@ from app.api.system import audit_router
 from app.api.system import router as system_router
 from app.api.timers import router as timers_router
 from app.api.users import router as users_router
+from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.clients.opnsense import OPNsenseClient
 from app.config import apply_runtime_overrides, get_settings
 from app.db import dispose_db, get_session_factory, init_db
+from app.services.analytics_service import get_network_overview_analytics
+from app.services.firewall_service import get_firewall_overview_analytics
 from app.services.runtime_settings_service import load_runtime_settings_from_db
 from app.services.schedule_service import reconcile_schedules_and_policies
 from app.services.timer_service import reconcile_expired_overrides
@@ -44,6 +48,36 @@ async def run_scheduled_override_reconciliation() -> None:
         await reconcile_schedules_and_policies(session, opnsense, effective_settings)
 
 
+async def run_telemetry_cache_prewarm(*, force: bool = False) -> bool:
+    """Background task tick: pre-warm default 24h NetworkOverview and FirewallOverview caches."""
+    base_settings = get_settings()
+    session_factory = get_session_factory(base_settings)
+    async with session_factory() as session:
+        await load_runtime_settings_from_db(session, base_settings)
+        effective_settings = apply_runtime_overrides(base_settings)
+        es_key = effective_settings.elasticsearch_api_key.get_secret_value().strip()
+        if not force and (
+            effective_settings.app_env == "testing" or es_key in ("", "changeme")
+        ):
+            return False
+        es_client = ElasticsearchServiceClient(effective_settings)
+        await get_network_overview_analytics(
+            db=session,
+            settings=effective_settings,
+            es_client=es_client,
+            window="24h",
+            refresh=True,
+        )
+        await get_firewall_overview_analytics(
+            db=session,
+            settings=effective_settings,
+            es_client=es_client,
+            window="24h",
+            refresh=True,
+        )
+        return True
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize SQLite schema, reconcile expired overrides on boot, and run 60s APScheduler."""
@@ -56,14 +90,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         id="reconcile_expired_overrides",
         replace_existing=True,
     )
+    scheduler.add_job(
+        run_telemetry_cache_prewarm,
+        "interval",
+        seconds=60,
+        id="prewarm_default_telemetry_caches",
+        replace_existing=True,
+    )
     scheduler.start()
     try:
         await run_scheduled_override_reconciliation()
     except Exception:
         pass
+    prewarm_task = asyncio.create_task(run_telemetry_cache_prewarm())
     try:
         yield
     finally:
+        prewarm_task.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await prewarm_task
         scheduler.shutdown(wait=False)
         await dispose_db()
 

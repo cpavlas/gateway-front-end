@@ -165,7 +165,6 @@ def _build_app_usage_agg(
             "filters": {
                 "youtube": {
                     "bool": {
-                        "filter": [{"terms": {"source.ip": RFC1918_CIDRS}}],
                         "must_not": youtube_must_not,
                         "should": [
                             {
@@ -174,15 +173,17 @@ def _build_app_usage_agg(
                                         "youtube.com",
                                         "youtu.be",
                                         "googlevideo.com",
+                                        "ytimg.com",
                                     ]
                                 }
                             },
                             {
-                                "wildcard": {
-                                    "dns.question.name": {
-                                        "value": "*.googlevideo.com",
-                                        "case_insensitive": True,
-                                    }
+                                "terms": {
+                                    "dns.question.name": [
+                                        "youtubei.googleapis.com",
+                                        "www.youtube.com",
+                                        "m.youtube.com",
+                                    ]
                                 }
                             },
                         ],
@@ -191,7 +192,6 @@ def _build_app_usage_agg(
                 },
                 "plex": {
                     "bool": {
-                        "filter": [{"terms": {"source.ip": RFC1918_CIDRS}}],
                         "must_not": plex_must_not,
                         "should": [
                             {"term": {"destination.port": 32400}},
@@ -205,14 +205,6 @@ def _build_app_usage_agg(
                                     ]
                                 }
                             },
-                            {
-                                "wildcard": {
-                                    "dns.question.name": {
-                                        "value": "*plex*",
-                                        "case_insensitive": True,
-                                    }
-                                }
-                            },
                         ],
                         "minimum_should_match": 1,
                     }
@@ -224,7 +216,6 @@ def _build_app_usage_agg(
                 "date_histogram": {
                     "field": "@timestamp",
                     "fixed_interval": "5m",
-                    "time_zone": safe_tz,
                     "min_doc_count": 1,
                 }
             },
@@ -235,13 +226,12 @@ def _build_app_usage_agg(
                 "filter": {"terms": {"source.ip": RFC1918_CIDRS}},
                 "aggs": {
                     "devices": {
-                        "terms": {"field": "source.ip", "size": 25},
+                        "terms": {"field": "source.ip", "size": 15},
                         "aggs": {
                             "active_slots": {
                                 "date_histogram": {
                                     "field": "@timestamp",
                                     "fixed_interval": "5m",
-                                    "time_zone": safe_tz,
                                     "min_doc_count": 1,
                                 }
                             },
@@ -408,7 +398,7 @@ def build_network_overview_query(
 
     return {
         "size": 0,
-        "track_total_hits": True,
+        "track_total_hits": False,
         "query": {
             "range": {
                 "@timestamp": {
@@ -524,9 +514,9 @@ def normalize_network_overview_response(
     aggs = raw.get("aggregations") or {}
     hits_total_obj = (raw.get("hits") or {}).get("total")
     if isinstance(hits_total_obj, dict):
-        total_events = int(hits_total_obj.get("value") or 0)
+        hits_total = int(hits_total_obj.get("value") or 0)
     else:
-        total_events = int(hits_total_obj or 0)
+        hits_total = int(hits_total_obj or 0)
 
     total_bytes = int(float((aggs.get("total_bytes") or {}).get("value") or 0))
     provider_counts = _extract_bucket_map((aggs.get("by_provider") or {}).get("buckets") or [])
@@ -534,6 +524,9 @@ def normalize_network_overview_response(
 
     timeline_buckets = (aggs.get("timeline") or {}).get("buckets") or []
     timeline = _normalize_timeline_buckets(timeline_buckets)
+    timeline_total = sum(int(b.get("total_events") or 0) for b in timeline)
+    provider_total = sum(provider_counts.values())
+    total_events = max(hits_total, timeline_total, provider_total)
 
     lan_ip_buckets = (
         ((aggs.get("lan_devices") or {}).get("top_ips") or {}).get("buckets") or []
@@ -614,7 +607,7 @@ def build_device_analytics_query(
 
     return {
         "size": 0,
-        "track_total_hits": True,
+        "track_total_hits": False,
         "query": {
             "bool": {
                 "filter": [
@@ -797,9 +790,9 @@ def normalize_device_analytics_response(
     aggs = raw_aggs_resp.get("aggregations") or {}
     hits_total_obj = (raw_aggs_resp.get("hits") or {}).get("total")
     if isinstance(hits_total_obj, dict):
-        total_events = int(hits_total_obj.get("value") or 0)
+        hits_total = int(hits_total_obj.get("value") or 0)
     else:
-        total_events = int(hits_total_obj or 0)
+        hits_total = int(hits_total_obj or 0)
 
     total_bytes = int(float((aggs.get("total_bytes") or {}).get("value") or 0))
     provider_counts = _extract_bucket_map((aggs.get("by_provider") or {}).get("buckets") or [])
@@ -810,6 +803,9 @@ def normalize_device_analytics_response(
 
     timeline_buckets = (aggs.get("timeline") or {}).get("buckets") or []
     timeline = _normalize_timeline_buckets(timeline_buckets)
+    timeline_total = sum(int(b.get("total_events") or 0) for b in timeline)
+    provider_total = sum(provider_counts.values())
+    total_events = max(hits_total, timeline_total, provider_total)
 
     hourly_buckets = (aggs.get("hourly_profile") or {}).get("buckets") or []
     hourly_access_profile = _compute_24h_access_profile(hourly_buckets)
@@ -901,7 +897,7 @@ def build_group_analytics_query(
 
     return {
         "size": 0,
-        "track_total_hits": True,
+        "track_total_hits": False,
         "query": {
             "bool": {
                 "filter": [
@@ -1512,7 +1508,7 @@ class ElasticsearchServiceClient:
         self._api_key = settings.elasticsearch_api_key.get_secret_value()
         self._verify_certs = settings.elasticsearch_verify_ssl
         self._ca_certs = settings.elasticsearch_ca_cert_path.strip() or None
-        self._timeout = settings.elasticsearch_timeout_seconds
+        self._timeout = max(float(settings.elasticsearch_timeout_seconds), 20.0)
         self._index_patterns = settings.es_index_pattern_list
         self._tz = settings.tz
 
@@ -1527,6 +1523,62 @@ class ElasticsearchServiceClient:
         if self._ca_certs:
             kwargs["ca_certs"] = self._ca_certs
         return AsyncElasticsearch(**kwargs)
+
+    async def _execute_aggs_and_recent_search(
+        self,
+        client: Any,
+        *,
+        target_pattern: str,
+        aggs_body: dict[str, Any],
+        recent_body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Execute paired aggregation + recent-events queries in a single _msearch round-trip.
+
+        Falls back to sequential `client.search()` calls when a unit-test mock client does not
+        define `msearch`.
+        """
+        use_msearch = isinstance(client, AsyncElasticsearch) or (
+            "msearch" in getattr(client, "__dict__", {})
+        )
+        if use_msearch:
+            searches: list[dict[str, Any]] = [
+                {"index": target_pattern},
+                aggs_body,
+                {"index": target_pattern},
+                recent_body,
+            ]
+            mresp = await client.msearch(
+                searches=searches,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+            responses = list((dict(mresp).get("responses")) or [])
+            if len(responses) >= 2:
+                r0 = dict(responses[0] or {})
+                r1 = dict(responses[1] or {})
+                for sub in (r0, r1):
+                    if "error" in sub:
+                        err_info = sub["error"]
+                        raise ElasticsearchQueryError(
+                            f"Elasticsearch msearch sub-query failed: {err_info}",
+                            status_code=int(sub.get("status") or 503),
+                        )
+                return r0, r1
+
+        aggs_resp = await client.search(
+            index=target_pattern,
+            body=aggs_body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
+            request_cache=True,
+        )
+        recent_resp = await client.search(
+            index=target_pattern,
+            body=recent_body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
+        )
+        return dict(aggs_resp), dict(recent_resp)
 
     async def check_health(self) -> ServiceHealthStatus:
         """Verify cluster connectivity and read access to configured index patterns."""
@@ -1623,11 +1675,94 @@ class ElasticsearchServiceClient:
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
         try:
+            use_msearch = isinstance(client, AsyncElasticsearch) or (
+                "msearch" in getattr(client, "__dict__", {})
+            )
+            if use_msearch:
+                aggs_all = dict(body.get("aggs") or {})
+                app_agg = aggs_all.pop("app_usage", None)
+                lan_agg = aggs_all.pop("lan_devices", None)
+                raw_gte = str(
+                    ((body.get("query") or {}).get("range") or {})
+                    .get("@timestamp", {})
+                    .get("gte", "now-24h")
+                )
+                rounded_gte = raw_gte if raw_gte.endswith("/m") else f"{raw_gte}/m"
+                range_q = {"range": {"@timestamp": {"gte": rounded_gte}}}
+
+                q_core = {
+                    "size": 0,
+                    "track_total_hits": False,
+                    "query": range_q,
+                    "aggs": aggs_all,
+                }
+                q_lan = {
+                    "size": 0,
+                    "track_total_hits": False,
+                    "query": range_q,
+                    "aggs": {"lan_devices": lan_agg} if lan_agg else {},
+                }
+                yt_f = (
+                    ((app_agg or {}).get("filters") or {})
+                    .get("filters", {})
+                    .get("youtube")
+                )
+                pl_f = (
+                    ((app_agg or {}).get("filters") or {})
+                    .get("filters", {})
+                    .get("plex")
+                )
+                q_app = {
+                    "size": 0,
+                    "track_total_hits": False,
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                range_q,
+                                {
+                                    "bool": {
+                                        "should": [f for f in (yt_f, pl_f) if f],
+                                        "minimum_should_match": 1,
+                                    }
+                                },
+                            ]
+                        }
+                    },
+                    "aggs": {"app_usage": app_agg} if app_agg else {},
+                }
+                mresp = await client.msearch(
+                    searches=[
+                        {"index": target_pattern},
+                        q_core,
+                        {"index": target_pattern},
+                        q_lan,
+                        {"index": target_pattern},
+                        q_app,
+                    ],
+                    ignore_unavailable=True,
+                    allow_no_indices=True,
+                )
+                responses = list((dict(mresp).get("responses")) or [])
+                if len(responses) >= 3:
+                    merged_aggs: dict[str, Any] = {}
+                    for sub_r in responses[:3]:
+                        sub_dict = dict(sub_r or {})
+                        if "error" in sub_dict:
+                            raise ElasticsearchQueryError(
+                                f"Elasticsearch msearch sub-query failed: {sub_dict['error']}",
+                                status_code=int(sub_dict.get("status") or 503),
+                            )
+                        merged_aggs.update(dict(sub_dict.get("aggregations") or {}))
+                    merged_resp = dict(responses[0] or {})
+                    merged_resp["aggregations"] = merged_aggs
+                    return normalize_network_overview_response(merged_resp, window=win_key)
+
             resp = await client.search(
                 index=target_pattern,
                 body=body,
                 ignore_unavailable=True,
                 allow_no_indices=True,
+                request_cache=True,
             )
             return normalize_network_overview_response(dict(resp), window=win_key)
         except (AuthenticationException, AuthorizationException) as exc:
@@ -1668,21 +1803,15 @@ class ElasticsearchServiceClient:
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
         try:
-            aggs_resp = await client.search(
-                index=target_pattern,
-                body=aggs_body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
-            )
-            recent_resp = await client.search(
-                index=target_pattern,
-                body=recent_body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
+            aggs_resp, recent_resp = await self._execute_aggs_and_recent_search(
+                client,
+                target_pattern=target_pattern,
+                aggs_body=aggs_body,
+                recent_body=recent_body,
             )
             return normalize_device_analytics_response(
-                dict(aggs_resp),
-                dict(recent_resp),
+                aggs_resp,
+                recent_resp,
                 window=win_key,
             )
         except (AuthenticationException, AuthorizationException) as exc:
@@ -1724,21 +1853,15 @@ class ElasticsearchServiceClient:
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
         try:
-            aggs_resp = await client.search(
-                index=target_pattern,
-                body=aggs_body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
-            )
-            recent_resp = await client.search(
-                index=target_pattern,
-                body=recent_body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
+            aggs_resp, recent_resp = await self._execute_aggs_and_recent_search(
+                client,
+                target_pattern=target_pattern,
+                aggs_body=aggs_body,
+                recent_body=recent_body,
             )
             return normalize_group_analytics_response(
-                dict(aggs_resp),
-                dict(recent_resp),
+                aggs_resp,
+                recent_resp,
                 member_ips=clean_ips,
                 window=win_key,
             )
@@ -1799,18 +1922,11 @@ class ElasticsearchServiceClient:
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
         try:
-            aggs_resp = await client.search(
-                index=target_pattern,
-                body=body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
-                request_cache=True,
-            )
-            recent_resp = await client.search(
-                index=target_pattern,
-                body=recent_body,
-                ignore_unavailable=True,
-                allow_no_indices=True,
+            aggs_resp, recent_resp = await self._execute_aggs_and_recent_search(
+                client,
+                target_pattern=target_pattern,
+                aggs_body=body,
+                recent_body=recent_body,
             )
             merged_resp = dict(aggs_resp)
             merged_resp["hits"] = dict(recent_resp).get("hits", {})

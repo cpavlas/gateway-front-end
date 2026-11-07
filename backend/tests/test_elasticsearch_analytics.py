@@ -310,3 +310,123 @@ async def test_es_service_client_fetch_methods_and_error_wrapping(
     with pytest.raises(ElasticsearchQueryError) as exc_info4:
         await svc.fetch_device_analytics("192.168.1.134", "24h")
     assert exc_info4.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_phase13_track_total_hits_false_and_msearch_consolidation(
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify Phase 13 query optimization (`track_total_hits: False`, `_msearch` consolidation)."""
+    net_q = build_network_overview_query(window="24h")
+    dev_q = build_device_analytics_query("192.168.1.134", window="24h")
+    assert net_q["track_total_hits"] is False
+    assert dev_q["track_total_hits"] is False
+
+    # When hits.total is 0 (because track_total_hits is False), total_events is computed
+    # from timeline / by_provider buckets.
+    norm_net = normalize_network_overview_response(
+        {
+            "hits": {"total": {"value": 0, "relation": "eq"}},
+            "aggregations": {
+                "by_provider": {
+                    "buckets": [
+                        {"key": "unbound", "doc_count": 400},
+                        {"key": "filterlog", "doc_count": 100},
+                    ]
+                },
+                "timeline": {
+                    "buckets": [{"key_as_string": "2026-11-01T00:00:00Z", "doc_count": 500}]
+                },
+            },
+        },
+        window="24h",
+    )
+    assert norm_net["summary"]["total_events"] == 500
+
+    svc = ElasticsearchServiceClient(test_settings)
+    assert svc._timeout >= 20.0
+
+    mock_es = AsyncMock()
+    mock_es.msearch = AsyncMock(
+        return_value={
+            "responses": [
+                {
+                    "hits": {"total": {"value": 0}},
+                    "aggregations": {
+                        "total_bytes": {"value": 2048.0},
+                        "by_provider": {"buckets": [{"key": "unbound", "doc_count": 75}]},
+                    },
+                },
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_source": {
+                                    "@timestamp": "2026-11-01T12:00:00Z",
+                                    "dns": {
+                                        "question": {
+                                            "name": "youtube.com",
+                                            "registered_domain": "youtube.com",
+                                            "type": "A",
+                                        }
+                                    },
+                                }
+                            }
+                        ]
+                    }
+                },
+            ]
+        }
+    )
+    mock_es.close = AsyncMock()
+    monkeypatch.setattr(svc, "create_es_client", lambda: mock_es)
+
+    dev_res = await svc.fetch_device_analytics("192.168.1.134", window="24h")
+    assert mock_es.msearch.call_count == 1
+    assert dev_res["summary"]["total_events"] == 75
+    assert dev_res["summary"]["total_bytes"] == 2048
+    assert dev_res["recent_queries"][0]["domain"] == "youtube.com"
+
+    fw_res = await svc.fetch_firewall_overview(
+        window="24h",
+        action="block",
+        direction="inbound",
+        protocol="tcp",
+        search="443",
+    )
+    assert mock_es.msearch.call_count == 2
+    assert fw_res["window"] == "24h"
+
+    mock_es.msearch = AsyncMock(
+        return_value={
+            "responses": [
+                {
+                    "hits": {"total": {"value": 0}},
+                    "aggregations": {
+                        "total_bytes": {"value": 4096.0},
+                        "by_provider": {"buckets": [{"key": "unbound", "doc_count": 250}]},
+                    },
+                },
+                {"aggregations": {"lan_devices": {"top_ips": {"buckets": []}}}},
+                {"aggregations": {"app_usage": {"buckets": {}}}},
+            ]
+        }
+    )
+    net_res = await svc.fetch_network_overview(window="24h")
+    assert net_res["summary"]["total_events"] == 250
+    assert net_res["summary"]["total_bytes"] == 4096
+
+    # Sub-query error inside msearch responses raises ElasticsearchQueryError
+    mock_es.msearch = AsyncMock(
+        return_value={
+            "responses": [
+                {"error": {"type": "search_phase_execution_exception"}, "status": 503},
+                {"hits": {"hits": []}},
+            ]
+        }
+    )
+    with pytest.raises(ElasticsearchQueryError) as exc_info:
+        await svc.fetch_device_analytics("192.168.1.134", window="24h")
+    assert exc_info.value.status_code == 503
+
