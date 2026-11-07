@@ -92,8 +92,8 @@ export const UnicornLogo: React.FC<UnicornLogoProps> = ({
       <path
         d="M19 57L21 36L23 21L21 11L29 17C33 17 37 19 40 22L53 31C55.2 32.5 55.6 35.6 54 37.8L50 41.2C48.2 42.5 45.5 42.3 43.2 40.8L38 38C36.4 40.2 33.8 41.2 31 41.2L33 57H19Z"
         fill={`url(#${coatGradId})`}
-        stroke="#e2e8f0"
-        strokeWidth="1.2"
+        stroke="#475569"
+        strokeWidth="1.6"
         strokeLinejoin="round"
       />
 

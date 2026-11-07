@@ -542,3 +542,55 @@ Following the completion of `v1.0.1`, the `v1.1` release cycle is organized into
 - **Deliverables:**
   1. **Unicorn Side-Profile with Rainbow Horn Icon & Browser Favicon (`FB-P11-001`):** Replaced the shield icon in the header, login screen, and browser tab `<link rel="icon">` with `<UnicornLogo />` and `/unicorn-favicon.svg` featuring a custom SVG side-profile Unicorn with a rainbow horn.
   2. **Clickable Header User Name Menu & 3 Eye-Friendly Dark-Room Color Themes (`FB-P11-002`):** Clicking the user's Name in the top header opens User Settings with a per-user persisted selector (`PATCH /api/v1/auth/preferences`) for **3 Dark-Room-Friendly Color Themes** (`Default Slate`, `Crimson & Obsidian` soft light/dark red on black, and `Ocean & Navy` soft light/dark blue on deep navy).
+
+---
+
+## 10. `v1.2` Release Roadmap (`Phases 12 – 15` -> `v1.2.0`)
+
+Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into **4 sequential phases (`Phase 12` through `Phase 15`)**, each governed by the mandatory 5-Step Lifecycle and 3 Mandatory User Review Gates in [`AGENTS.md`](AGENTS.md):
+
+### Phase 12 (`v1.2.0-rc1` — COMPLETE): Streamlined Header Layout, Compact YouTube Logo Button, Unified Blocked Filter & Analytics Loading Pulse (`FB-P11-005`, `FB-P11-006`, `FB-P11-007`)
+- **Deliverables:**
+  1. **Top Header Alignment, Streamlined Brand & Subtitle Clock (`FB-P11-005`):**
+     - Relocate the `HH:MM:SS` clock from underneath `Logout` to inline next to the subtitle: `Access & Telemetry Portal  v1.2.0 • HH:MM:SS` under `Gateway Control`.
+     - Align `Logout`, the User Name settings button, the `HEALTHY` badge, and navigation tabs on a single shared vertical center line (`items-center`).
+     - Shorten navigation tabs to single-word labels with larger icons: **`Devices`**, **`Schedules`**, **`Analytics`**, **`Firewall`**, and **`System`**.
+     - Increase `<UnicornLogo />` container size (`h-11 w-11`) with a defined border and crisp outline so the unicorn profile and rainbow horn stand out at a glance.
+  2. **Compact YouTube Logo Toggle Button (`FB-P11-006`):**
+     - Replace the wide `YT Allowed` / `YT Blocked` text button on device rows with a compact YouTube Logo Icon Button that is bright when YouTube is allowed and dim/muted when YouTube is blocked.
+  3. **Unified `Blocked` Filter (`FB-P11-006`):**
+     - Update the `Blocked` status filter pill in `Devices & Access Control` so clicking `Blocked` includes both full-internet blocked devices (`is_blocked === true`) and YouTube-blocked devices (`is_youtube_blocked === true`).
+  4. **Analytics Loading & Refreshing Visual State (`FB-P11-007`):**
+     - Wrap data panels across `AnalyticsPage`, `FirewallPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer` in a slow-pulse (`2.4s`) greyed-out overlay (`opacity-45 saturate-50 pointer-events-none`) with a floating `Refreshing telemetry…` indicator during queries/refetches.
+
+### Phase 13 (`v1.2.0-rc2`): Elasticsearch Cold-Load Query Optimization, Timeout Tuning, Upstream Error Audit Logging & Performance Pre-Warming (`FB-P11-003`, `BUG-P11-001`, `FB-P11-008` Proposals A & B)
+- **Deliverables:**
+  1. **Elasticsearch Cold-Load Optimization & Timeout Tuning (`FB-P11-003`, `BUG-P11-001`):**
+     - Bump default `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s` in `backend/app/config.py`.
+     - Add `track_total_hits: False` and `request_cache=True` to `fetch_network_overview`, `fetch_device_analytics`, and `fetch_group_analytics`.
+     - Eliminate redundant leading-wildcard scans (`*.googlevideo.com`, `*plex*`) in `_build_app_usage_agg()`.
+  2. **Automatic Upstream Error Logging in System Audit History (`FB-P11-003`):**
+     - Record deduplicated `AuditLog` entries (`audit_label="DIAGNOSTIC_ERROR"`) for runtime ES and OPNsense connection errors/timeouts so they appear directly in the `System` tab's Audit & Event History.
+  3. **Background Cache Pre-Warming & Stale-While-Revalidate (`FB-P11-008` Proposal A):**
+     - Pre-warm default `24h` network and firewall overview caches every 60s via APScheduler background task for `< 15ms` instant tab responses.
+  4. **Elasticsearch `_msearch` Consolidation (`FB-P11-008` Proposal B):**
+     - Consolidate aggregation and recent-event searches into single `_msearch` HTTP round-trips.
+
+### Phase 14 (`v1.2.0-rc3`): Automated Code & Dependency Security Scanning, Route Auth-Bypass Audit Suite & CI/CD Pipeline (`FB-P11-004`, `FB-P11-008` Proposal D)
+- **Deliverables:**
+  1. **Automated FastAPI Route Security & RBAC Audit Suite (`FB-P11-004`):**
+     - Implement programmatic test suite (`test_security_audit.py`) asserting that 100% of `/api/v1/*` routes enforce authentication (`401`) and admin-only routes enforce role authorization (`403` for operators).
+  2. **Dependency SCA & Static Security Analysis (`FB-P11-004`):**
+     - Add `pip-audit`, `npm audit`, and `ruff` flake8-bandit (`S`) rules to the test suite and quality gates.
+  3. **Frontend Route Code-Splitting (`FB-P11-008` Proposal D):**
+     - Split page components via `React.lazy()` and configure Vite `manualChunks` to drop initial bundle payload below 220 kB.
+  4. **GitHub Actions Security & CI Workflow (`FB-P11-004`):**
+     - Automate linting, typing, testing, CVE audit, and container image vulnerability scanning in `.github/workflows/ci-security.yml`.
+
+### Phase 15 (`v1.2.0` / Dedicated Plex Phase): Direct Plex Media Server API Integration & Tautulli-Style Playback Telemetry (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C)
+- **Deliverables:**
+  1. **Direct Plex Client & Settings Integration (`FB-P9-005`):**
+     - Expose `PLEX_BASE_URL` and `PLEX_API_TOKEN` (`X-Plex-Token`) in `.env` and `System -> Integration Settings` with a live Test Connection diagnostic button.
+  2. **Tautulli-Style Playback & Session Telemetry (`FB-P9-005`):**
+     - Poll Plex `/status/sessions` and session history to correlate player IP/MAC addresses to local devices (`LGwebOSTV`, Apple TV, etc.), reporting exact per-device active streaming minutes, live stream states, media titles, and direct-play/transcode indicators.
+

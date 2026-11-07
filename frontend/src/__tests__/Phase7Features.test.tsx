@@ -409,7 +409,8 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
 
     // Verify device YouTube toggle button renders and triggers block mutation
     const deviceYtBtn = await screen.findByTestId('youtube-toggle-10')
-    expect(deviceYtBtn).toHaveTextContent('YT Allowed')
+    expect(screen.getByTestId('yt-icon-10')).toBeInTheDocument()
+    expect(deviceYtBtn).toHaveAttribute('aria-label', expect.stringContaining('YouTube Allowed'))
     await user.click(deviceYtBtn)
     expect(blockDeviceYtSpy).toHaveBeenCalledWith(10)
 

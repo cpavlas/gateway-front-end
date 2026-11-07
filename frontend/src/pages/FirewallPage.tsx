@@ -27,6 +27,7 @@ import {
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
+import { TelemetryLoadingShell } from '../components/TelemetryLoadingShell'
 import { TimelineBarChart } from '../components/TelemetryBarChart'
 
 interface FirewallPageProps {
@@ -286,7 +287,12 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
             Querying Elasticsearch 9.4.3 firewall filterlog indices...
           </div>
         ) : (
-          <>
+          <TelemetryLoadingShell
+            isLoading={isLoading}
+            isFetching={isFetching || refreshMutation.isPending}
+            loadingMessage="Refreshing firewall telemetry from Elasticsearch..."
+            testId="firewall-telemetry-shell"
+          >
             {/* 4 KPI Summary Cards */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
@@ -833,7 +839,7 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
                 </div>
               )}
             </section>
-          </>
+          </TelemetryLoadingShell>
         )}
       </div>
     </AppLayout>

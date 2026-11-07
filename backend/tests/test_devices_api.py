@@ -327,3 +327,54 @@ async def test_device_not_found_missing_ip_and_opnsense_502_errors(
     get_sync_err = await async_client.get("/api/v1/devices?sync=true")
     assert get_sync_err.status_code == 502
 
+
+@pytest.mark.asyncio
+async def test_devices_unified_blocked_filter_and_kpi_counts(
+    async_client: AsyncClient,
+    test_settings: Settings,
+) -> None:
+    """Verify status_filter='blocked' returns both internet and YT blocked devices (FB-P11-006)."""
+    await _login_admin(async_client, test_settings)
+
+    factory = get_session_factory(test_settings)
+    async with factory() as session:
+        d1 = Device(
+            mac_address="02:00:00:00:01:01",
+            ipv4_address="192.168.1.101",
+            hostname="normal-laptop",
+            is_blocked=False,
+            is_youtube_blocked=False,
+            is_online=True,
+        )
+        d2 = Device(
+            mac_address="02:00:00:00:01:02",
+            ipv4_address="192.168.1.102",
+            hostname="fully-blocked-pc",
+            is_blocked=True,
+            is_youtube_blocked=False,
+            is_online=True,
+        )
+        d3 = Device(
+            mac_address="02:00:00:00:01:03",
+            ipv4_address="192.168.1.103",
+            hostname="youtube-blocked-tablet",
+            is_blocked=False,
+            is_youtube_blocked=True,
+            is_online=True,
+        )
+        session.add_all([d1, d2, d3])
+        await session.commit()
+
+    resp = await async_client.get("/api/v1/devices?status=blocked")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    blocked_names = [d["hostname"] for d in data["devices"]]
+    assert "fully-blocked-pc" in blocked_names
+    assert "youtube-blocked-tablet" in blocked_names
+    assert "normal-laptop" not in blocked_names
+
+    # Summary KPI blocked_devices count includes YouTube-blocked devices
+    assert data["summary"]["blocked_devices"] >= 2
+
+

@@ -88,23 +88,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
-                <UnicornLogo className="h-6 w-6" testId="header-unicorn-logo" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950/90 border-2 border-indigo-400/60 shadow-md shadow-indigo-500/10 text-indigo-400 shrink-0">
+                <UnicornLogo className="h-8 w-8" testId="header-unicorn-logo" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-bold tracking-tight text-slate-100">
-                    OPNsense Gateway Control
+              <div className="grid grid-cols-[auto_auto] items-center justify-items-start gap-x-2.5 gap-y-0.5">
+                <span className="text-base font-bold tracking-tight text-slate-100 whitespace-nowrap leading-tight">
+                  Gateway Control
+                </span>
+                {version ? (
+                  <span className="inline-flex items-center rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-300 whitespace-nowrap leading-none">
+                    v{version}
                   </span>
-                  {version && (
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-400">
-                      v{version}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400">
-                  OPNsense 26.7.7 &amp; Elasticsearch 9.4.3 Access &amp; Telemetry Portal
-                </p>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-slate-400 whitespace-nowrap leading-tight">
+                  Access &amp; Telemetry Portal
+                </span>
+                <span
+                  data-testid="header-system-clock"
+                  className="font-mono text-xs tracking-wider text-slate-300 whitespace-nowrap leading-tight"
+                >
+                  {systemClock}
+                </span>
               </div>
             </div>
 
@@ -120,8 +126,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
                   }`}
                 >
-                  <Laptop className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Devices &amp; Access Control</span>
+                  <Laptop className="h-4.5 w-4.5" aria-hidden="true" />
+                  <span>Devices</span>
                 </button>
                 <button
                   type="button"
@@ -133,8 +139,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
                   }`}
                 >
-                  <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Schedules &amp; Bedtime</span>
+                  <CalendarClock className="h-4.5 w-4.5" aria-hidden="true" />
+                  <span>Schedules</span>
                 </button>
                 <button
                   type="button"
@@ -146,8 +152,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
                   }`}
                 >
-                  <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Traffic &amp; DNS Analytics</span>
+                  <BarChart3 className="h-4.5 w-4.5" aria-hidden="true" />
+                  <span>Analytics</span>
                 </button>
                 <button
                   type="button"
@@ -159,8 +165,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
                   }`}
                 >
-                  <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Firewall &amp; Security</span>
+                  <ShieldAlert className="h-4.5 w-4.5" aria-hidden="true" />
+                  <span>Firewall</span>
                 </button>
                 <button
                   type="button"
@@ -172,8 +178,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
                   }`}
                 >
-                  <Server className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>System Connectivity</span>
+                  <Server className="h-4.5 w-4.5" aria-hidden="true" />
+                  <span>System</span>
                 </button>
               </nav>
             )}
@@ -343,22 +349,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               </div>
             )}
 
-            <div className="flex flex-col items-end gap-0.5">
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Logout</span>
-              </button>
-              <span
-                data-testid="header-system-clock"
-                className="font-mono text-[11px] tracking-wider text-slate-400"
-              >
-                {systemClock}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Logout</span>
+            </button>
           </div>
         </div>
       </header>
