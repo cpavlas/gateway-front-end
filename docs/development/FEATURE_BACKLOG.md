@@ -472,7 +472,7 @@
      - Increase the default `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s`.
      - Automatically write a deduplicated/throttled `AuditLog` (`audit_label="DIAGNOSTIC_ERROR"`, `action="upstream.elasticsearch.error"` / `"upstream.opnsense.error"`) whenever a runtime ES or OPNsense request fails or times out so all upstream errors are visible in the `System` tab's Audit & Event History.
 - **Complexity:** `2 / 5`
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Status:** `COMPLETED (Phase 13 — v1.2.0-rc2)`
 
 #### `FB-P11-004` — Automated Code & Dependency Security Scanning (SAST, SCA, Container & Auth-Bypass Auditing in CI/CD)
 - **User Feedback (`PHASE11-Verify.md`):** *"Code security scanning to ensure we do not have any open source vulnerabilites or code paths that could be used to bypass security or gain access to systems. We should determine the best methods for testing this, and the best tools to use. Perhaps there is a way to integrate this into our CI/CD pipeline."*
@@ -483,7 +483,7 @@
     3. **Container Image & Secret Scanning:** `trivy image` / `trivy fs` in GitHub Actions to catch OS package CVEs and accidental secret leaks.
     4. **Automated Route Auth-Bypass & RBAC Security Suite (`test_security_audit.py`):** Programmatically iterate over every registered FastAPI route in `app.routes`, asserting that zero `/api/v1/*` endpoints (outside `/api/v1/auth/{login,setup-status,setup-admin}`) accept unauthenticated requests (`401`) or allow `operator` role privilege escalation onto admin-only endpoints (`403`).
 - **Complexity:** `2 / 5`
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
 
 #### `FB-P11-005` — Top Header Alignment, Single-Word Tab Labels with Larger Icons, Streamlined Title & Larger Unicorn Icon
 - **User Feedback (`PHASE11-Verify.md`):**
@@ -508,4 +508,49 @@
 
 #### `FB-P11-008` — Application Improvement & Performance Enhancement Proposals for Next (`v1.2`) Planning Phase
 - **User Feedback (`PHASE11-Verify.md`):** *"Additionally as part of the next planning phase, present improvement options, performance enhancements or other changes that you think would improve the application for discussion."*
-- **Status:** `OPEN — Scheduled for v1.2 Planning`
+- **Approved Proposals (`v1_2_implementation_plan.md`):**
+  - **Proposal A (`COMPLETED in Phase 13 — v1.2.0-rc2`):** Background APScheduler 60-second `24h` Cache Pre-Warming for `NetworkOverview` and `FirewallOverview`.
+  - **Proposal B (`COMPLETED in Phase 13 — v1.2.0-rc2`):** Elasticsearch `/_msearch` Single-Round-Trip Consolidation across `fetch_device_analytics`, `fetch_group_analytics`, `fetch_firewall_overview`, and 3-way parallel `/_msearch` for `fetch_network_overview`.
+  - **Proposal C (`SCHEDULED for Phase 15 — FB-P9-005`):** Direct Plex Media Server API (`X-Plex-Token` / Tautulli-style) Integration in a dedicated Plex Phase 15.
+  - **Proposal D (`SCHEDULED for Phase 14 — v1.2.0-rc3`):** Frontend Route Code-Splitting (`React.lazy()` + Vite `manualChunks`) to reduce initial bundle size and eliminate Vite's `> 500 kB` chunk warning.
+  - **Proposal E (`DEFERRED — Future Release`):** OPNsense Unbound DNS Blocklist / Secondary Service Quick-Action Toggle.
+- **Status:** `IN PROGRESS (Proposals A & B Completed in Phase 13; Proposal D in Phase 14; Proposal C in Phase 15)`
+
+---
+
+### Area 11 — Phase 13 (`v1.2.0-rc2`) User Validation Feedback (`PHASE13-Verify.md`)
+
+#### `FB-P13-001` (`BUG-P13-001`) — `PERFORMANCE_ANALYSIS` Audit Label for Window Load-Time Tracking & `30d` Window Query Optimization
+- **User Feedback (`PHASE13-Verify.md`):**
+  - *"[PARTIAL] 3. Fast Manual Refresh (`Refresh Analytics`) & Window Switching (`1h`, `24h`, `7d`, `30d`): Much improved on load times. I was able to get timeouts occasionally on 30d window, but not consistently."*
+  - *"Start tracking load times for each window to store in the audit logs using a new audit label named PERFORMANCE_ANALYSIS."*
+- **Technical Evaluation & Planned Changes (`Phase 14 — v1.2.0-rc3`):**
+  1. **New `PERFORMANCE_ANALYSIS` Audit Label & Window Load-Time Recorder:**
+     - Add `"PERFORMANCE_ANALYSIS"` to `infer_audit_label()` in [`backend/app/models/__init__.py`](../../backend/app/models/__init__.py) (mapping `action.startswith("performance.")`), `AuditLogItem` schema/UI badge styles, and the Audit Label filter dropdown on `StatusPage.tsx` (`System -> Audit & Event History`).
+     - Add `record_performance_analysis_audit_log()` in [`backend/app/services/audit_and_backup_service.py`](../../backend/app/services/audit_and_backup_service.py) to record telemetry window load times (`window` = `1h`/`24h`/`7d`/`30d`, `view` = `analytics.overview` / `firewall.overview` / `device.analytics` / `group.analytics`, `elapsed_ms`, `cache_hit`, `force_refresh`, `total_events`, and `status`) into `audit_logs` with `audit_label="PERFORMANCE_ANALYSIS"`.
+  2. **`30d` Window Query Optimization & Pre-Warming (`BUG-P13-001`):**
+     - On `30d` (`14.2M+` documents), `lan_devices` and `top_domains` terms aggregations with byte/provider sub-aggregations across 30 days take `~8.6s` cold, and if SQLite `IntegrationSettings` (`elasticsearch_timeout_seconds`) was persisted at `10.0s` or concurrent requests hit the single shard, `30d` can occasionally cross the timeout threshold.
+     - Split `top_domains` + `top_blocked_domains` into a 4th parallel `_msearch` sub-query on `fetch_network_overview`, use `execution_hint: "map"` / adaptive slot intervals (`15m` for `7d`, `30m` for `30d`) in `_build_app_usage_agg()`, and include `7d` and `30d` in periodic background cache pre-warming so all 4 window buttons (`1h`, `24h`, `7d`, `30d`) respond immediately from warm cache.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
+
+#### `FB-P13-002` — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector (GeoIP Location, ASN, Duration & Session Details)
+- **User Feedback (`PHASE13-Verify.md`):**
+  - *"In firewall tab, for the active WAN ports, add the ability to click on the number of external IP addresses count and have it open a side window, like analytics does, to show all the relevant details about the connected ip, including address, location, connection length and whatever else is available from the data in the logs. This should be possible given how the pfSense firewall dashboard works in Kibana."*
+- **Technical Evaluation & Planned Changes (`Phase 14 — v1.2.0-rc3`):**
+  - Live inspection of `logs-pfsense.log*` confirmed that inbound WAN `pass` documents carry rich Elastic `pfSense` Integration (`1.25.4`) GeoIP, ASN, and packet telemetry:
+    - `source.ip`, `source.port`, `source.as.number` (`ASN`), `source.as.organization.name` (`ISP / Carrier`)
+    - `source.geo.city_name`, `source.geo.region_name`, `source.geo.region_iso_code`, `source.geo.country_name`, `source.geo.country_iso_code`, `source.geo.continent_name`, `source.geo.location` (`lat`, `lon`)
+    - `network.bytes`, `network.transport` (`tcp`/`udp`), `network.community_id`, `pfsense.ip.ttl`, `pfsense.tcp.flags`, `rule.id`, `observer.ingress.interface.name`
+  - **Backend Endpoint (`GET /api/v1/firewall/open-ports/sessions`):**
+    - Query Elasticsearch for the selected target (`destination_ip`, `destination_port`, `protocol`, `window`), aggregating by `source.ip` to compute per-external-IP:
+      - **External IP & ASN/Organization** (`source.ip`, `ASN`, `Organization`)
+      - **GeoIP Location** (`City, Region, Country (ISO)` + `lat, lon` coordinates)
+      - **Connection Length / Span & Activity** (`first_seen_at`, `last_seen_at`, `connection_duration_seconds` = `last_seen - first_seen`, `active_duration_minutes` from active 5-minute slots, `passed_packets`, `total_bytes`, `source_ports`, `tcp_flags`, `ttl`)
+      - **Recent Individual Connection Events** for that port.
+  - **Frontend UI (`FirewallOpenPortSessionsDrawer.tsx` & `FirewallPage.tsx`):**
+    - Make the **`External IPs`** count badge in the **Active Inbound WAN Exposure (Open Ports)** table a clickable interactive button (styled with an external-details icon/hover highlight).
+    - Clicking the count opens a slide-over side drawer (`FirewallOpenPortSessionsDrawer`, matching the look and feel of `DeviceAnalyticsDrawer`) displaying KPI summary cards, a sortable/searchable table of all connected external IP addresses with their GeoIP location, ISP/ASN, connection length (`first_seen -> last_seen` & active minutes), packet/byte volume, source ports/TCP flags, and chronological packet history.
+- **Complexity:** `2.5 / 5`
+- **Status:** `SCHEDULED (Phase 14 — v1.2.0-rc3)`
+

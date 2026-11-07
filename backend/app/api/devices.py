@@ -13,6 +13,7 @@ from app.clients.opnsense import OPNsenseClient, OPNsenseClientError
 from app.config import Settings, get_settings
 from app.db import get_db_session
 from app.models import Device
+from app.services.audit_and_backup_service import record_upstream_error_audit_log
 from app.services.device_service import (
     DeviceActionResponse,
     DeviceListResponse,
@@ -54,6 +55,13 @@ async def get_devices(
         try:
             await sync_devices_from_opnsense(db, opnsense, settings)
         except (OPNsenseClientError, httpx.HTTPError) as exc:
+            await record_upstream_error_audit_log(
+                db,
+                service="opnsense",
+                operation="devices.sync",
+                error_message=str(exc),
+                actor=_current_user.username,
+            )
             if sync:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -83,6 +91,13 @@ async def sync_devices(
     try:
         await sync_devices_from_opnsense(db, opnsense, settings)
     except (OPNsenseClientError, httpx.HTTPError) as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="opnsense",
+            operation="devices.sync",
+            error_message=str(exc),
+            actor=_current_user.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to synchronize devices from OPNsense: {exc}",

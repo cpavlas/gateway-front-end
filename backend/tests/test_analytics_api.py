@@ -13,6 +13,7 @@ from httpx import AsyncClient
 from app.clients.elasticsearch import ElasticsearchQueryError, ElasticsearchServiceClient
 from app.config import Settings
 from app.db import get_session_factory
+from app.main import run_telemetry_cache_prewarm
 from app.models import Device, utc_now
 from app.services.analytics_service import (
     AnalyticsCache,
@@ -24,6 +25,7 @@ from app.services.analytics_service import (
     _require_device_or_404,
     get_analytics_cache,
 )
+from app.services.audit_and_backup_service import clear_upstream_error_dedup_cache
 from app.services.device_service import build_device_response
 
 
@@ -386,6 +388,7 @@ async def test_analytics_api_endpoints_enrichment_cache_and_fallback(
     assert not_found.status_code == 404
 
     # 7. Simulate Elasticsearch outage -> graceful fallback (200 with es_reachable=False)
+    clear_upstream_error_dedup_cache()
     mock_es_client.fetch_network_overview.side_effect = ElasticsearchQueryError(
         "Elasticsearch connection timed out", status_code=503
     )
@@ -404,3 +407,75 @@ async def test_analytics_api_endpoints_enrichment_cache_and_fallback(
     assert dev_err.status_code == 200
     assert dev_err.json()["es_reachable"] is False
     assert "timed out" in dev_err.json()["warning"]
+
+    # 8. Verify runtime upstream errors were automatically logged with DIAGNOSTIC_ERROR
+    # and deduplicated within the 60-second window (BUG-P11-001)
+    ov_err_dup = await async_client.get("/api/v1/analytics/overview?window=1h&refresh=true")
+    assert ov_err_dup.status_code == 200
+
+    audit_resp = await async_client.get(
+        "/api/v1/system/audit-logs?audit_label=DIAGNOSTIC_ERROR"
+    )
+    assert audit_resp.status_code == 200
+    audit_items = audit_resp.json()["items"]
+    es_err_targets = [
+        item["target"]
+        for item in audit_items
+        if item["action"] == "upstream.elasticsearch.error"
+    ]
+    assert "network_overview:1h" in es_err_targets
+    assert "device_analytics:192.168.1.134:1h" in es_err_targets
+    # Duplicate network_overview:1h within 60s was suppressed by deduplication
+    assert es_err_targets.count("network_overview:1h") == 1
+
+
+@pytest.mark.asyncio
+async def test_run_telemetry_cache_prewarm_warms_default_24h_caches(
+    initialized_db: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify background pre-warming populates 24h NetworkOverview and FirewallOverview caches."""
+    get_analytics_cache().clear()
+    monkeypatch.setattr("app.main.get_settings", lambda: initialized_db)
+
+    # Without force=True, placeholder test-es-api-key skips background prewarm
+    skipped = await run_telemetry_cache_prewarm(force=False)
+    assert skipped is False
+
+    monkeypatch.setattr(
+        ElasticsearchServiceClient,
+        "fetch_network_overview",
+        AsyncMock(
+            return_value={
+                "window": "24h",
+                "summary": {"total_events": 120, "total_bytes": 4096},
+                "timeline": [],
+                "top_devices": [],
+                "top_domains": [],
+                "top_registered_domains": [],
+                "top_organizations": [],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        ElasticsearchServiceClient,
+        "fetch_firewall_overview",
+        AsyncMock(
+            return_value={
+                "window": "24h",
+                "summary": {"total_packets": 50},
+                "timeline": [],
+                "noisy_lan_sources": [],
+                "external_scanners": [],
+                "open_wan_ports": [],
+                "recent_events": [],
+            }
+        ),
+    )
+
+    warmed = await run_telemetry_cache_prewarm(force=True)
+    assert warmed is True
+    assert get_analytics_cache().get("overview:24h") is not None
+    assert get_analytics_cache().get("firewall_window:24h") is not None
+
+

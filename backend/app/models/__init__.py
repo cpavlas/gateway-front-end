@@ -49,7 +49,7 @@ def infer_audit_label(action: str, audit_label: str | None = None) -> str:
         return "AUTH_EVENT"
     if act.startswith("user"):
         return "USER_MGMT"
-    if act.startswith("diagnostic"):
+    if act.startswith(("diagnostic", "upstream.")):
         return "DIAGNOSTIC_ERROR"
     if act.startswith("settings"):
         return "SETTINGS_CHANGE"

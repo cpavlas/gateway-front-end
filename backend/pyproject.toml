@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gateway-frontend-backend"
-version = "1.2.0-rc1"
+version = "1.2.0-rc2"
 description = "Self-hosted web backend for OPNsense network access control and Elasticsearch 9.4.3 analytics"
 readme = "../README.md"
 requires-python = ">=3.11"

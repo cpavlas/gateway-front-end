@@ -19,6 +19,7 @@ from app.clients.elasticsearch import (
 )
 from app.config import Settings
 from app.models import Device
+from app.services.audit_and_backup_service import record_upstream_error_audit_log
 from app.services.device_service import (
     DeviceResponse,
     build_device_response,
@@ -224,7 +225,7 @@ class DeviceAnalyticsResponse(BaseModel):
 class AnalyticsCache:
     """Simple monotonic-clock TTL cache for Elasticsearch aggregation payloads."""
 
-    def __init__(self, ttl_seconds: float = 20.0) -> None:
+    def __init__(self, ttl_seconds: float = 90.0) -> None:
         self._ttl = ttl_seconds
         self._store: dict[str, tuple[float, Any]] = {}
 
@@ -245,7 +246,7 @@ class AnalyticsCache:
         self._store.clear()
 
 
-_analytics_cache = AnalyticsCache(ttl_seconds=20.0)
+_analytics_cache = AnalyticsCache(ttl_seconds=90.0)
 
 
 def get_analytics_cache() -> AnalyticsCache:
@@ -524,6 +525,12 @@ async def get_network_overview_analytics(
         except TypeError:
             es_data = await es_client.fetch_network_overview(window=win_key, top_n=12)
     except ElasticsearchQueryError as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="elasticsearch",
+            operation=f"network_overview:{win_key}",
+            error_message=str(exc),
+        )
         return _build_empty_overview_response(
             window=win_key,
             warning=str(exc),
@@ -582,6 +589,12 @@ async def get_device_analytics(
             domain_search=clean_search,
         )
     except ElasticsearchQueryError as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="elasticsearch",
+            operation=f"device_analytics:{dev.ipv4_address}:{win_key}",
+            error_message=str(exc),
+        )
         return _build_empty_device_analytics_response(
             device_resp=dev_resp,
             window=win_key,

@@ -442,3 +442,35 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Feed-Forward into Phase 13 (`v1.2.0-rc2`):**
   - Zero open bugs waterfalled from Phase 12. Phase 13 proceeds with **`FB-P11-003` (`BUG-P11-001`)** (Elasticsearch cold-load query optimization, `ELASTICSEARCH_TIMEOUT_SECONDS` bump from `10.0s` to `20.0s`, and automatic runtime ES/OPNsense error logging to SQLite `audit_logs`) plus **`FB-P11-008` Proposals A & B** (background APScheduler cache pre-warming for `24h` Analytics & Firewall, and Elasticsearch `_msearch` consolidation).
 
+---
+
+## Phase 13 Exit Analysis & Unplanned-Information Retrospective (`v1.2.0-rc2` — 2026-11-06)
+
+### 1. Phase 13 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P11-003` / `BUG-P11-001`, `FB-P11-008` Proposals A & B):**
+  1. **`FB-P11-003` (`BUG-P11-001`) — Elasticsearch Query Optimization, Parallel `_msearch` & Timeout Tuning (`config.py`, `elasticsearch.py`):**
+     - Increased default `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s` in `backend/app/config.py` and `.env.example`, and enforced `max(float(settings.elasticsearch_timeout_seconds), 20.0)` in `ElasticsearchServiceClient.__init__`.
+     - Added `"track_total_hits": False` to `build_network_overview_query()`, `build_device_analytics_query()`, and `build_group_analytics_query()`, deriving `summary.total_events` from `max(hits_total, timeline_total, provider_total)`.
+     - Removed leading-wildcard scans (`*.googlevideo.com` and `*plex*`), redundant `RFC1918_CIDRS` BKD scans inside `youtube`/`plex` filters, and `time_zone` rounding overhead on 5-minute `active_slots` histograms in `_build_app_usage_agg()`, and reduced `devices` `size` to `15`.
+  2. **`FB-P11-008` Proposal B — Elasticsearch `_msearch` Consolidation (`elasticsearch.py`):**
+     - Consolidated `aggs` + `recent_queries`/`recent_events` in `fetch_device_analytics()`, `fetch_group_analytics()`, and `fetch_firewall_overview()` into single `/_msearch` HTTP round-trips via `_execute_aggs_and_recent_search()`.
+     - Split `fetch_network_overview()` into a 3-way parallel `client.msearch()` (`q_core`, `q_lan`, and `q_app` with top-level inverted-index filter for `youtube OR plex` and `/m` date rounding), reducing live `24h` forced-refresh query latency from **`13,621.4 ms` to `621.6 ms` (`21.9×` speedup)**.
+  3. **`FB-P11-003` — Automatic Runtime Upstream Error Audit Logging (`audit_and_backup_service.py`, `models/__init__.py`, services):**
+     - Added `record_upstream_error_audit_log()` with a 60-second per-`(service, operation)` deduplication window (`_UPSTREAM_ERROR_DEDUP`) and wired it across `analytics_service.py`, `firewall_service.py`, `group_service.py`, and `api/devices.py` so runtime Elasticsearch and OPNsense failures/timeouts are automatically persisted in `audit_logs` under `audit_label="DIAGNOSTIC_ERROR"`.
+  4. **`FB-P11-008` Proposal A — Background APScheduler `24h` Cache Pre-Warming (`main.py`, `analytics_service.py`):**
+     - Increased default `AnalyticsCache` TTL from `20.0s` to `90.0s` and registered `run_telemetry_cache_prewarm()` in `backend/app/main.py` (every 60s via APScheduler + initial startup task), delivering **`25.6 ms`** `24h` Analytics loads and **`7.4 ms`** `24h` Firewall loads from warm cache.
+- **Final Automated Quality Metrics (`v1.2.0-rc2`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `124 / 124` passed (`85%` coverage; `elasticsearch.py` `97%`, `audit_and_backup_service.py` `87%`), `0` ruff errors, `0` mypy issues across `31` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `28 / 28` passed across `7` test suites (`90.78%` coverage), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward into Phase 14 (`v1.2.0-rc3`)
+- **Finding 1 — Single-Shard Sequential Aggregation Bottleneck vs. Multi-Query `_msearch` Parallelism:**
+  - `logs-pfsense.log*` resolves to a single active primary shard (`.ds-logs-pfsense.log-default-2026.10.25-000001`). In Elasticsearch, a single `_search` request executes all top-level aggregations sequentially on a single shard search thread. Splitting `fetch_network_overview()` into a 3-way `_msearch` allows Elasticsearch to execute `q_core`, `q_lan`, and `q_app` concurrently across 3 search threads while applying a top-level inverted-index filter (`youtube OR plex`) to `q_app`, cutting `24h` execution time from `13.6s` to `0.62s`.
+- **Finding 2 — `30d` Window (`14.28M` Docs) Cold Latency & Captured User Enhancements (`FB-P13-001` / `BUG-P13-002` & `FB-P13-002`):**
+  - During Gate 2 live UI validation (`PHASE13-Verify.md`), the user observed much faster load times across `1h`, `24h`, and `7d`, with occasional cold timeouts on `30d` (`14.28M` docs), and requested two enhancements that are waterfalled into **Phase 14 (`v1.2.0-rc3`)**:
+    1. **`FB-P13-001` (`BUG-P13-002`) — `PERFORMANCE_ANALYSIS` Audit Label & `30d` Window Optimization:** Record per-window telemetry load times in `audit_logs` under a new `PERFORMANCE_ANALYSIS` audit label, optimize `30d` `lan_devices` and `app_usage` slot intervals (`15m` for `7d`, `30m` for `30d` + top-level `RFC1918_CIDRS` filter on `q_lan`), and extend background cache pre-warming to cover `7d` and `30d`.
+    2. **`FB-P13-002` — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector:** Make the `External IPs` count in the **Active Inbound WAN Exposure (Open Ports)** table clickable to open a slide-over side drawer displaying connected external IP details (IP address, GeoIP city/region/country/coordinates, ISP/ASN organization, connection duration `first_seen -> last_seen` & active minutes, packet/byte volume, source ports/TCP flags, and recent packet log entries).
+- **Feed-Forward into Phase 14 (`v1.2.0-rc3`):**
+  - Phase 14 combines the originally scheduled **`FB-P11-004`** (Automated Code & Dependency Security Scanning, SAST/SCA, and FastAPI Route Auth-Bypass & RBAC Audit Suite) and **`FB-P11-008` Proposal D** (Frontend Route Code-Splitting via `React.lazy()` + Vite `manualChunks`) with the two Phase 13 waterfall items **`FB-P13-001`** (`PERFORMANCE_ANALYSIS` audit load-time tracking + `30d` optimization) and **`FB-P13-002`** (Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector).
+
+

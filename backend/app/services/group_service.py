@@ -40,6 +40,7 @@ from app.services.analytics_service import (
     _parse_app_usage_items,
     get_analytics_cache,
 )
+from app.services.audit_and_backup_service import record_upstream_error_audit_log
 from app.services.device_service import (
     DeviceResponse,
     build_device_group_badge_map,
@@ -1176,6 +1177,12 @@ async def get_group_analytics(
             domain_search=clean_search,
         )
     except ElasticsearchQueryError as exc:
+        await record_upstream_error_audit_log(
+            db,
+            service="elasticsearch",
+            operation=f"group_analytics:{grp_resp.id}:{win_key}",
+            error_message=str(exc),
+        )
         return _build_empty_group_analytics_response(
             group_resp=grp_resp,
             tracked_ips=tracked_ips,

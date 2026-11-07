@@ -563,29 +563,33 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
   4. **Analytics Loading & Refreshing Visual State (`FB-P11-007`):**
      - Wrap data panels across `AnalyticsPage`, `FirewallPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer` in a slow-pulse (`2.4s`) greyed-out overlay (`opacity-45 saturate-50 pointer-events-none`) with a floating `Refreshing telemetry…` indicator during queries/refetches.
 
-### Phase 13 (`v1.2.0-rc2`): Elasticsearch Cold-Load Query Optimization, Timeout Tuning, Upstream Error Audit Logging & Performance Pre-Warming (`FB-P11-003`, `BUG-P11-001`, `FB-P11-008` Proposals A & B)
+### Phase 13 (`v1.2.0-rc2` — COMPLETE): Elasticsearch Cold-Load Query Optimization, Timeout Tuning, Upstream Error Audit Logging & Performance Pre-Warming (`FB-P11-003`, `BUG-P11-001`, `FB-P11-008` Proposals A & B)
 - **Deliverables:**
   1. **Elasticsearch Cold-Load Optimization & Timeout Tuning (`FB-P11-003`, `BUG-P11-001`):**
      - Bump default `ELASTICSEARCH_TIMEOUT_SECONDS` from `10.0s` to `20.0s` in `backend/app/config.py`.
      - Add `track_total_hits: False` and `request_cache=True` to `fetch_network_overview`, `fetch_device_analytics`, and `fetch_group_analytics`.
-     - Eliminate redundant leading-wildcard scans (`*.googlevideo.com`, `*plex*`) in `_build_app_usage_agg()`.
+     - Eliminate redundant leading-wildcard scans (`*.googlevideo.com`, `*plex*`), redundant `RFC1918_CIDRS` sub-filters, and `time_zone` rounding on 5m slots in `_build_app_usage_agg()`.
   2. **Automatic Upstream Error Logging in System Audit History (`FB-P11-003`):**
      - Record deduplicated `AuditLog` entries (`audit_label="DIAGNOSTIC_ERROR"`) for runtime ES and OPNsense connection errors/timeouts so they appear directly in the `System` tab's Audit & Event History.
   3. **Background Cache Pre-Warming & Stale-While-Revalidate (`FB-P11-008` Proposal A):**
-     - Pre-warm default `24h` network and firewall overview caches every 60s via APScheduler background task for `< 15ms` instant tab responses.
+     - Pre-warm default `24h` network and firewall overview caches every 60s via APScheduler background task for `< 25ms` instant tab responses.
   4. **Elasticsearch `_msearch` Consolidation (`FB-P11-008` Proposal B):**
-     - Consolidate aggregation and recent-event searches into single `_msearch` HTTP round-trips.
+     - Consolidate aggregation and recent-event searches into single `_msearch` HTTP round-trips and 3-way parallel `_msearch` on `fetch_network_overview` (`21.9×` speedup).
 
-### Phase 14 (`v1.2.0-rc3`): Automated Code & Dependency Security Scanning, Route Auth-Bypass Audit Suite & CI/CD Pipeline (`FB-P11-004`, `FB-P11-008` Proposal D)
+### Phase 14 (`v1.2.0-rc3`): Automated Security Scanning, Frontend Code-Splitting, `PERFORMANCE_ANALYSIS` Audit Load-Time Tracking & Firewall Active WAN Port External IP Inspector (`FB-P11-004`, `FB-P11-008` Proposal D, `FB-P13-001`, `FB-P13-002`)
 - **Deliverables:**
-  1. **Automated FastAPI Route Security & RBAC Audit Suite (`FB-P11-004`):**
+  1. **Waterfalled from Phase 13 — `PERFORMANCE_ANALYSIS` Audit Label & `30d` Window Optimization (`FB-P13-001` / `BUG-P13-002`):**
+     - Add `PERFORMANCE_ANALYSIS` audit label to track per-window telemetry load times (`elapsed_ms`, `window`, `cache_hit`, `total_events`) in `System -> Audit & Event History`.
+     - Optimize `30d` window queries (`top-level` `RFC1918_CIDRS` filter on `q_lan`, adaptive `15m`/`30m` slot intervals for `7d`/`30d` `app_usage`, and background cache pre-warming for `7d`/`30d`).
+  2. **Waterfalled from Phase 13 — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector (`FB-P13-002`):**
+     - Make the `External IPs` count in the **Active Inbound WAN Exposure (Open Ports)** table clickable to open a slide-over side drawer (`FirewallOpenPortSessionsDrawer.tsx` + `GET /api/v1/firewall/open-ports/sessions`) showing each connected external IP's address, GeoIP location (`City, Region, Country`), ISP/ASN organization, connection length (`first_seen -> last_seen` & active minutes), packet/byte volume, source ports/TCP flags, and recent packet logs.
+  3. **Automated FastAPI Route Security & RBAC Audit Suite (`FB-P11-004`):**
      - Implement programmatic test suite (`test_security_audit.py`) asserting that 100% of `/api/v1/*` routes enforce authentication (`401`) and admin-only routes enforce role authorization (`403` for operators).
-  2. **Dependency SCA & Static Security Analysis (`FB-P11-004`):**
-     - Add `pip-audit`, `npm audit`, and `ruff` flake8-bandit (`S`) rules to the test suite and quality gates.
-  3. **Frontend Route Code-Splitting (`FB-P11-008` Proposal D):**
-     - Split page components via `React.lazy()` and configure Vite `manualChunks` to drop initial bundle payload below 220 kB.
-  4. **GitHub Actions Security & CI Workflow (`FB-P11-004`):**
-     - Automate linting, typing, testing, CVE audit, and container image vulnerability scanning in `.github/workflows/ci-security.yml`.
+  4. **Dependency SCA, Static Security Analysis (`ruff S`) & GitHub Actions CI Security Workflow (`FB-P11-004`):**
+     - Add `ruff` flake8-bandit (`S`) rules, dependency vulnerability checks, and `.github/workflows/ci-security.yml`.
+  5. **Frontend Route Code-Splitting (`FB-P11-008` Proposal D):**
+     - Split page components via `React.lazy()` and configure Vite `manualChunks` to drop initial bundle payload below 220 kB and eliminate Vite's `> 500 kB` chunk warning.
+
 
 ### Phase 15 (`v1.2.0` / Dedicated Plex Phase): Direct Plex Media Server API Integration & Tautulli-Style Playback Telemetry (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C)
 - **Deliverables:**
