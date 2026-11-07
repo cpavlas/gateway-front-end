@@ -17,6 +17,7 @@ from app.clients.elasticsearch import (
     resolve_time_window,
     sanitize_domain_search,
 )
+from app.clients.plex import PlexActiveSessionItem
 from app.config import Settings
 from app.models import Device
 from app.services.audit_and_backup_service import (
@@ -27,6 +28,7 @@ from app.services.device_service import (
     DeviceResponse,
     build_device_response,
 )
+from app.services.plex_service import fetch_plex_telemetry_for_analytics
 
 # ---------------------------------------------------------------------------
 # Pydantic Response Models
@@ -52,6 +54,7 @@ class AppUsageItem(BaseModel):
     bytes: int = 0
     last_active_at: str | None = None
     top_devices: list[AppUsageDeviceItem] = Field(default_factory=list)
+    active_sessions: list[PlexActiveSessionItem] = Field(default_factory=list)
 
 
 def _build_zero_app_usage() -> list[AppUsageItem]:
@@ -60,6 +63,45 @@ def _build_zero_app_usage() -> list[AppUsageItem]:
         AppUsageItem(app_key="youtube", display_name="YouTube"),
         AppUsageItem(app_key="plex", display_name="Plex"),
     ]
+
+
+def _apply_plex_override_to_es_data(
+    es_data: dict[str, Any],
+    plex_override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Replace the `plex` entry in `es_data['application_usage']` with direct Plex telemetry."""
+    if not plex_override:
+        return es_data
+    merged_es = dict(es_data)
+    raw_apps = list(merged_es.get("application_usage") or [])
+    if not raw_apps:
+        merged_es["application_usage"] = [
+            {
+                "app_key": "youtube",
+                "display_name": "YouTube",
+                "active_minutes": 0,
+                "event_count": 0,
+                "dns_queries": 0,
+                "bytes": 0,
+                "last_active_at": None,
+                "top_devices": [],
+            },
+            plex_override,
+        ]
+        return merged_es
+
+    updated_apps: list[dict[str, Any]] = []
+    replaced = False
+    for item in raw_apps:
+        if isinstance(item, dict) and item.get("app_key") == "plex":
+            updated_apps.append(plex_override)
+            replaced = True
+        elif isinstance(item, dict):
+            updated_apps.append(item)
+    if not replaced:
+        updated_apps.append(plex_override)
+    merged_es["application_usage"] = updated_apps
+    return merged_es
 
 
 def _parse_app_usage_items(
@@ -96,7 +138,11 @@ def _parse_app_usage_items(
                     or ip_str
                 )
             else:
-                dev_id = None
+                dev_id = (
+                    int(td["device_id"])
+                    if td.get("device_id") is not None
+                    else None
+                )
                 eff_name = str(td.get("effective_name") or ip_str)
             enriched_top.append(
                 AppUsageDeviceItem(
@@ -109,7 +155,19 @@ def _parse_app_usage_items(
                     bytes=int(td.get("bytes") or 0),
                 )
             )
-        item_copy = {**a, "top_devices": enriched_top[:3]}
+        raw_sessions = a.get("active_sessions") or []
+        parsed_sessions = [
+            s
+            if isinstance(s, PlexActiveSessionItem)
+            else PlexActiveSessionItem(**s)
+            for s in raw_sessions
+            if isinstance(s, (dict, PlexActiveSessionItem))
+        ]
+        item_copy = {
+            **a,
+            "top_devices": enriched_top[:3],
+            "active_sessions": parsed_sessions,
+        }
         parsed.append(AppUsageItem(**item_copy))
     return parsed or _build_zero_app_usage()
 
@@ -562,8 +620,26 @@ async def get_network_overview_analytics(
             es_reachable=False,
         )
 
+    fallback_plex = next(
+        (
+            a
+            for a in (es_data.get("application_usage") or [])
+            if isinstance(a, dict) and a.get("app_key") == "plex"
+        ),
+        None,
+    )
+    plex_override = await fetch_plex_telemetry_for_analytics(
+        db,
+        settings,
+        window=win_key,
+        sqlite_devices=sqlite_devices,
+        fallback_plex_dict=fallback_plex,
+        refresh=refresh,
+    )
+    enriched_es_data = _apply_plex_override_to_es_data(es_data, plex_override)
+
     response = _assemble_network_overview_response(
-        es_data=es_data,
+        es_data=enriched_es_data,
         sqlite_devices=sqlite_devices,
         settings=settings,
         window=win_key,
@@ -651,9 +727,28 @@ async def get_device_analytics(
             es_reachable=False,
         )
 
+    fallback_plex = next(
+        (
+            a
+            for a in (es_data.get("application_usage") or [])
+            if isinstance(a, dict) and a.get("app_key") == "plex"
+        ),
+        None,
+    )
+    plex_override = await fetch_plex_telemetry_for_analytics(
+        db,
+        settings,
+        window=win_key,
+        sqlite_devices=[dev],
+        target_ips={dev.ipv4_address},
+        fallback_plex_dict=fallback_plex,
+        refresh=refresh,
+    )
+    enriched_es_data = _apply_plex_override_to_es_data(es_data, plex_override)
+
     response = _assemble_device_analytics_response(
         device_resp=dev_resp,
-        es_data=es_data,
+        es_data=enriched_es_data,
         window=win_key,
     )
     ttl = 300.0 if win_key in ("7d", "30d") else 90.0

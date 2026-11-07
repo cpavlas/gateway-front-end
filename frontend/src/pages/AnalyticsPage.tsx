@@ -8,7 +8,9 @@ import {
   Globe,
   HardDrive,
   Laptop,
+  Play,
   RefreshCw,
+  Search,
   ShieldAlert,
   Tv,
 } from 'lucide-react'
@@ -133,17 +135,18 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                 <button
                   type="button"
                   data-testid="overview-refresh-btn"
+                  aria-label="Refresh Analytics"
+                  title="Refresh Analytics"
                   onClick={() => refreshMutation.mutate()}
                   disabled={isFetching || refreshMutation.isPending}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500/40 bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer shrink-0"
                 >
                   <RefreshCw
-                    className={`h-3.5 w-3.5 ${
+                    className={`h-4 w-4 ${
                       isFetching || refreshMutation.isPending ? 'animate-spin' : ''
                     }`}
                     aria-hidden="true"
                   />
-                  <span>Refresh Analytics</span>
                 </button>
                 <AutoRefreshSelector
                   value={intervalOption}
@@ -298,6 +301,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                   }
                   const isYoutube = appKey === 'youtube'
                   const appTopDevices = (item.top_devices ?? []).slice(0, 3)
+                  const activeSessions = item.active_sessions ?? []
 
                   return (
                     <div
@@ -306,13 +310,24 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                       className="rounded-lg border border-slate-800 bg-slate-950/70 p-3.5"
                     >
                       <div className="flex items-center justify-between">
-                        <span
-                          className={`text-xs font-bold uppercase tracking-wide ${
-                            isYoutube ? 'text-rose-400' : 'text-amber-400'
-                          }`}
-                        >
-                          {item.display_name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs font-bold uppercase tracking-wide ${
+                              isYoutube ? 'text-rose-400' : 'text-amber-400'
+                            }`}
+                          >
+                            {item.display_name}
+                          </span>
+                          {!isYoutube && activeSessions.length > 0 && (
+                            <span
+                              data-testid="overview-plex-live-badge"
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-300"
+                            >
+                              <Play className="h-2.5 w-2.5 fill-current" aria-hidden="true" />
+                              {activeSessions.length} Now Playing
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[11px] font-mono text-slate-400">
                           {item.last_active_at
                             ? `Last active ${new Date(item.last_active_at).toLocaleTimeString([], {
@@ -351,6 +366,37 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* Live Plex Active Sessions (FB-P9-005) */}
+                      {!isYoutube && activeSessions.length > 0 && (
+                        <div
+                          data-testid="overview-plex-now-playing"
+                          className="mt-3 rounded-md border border-amber-500/30 bg-amber-950/20 p-2.5 space-y-1.5"
+                        >
+                          <span className="block text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+                            Active Plex Streams
+                          </span>
+                          <ul className="space-y-1 text-xs">
+                            {activeSessions.map((sess) => (
+                              <li
+                                key={sess.session_key}
+                                className="flex items-center justify-between gap-2 text-[11px]"
+                              >
+                                <div className="min-w-0 truncate">
+                                  <span className="font-semibold text-slate-100">
+                                    {sess.effective_name}
+                                  </span>
+                                  <span className="mx-1 text-slate-500">·</span>
+                                  <span className="text-amber-200">{sess.media_title}</span>
+                                </div>
+                                <span className="shrink-0 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-300">
+                                  {sess.state} · {sess.stream_decision}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
                       {/* Top 3 Devices Breakdown (FB-P8-002) */}
                       <div
@@ -513,10 +559,12 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
                               <button
                                 type="button"
                                 data-testid={`inspect-top-device-${dev.device_id}`}
+                                aria-label="Inspect"
+                                title={`Inspect ${dev.effective_name}`}
                                 onClick={() => setSelectedDeviceId(dev.device_id)}
-                                className="rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25 cursor-pointer"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500/40 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25 cursor-pointer"
                               >
-                                Inspect
+                                <Search className="h-4 w-4" aria-hidden="true" />
                               </button>
                             ) : (
                               <span className="text-xs text-slate-500">Unregistered IP</span>

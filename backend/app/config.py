@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     elasticsearch_timeout_seconds: float = Field(default=20.0, gt=0.5, le=120.0)
     elasticsearch_index_patterns: str = "logs-pfsense.log*"
 
+    # 4. Plex Media Server Integration (Optional — FB-P9-005 / Tautulli-style telemetry)
+    plex_base_url: str = ""
+    plex_api_token: SecretStr = Field(default=SecretStr(""))
+    plex_verify_ssl: bool = False
+    plex_timeout_seconds: float = Field(default=8.0, gt=0.5, le=60.0)
+
     @field_validator("app_secret_key")
     @classmethod
     def validate_app_secret_key(cls, value: SecretStr) -> SecretStr:
@@ -131,6 +137,26 @@ class Settings(BaseSettings):
         if not cleaned.startswith(("http://", "https://")):
             raise ValueError(f"URL must start with http:// or https:// (got '{value}').")
         return cleaned
+
+    @field_validator("plex_base_url")
+    @classmethod
+    def normalize_optional_plex_url(cls, value: str) -> str:
+        cleaned = (value or "").strip().rstrip("/")
+        if not cleaned:
+            return ""
+        if not cleaned.startswith(("http://", "https://")):
+            raise ValueError(f"PLEX_BASE_URL must start with http:// or https:// (got '{value}').")
+        return cleaned
+
+    @property
+    def has_plex_configured(self) -> bool:
+        """Return True when both PLEX_BASE_URL and PLEX_API_TOKEN are non-empty."""
+        raw_tok = (
+            self.plex_api_token.get_secret_value()
+            if isinstance(self.plex_api_token, SecretStr)
+            else str(self.plex_api_token)
+        )
+        return bool(self.plex_base_url.strip()) and bool(raw_tok.strip())
 
     @field_validator("opnsense_protected_ips")
     @classmethod
@@ -190,6 +216,7 @@ def apply_runtime_overrides(base_settings: Settings) -> Settings:
             "opnsense_api_key",
             "opnsense_api_secret",
             "elasticsearch_api_key",
+            "plex_api_token",
         ):
             updates[key] = val if isinstance(val, SecretStr) else SecretStr(str(val))
         else:

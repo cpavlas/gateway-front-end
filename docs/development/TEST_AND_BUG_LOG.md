@@ -141,3 +141,10 @@ This ledger tracks all defects uncovered during unit testing, static analysis, c
 
 
 
+---
+
+## Phase 15 (Test Cycle 15): Direct Plex Media Server API & Tautulli-Style Session/History Integration + UI Cleanup (`v1.2.0`)
+
+| Bug ID | Phase / Area | Found During | Severity | Disposition / Status | Symptom & Root Cause | Resolution / Interim Mitigation | Regression Test | Commit Ref |
+| :--- | :--- | :---: | :---: | :--- | :--- | :--- | :--- | :--- |
+| `BUG-P15-001` | Phase 15 / Step 15.1 & 15.3 (`backend/tests/test_phase15_plex.py`, `frontend/src/__tests__/DevicesPage.test.tsx`) | Unit Testing (`pytest` & `vitest`) | **Low** | `Resolved in Phase 15` | (1) In `test_plex_service_client_and_settings_api`, `run_plex_session_poller()` returned `0` after `PUT /api/v1/system/settings` persisted Plex settings in the test SQLite database because `run_plex_session_poller()` called `get_settings()` directly (pointing to `./data/gateway.db`) rather than `test_settings`. (2) In `DevicesPage.test.tsx`, `expect(screen.getByTestId('access-toggle-2')).toHaveTextContent('Allowed')` failed after converting device row action buttons to icon-only buttons (`FB-P14-002`). | (1) Patched `app.main.get_settings` to return `test_settings` when testing `run_plex_session_poller()` in `test_phase15_plex.py`, and ensured `run_plex_session_poller()` calls `load_runtime_settings_from_db()` + `apply_runtime_overrides()`. (2) Updated `DevicesPage.test.tsx` to assert `toHaveAttribute('aria-label', 'Allowed')` on the icon-only `access-toggle-2` button. | `backend/tests/test_phase15_plex.py`, `frontend/src/__tests__/DevicesPage.test.tsx` | `Phase 15 (phase15)` |

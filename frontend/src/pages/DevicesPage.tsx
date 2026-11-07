@@ -430,17 +430,17 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
+                data-testid="sync-devices-btn"
+                aria-label="Sync from OPNsense"
+                title="Sync from OPNsense"
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending}
-                className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500/40 bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60 cursor-pointer shrink-0"
               >
                 <RefreshCw
-                  className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
+                  className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`}
                   aria-hidden="true"
                 />
-                <span>
-                  {syncMutation.isPending ? 'Syncing OPNsense...' : 'Sync from OPNsense'}
-                </span>
               </button>
               <AutoRefreshSelector
                 value={intervalOption}
@@ -1022,20 +1022,21 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                         </button>
                       </td>
 
-                      {/* Column 5: Per-Device Analytics Drawer Trigger (FB-P4-003) */}
+                      {/* Column 5: Per-Device Analytics Drawer Trigger (FB-P4-003 & FB-P14-002) */}
                       <td className="px-4 py-3.5 align-middle">
                         <button
                           type="button"
                           data-testid={`view-analytics-btn-${dev.id}`}
+                          aria-label="Analytics"
+                          title={`View analytics for ${dev.effective_name}`}
                           onClick={() => setSelectedAnalyticsDeviceId(dev.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                          className="inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-2 text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
                         >
-                          <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
-                          <span>Analytics</span>
+                          <BarChart3 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </td>
 
-                      {/* Column 6: Instant Internet Access Toggle & Timed Controls (FB-P4-004 & Phase 5) */}
+                      {/* Column 6: Instant Internet Access Toggle & Timed Controls (FB-P4-004, Phase 5 & FB-P14-002) */}
                       <td className="px-4 py-3.5 align-middle text-right">
                         <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                           {/* selective YouTube toggle */}
@@ -1060,7 +1061,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                   action: dev.is_youtube_blocked ? 'unblock' : 'block',
                                 })
                               }
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-50 ${
+                              className={`inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border p-2 transition cursor-pointer disabled:opacity-50 ${
                                 dev.is_youtube_blocked
                                   ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
                                   : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
@@ -1075,6 +1076,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             targetName={dev.effective_name}
                             activeOverride={dev.active_override}
                             disabled={dev.is_protected || !dev.ipv4_address}
+                            iconOnly
                             isPending={
                               deviceTimerMutation.isPending || cancelTimerMutation.isPending
                             }
@@ -1088,39 +1090,39 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               type="button"
                               data-testid={`access-toggle-${dev.id}`}
                               disabled
+                              aria-label="Always Allowed"
                               title={dev.protection_reason ?? 'Protected device cannot be blocked'}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1 text-xs font-semibold text-slate-400 opacity-75 cursor-not-allowed"
+                              className="inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 p-2 text-slate-400 opacity-75 cursor-not-allowed"
                             >
-                              <Lock className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
-                              <span>Always Allowed</span>
+                              <Lock className="h-4 w-4 text-amber-400" aria-hidden="true" />
                             </button>
                           ) : dev.is_blocked ? (
                             <button
                               type="button"
                               data-testid={`access-toggle-${dev.id}`}
                               disabled={isBusy}
-                              title="Click to restore internet access"
+                              aria-label="Blocked"
+                              title="Internet Blocked — Click to restore internet access"
                               onClick={() =>
                                 accessMutation.mutate({ device: dev, action: 'unblock' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                              className="inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/15 p-2 text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
                             >
-                              <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-                              <span>{isBusy ? 'Updating...' : 'Blocked'}</span>
+                              <ShieldAlert className="h-4 w-4 text-rose-400" aria-hidden="true" />
                             </button>
                           ) : (
                             <button
                               type="button"
                               data-testid={`access-toggle-${dev.id}`}
                               disabled={isBusy || !dev.ipv4_address}
-                              title="Click to block internet access"
+                              aria-label="Allowed"
+                              title="Internet Allowed — Click to block internet access"
                               onClick={() =>
                                 accessMutation.mutate({ device: dev, action: 'block' })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
+                              className="inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 p-2 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 cursor-pointer"
                             >
-                              <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                              <span>{isBusy ? 'Blocking...' : 'Allowed'}</span>
+                              <Globe className="h-4 w-4 text-emerald-400" aria-hidden="true" />
                             </button>
                           )}
                         </div>

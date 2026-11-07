@@ -35,6 +35,7 @@ from app.services.analytics_service import (
     TimelineBucketItem,
     TopDomainItem,
     TopOrganizationItem,
+    _apply_plex_override_to_es_data,
     _build_zero_app_usage,
     _build_zero_hourly_profile,
     _parse_app_usage_items,
@@ -46,6 +47,7 @@ from app.services.device_service import (
     build_device_group_badge_map,
     build_device_response,
 )
+from app.services.plex_service import fetch_plex_telemetry_for_analytics
 from app.services.schedule_service import ActiveScheduleInfo, get_active_schedule_maps
 from app.services.timer_service import (
     ActiveOverrideInfo,
@@ -1191,10 +1193,35 @@ async def get_group_analytics(
             es_reachable=False,
         )
 
+    member_ids = [m.id for m in grp_resp.members]
+    member_devs = (
+        list((await db.execute(select(Device).where(Device.id.in_(member_ids)))).scalars().all())
+        if member_ids
+        else []
+    )
+    fallback_plex = next(
+        (
+            a
+            for a in (es_data.get("application_usage") or [])
+            if isinstance(a, dict) and a.get("app_key") == "plex"
+        ),
+        None,
+    )
+    plex_override = await fetch_plex_telemetry_for_analytics(
+        db,
+        settings,
+        window=win_key,
+        sqlite_devices=member_devs,
+        target_ips=set(tracked_ips),
+        fallback_plex_dict=fallback_plex,
+        refresh=refresh,
+    )
+    enriched_es_data = _apply_plex_override_to_es_data(es_data, plex_override)
+
     response = _assemble_group_analytics_response(
         group_resp=grp_resp,
         tracked_ips=tracked_ips,
-        es_data=es_data,
+        es_data=enriched_es_data,
         window=win_key,
     )
     cache.set(cache_key, response)

@@ -359,3 +359,26 @@ async def post_test_elasticsearch_connectivity(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.post("/settings/test-plex", response_model=ConnectivityTestResponse)
+async def post_test_plex_connectivity(
+    payload: IntegrationSettingsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> ConnectivityTestResponse:
+    """Test connectivity and X-Plex-Token access against Plex Media Server (`FB-P9-005`)."""
+    try:
+        return await run_connectivity_diagnostic(
+            db,
+            settings,
+            "plex",
+            payload,
+            actor=current_user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

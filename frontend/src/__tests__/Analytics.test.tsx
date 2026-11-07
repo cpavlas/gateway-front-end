@@ -410,8 +410,169 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
     await user.click(screen.getByTestId('overview-refresh-btn'))
 
     // Click "Inspect" on row 1 in Top Active LAN Devices table -> opens drawer
+    expect(screen.getByTestId('inspect-top-device-1')).toHaveAttribute('aria-label', 'Inspect')
     await user.click(screen.getByTestId('inspect-top-device-1'))
     expect(await screen.findByTestId('device-analytics-drawer')).toBeInTheDocument()
+  })
+
+  it('renders Phase 15 Plex Now Playing streams and Plex Integration Settings connectivity test (FB-P9-005 & FB-P14-001..004)', async () => {
+    const overviewWithPlex: NetworkOverviewResponse = {
+      ...MOCK_OVERVIEW,
+      application_usage: [
+        {
+          app_key: 'youtube',
+          display_name: 'YouTube',
+          active_minutes: 35,
+          event_count: 120,
+          dns_queries: 100,
+          bytes: 5242880,
+          last_active_at: '2026-10-31T16:20:00Z',
+          top_devices: [],
+        },
+        {
+          app_key: 'plex',
+          display_name: 'Plex',
+          active_minutes: 95,
+          event_count: 14,
+          dns_queries: 12,
+          bytes: 104857600,
+          last_active_at: '2026-10-31T16:29:00Z',
+          top_devices: [
+            {
+              device_id: 1,
+              ipv4_address: '192.168.1.134',
+              effective_name: 'LG OLED TV',
+              active_minutes: 95,
+              event_count: 14,
+              dns_queries: 12,
+              bytes: 104857600,
+            },
+          ],
+          active_sessions: [
+            {
+              session_key: 'sess-55',
+              client_ip: '192.168.1.134',
+              device_id: 1,
+              effective_name: 'LG OLED TV',
+              player_title: 'LGwebOSTV',
+              player_product: 'Plex for LG',
+              player_platform: 'webOS',
+              state: 'playing',
+              user_name: 'family',
+              media_title: 'Bluey · S03E01 · Bedroom',
+              media_type: 'episode',
+              stream_decision: 'direct play',
+              bandwidth_kbps: 12000,
+              progress_percent: 52.0,
+            },
+          ],
+        },
+      ],
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+
+      if (url.includes('/api/v1/auth/me')) {
+        return new Response(
+          JSON.stringify({
+            username: 'admin',
+            role: 'admin',
+            authenticated: true,
+            expires_at: '2026-11-01T00:00:00Z',
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/api/v1/system/health')) {
+        return new Response(JSON.stringify(MOCK_HEALTH), { status: 200 })
+      }
+      if (url.includes('/api/v1/analytics/overview')) {
+        return new Response(JSON.stringify(overviewWithPlex), { status: 200 })
+      }
+      if (url.includes('/api/v1/devices/1/analytics')) {
+        return new Response(
+          JSON.stringify({
+            ...MOCK_DEVICE_ANALYTICS,
+            application_usage: overviewWithPlex.application_usage,
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/api/v1/system/settings/test-plex') && method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            service: 'plex',
+            reachable: true,
+            status: 'healthy',
+            latency_ms: 11.4,
+            message: "Plex Media Server 'HomePlex' (1.41.2) connected (1 active stream(s)).",
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/api/v1/system/settings')) {
+        return new Response(
+          JSON.stringify({
+            source: 'ui_override',
+            opnsense_base_url: 'https://192.168.1.1',
+            has_opnsense_api_key: true,
+            opnsense_api_key_masked: '••••••••••••',
+            has_opnsense_api_secret: true,
+            opnsense_api_secret_masked: '••••••••••••',
+            opnsense_verify_ssl: false,
+            opnsense_ca_cert_path: '',
+            opnsense_timeout_seconds: 10,
+            opnsense_protected_ips: '192.168.1.1',
+            elasticsearch_url: 'https://192.168.1.10:9200',
+            has_elasticsearch_api_key: true,
+            elasticsearch_api_key_masked: '••••••••••••',
+            elasticsearch_verify_ssl: false,
+            elasticsearch_ca_cert_path: '',
+            elasticsearch_timeout_seconds: 15,
+            elasticsearch_index_patterns: 'logs-pfsense.log*',
+            plex_base_url: 'http://192.168.1.250:32400',
+            has_plex_api_token: true,
+            plex_api_token_masked: '••••••••••••',
+            plex_verify_ssl: false,
+            plex_timeout_seconds: 8,
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/api/v1/devices')) {
+        return new Response(JSON.stringify(MOCK_DEVICE_LIST), { status: 200 })
+      }
+      return new Response('Not Found', { status: 404 })
+    })
+
+    const user = userEvent.setup()
+    render(<App queryClient={createTestQueryClient()} />)
+    await screen.findByTestId('device-row-1')
+
+    // Navigate to Analytics and verify Plex Now Playing badge & active stream details
+    await user.click(screen.getByTestId('nav-tab-analytics'))
+    expect(await screen.findByTestId('overview-plex-live-badge')).toHaveTextContent('1 Now Playing')
+    expect(screen.getByTestId('overview-plex-now-playing')).toHaveTextContent(
+      'Bluey · S03E01 · Bedroom',
+    )
+
+    // Open DeviceAnalyticsDrawer and verify drawer Plex Now Playing stream details
+    await user.click(screen.getByTestId('inspect-top-device-1'))
+    expect(await screen.findByTestId('drawer-plex-now-playing')).toHaveTextContent(
+      'Now Playing: Bluey · S03E01 · Bedroom',
+    )
+    await user.click(screen.getByTestId('close-analytics-drawer'))
+
+    // Navigate to System Status -> Integration Settings and test Plex connection
+    await user.click(screen.getByTestId('nav-tab-status'))
+    await user.click(await screen.findByTestId('toggle-integration-settings-btn'))
+    expect(await screen.findByTestId('input-plex-url')).toHaveValue('http://192.168.1.250:32400')
+    await user.click(screen.getByTestId('test-plex-btn'))
+    expect(await screen.findByTestId('connectivity-diagnostic-result')).toHaveTextContent(
+      'HomePlex',
+    )
   })
 })
 

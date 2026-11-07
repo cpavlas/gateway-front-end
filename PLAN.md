@@ -591,14 +591,15 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
      - Split page components via `React.lazy()` and configure Vite `manualChunks` to drop initial bundle payload below 220 kB and eliminate Vite's `> 500 kB` chunk warning.
 
 
-### Phase 15 (`v1.2.0` / Dedicated Plex & UI Cleanup Phase): Direct Plex Media Server API Integration, Tautulli-Style Playback Telemetry & Global Icon-Only Action Polish (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C, `FB-P14-001`..`FB-P14-003`)
+### Phase 15 (`v1.2.0` — COMPLETE): Direct Plex Media Server API Integration, Tautulli-Style Playback Telemetry & Global Icon-Only Action Polish (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C, `FB-P14-001`..`FB-P14-004`)
 - **Deliverables:**
   1. **Direct Plex Client & Settings Integration (`FB-P9-005`):**
      - Expose `PLEX_BASE_URL` and `PLEX_API_TOKEN` (`X-Plex-Token`) in `.env` and `System -> Integration Settings` with a live Test Connection diagnostic button and system health status card/details.
   2. **Tautulli-Style Playback & Session Telemetry (`FB-P9-005` / `FB-P11-008` Proposal C):**
      - Poll Plex `/status/sessions` and playback history (`/status/sessions/history/all`) to correlate player IP addresses (`Player.address`) and device titles (`LGwebOSTV`, Apple TV, etc.) to local SQLite devices, persisting and reporting exact per-device active streaming minutes, live "Now Playing" session details (media title, user, player state, transcode vs. direct play), and Top 3 Devices in `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
-  3. **Waterfalled from Phase 14 — Global Icon-Only Refresh & Mobile-Friendly Action Buttons (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`):**
+  3. **Waterfalled from Phase 14 — Global Icon-Only Refresh & Mobile-Friendly Action Buttons (`FB-P14-001`..`FB-P14-004`):**
      - **`FB-P14-001`:** Convert all Refresh buttons across pages and drawers (`Devices`, `Schedules`, `Analytics`, `Firewall`, `System`, and all slide-over drawers) to clean icon-only (`<RefreshCw />`) buttons with tooltips/`aria-label`s.
      - **`FB-P14-002`:** In `DevicesPage.tsx`, convert the per-device action buttons (`Inspect`/`Analytics`, `Timer`, `YouTube`, `Allowed`/`Blocked`) to slightly larger, touch-friendly icon-only buttons for easy mobile clicking.
      - **`FB-P14-003`:** In `AnalyticsPage.tsx` (`Top Active LAN Devices` table), replace the text `Inspect` button with a Magnifying Glass (`<Search />`) icon-only button.
+     - **`FB-P14-004`:** In `FirewallOpenPortSessionsDrawer.tsx`, shorten the search input placeholder from `"Filter by external IP, city, country, or ISP/ASN..."` to `"Filter by external IP, city, country, or ISP"`.
 
