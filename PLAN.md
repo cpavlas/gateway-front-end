@@ -576,11 +576,11 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
   4. **Elasticsearch `_msearch` Consolidation (`FB-P11-008` Proposal B):**
      - Consolidate aggregation and recent-event searches into single `_msearch` HTTP round-trips and 3-way parallel `_msearch` on `fetch_network_overview` (`21.9×` speedup).
 
-### Phase 14 (`v1.2.0-rc3`): Automated Security Scanning, Frontend Code-Splitting, `PERFORMANCE_ANALYSIS` Audit Load-Time Tracking & Firewall Active WAN Port External IP Inspector (`FB-P11-004`, `FB-P11-008` Proposal D, `FB-P13-001`, `FB-P13-002`)
+### Phase 14 (`v1.2.0-rc3` — COMPLETE): Automated Security Scanning, Frontend Code-Splitting, `PERFORMANCE_ANALYSIS` Audit Load-Time Tracking & Firewall Active WAN Port External IP Inspector (`FB-P11-004`, `FB-P11-008` Proposal D, `FB-P13-001`, `FB-P13-002`)
 - **Deliverables:**
   1. **Waterfalled from Phase 13 — `PERFORMANCE_ANALYSIS` Audit Label & `30d` Window Optimization (`FB-P13-001` / `BUG-P13-002`):**
      - Add `PERFORMANCE_ANALYSIS` audit label to track per-window telemetry load times (`elapsed_ms`, `window`, `cache_hit`, `total_events`) in `System -> Audit & Event History`.
-     - Optimize `30d` window queries (`top-level` `RFC1918_CIDRS` filter on `q_lan`, adaptive `15m`/`30m` slot intervals for `7d`/`30d` `app_usage`, and background cache pre-warming for `7d`/`30d`).
+     - Optimize `30d` window queries (`collect_mode: "breadth_first"` on `q_lan`, `q_blocked`, and `q_ext_blocked`, adaptive `15m`/`30m` slot intervals for `7d`/`30d`, and background cache pre-warming for `7d`/`30d`).
   2. **Waterfalled from Phase 13 — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector (`FB-P13-002`):**
      - Make the `External IPs` count in the **Active Inbound WAN Exposure (Open Ports)** table clickable to open a slide-over side drawer (`FirewallOpenPortSessionsDrawer.tsx` + `GET /api/v1/firewall/open-ports/sessions`) showing each connected external IP's address, GeoIP location (`City, Region, Country`), ISP/ASN organization, connection length (`first_seen -> last_seen` & active minutes), packet/byte volume, source ports/TCP flags, and recent packet logs.
   3. **Automated FastAPI Route Security & RBAC Audit Suite (`FB-P11-004`):**
@@ -591,10 +591,14 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
      - Split page components via `React.lazy()` and configure Vite `manualChunks` to drop initial bundle payload below 220 kB and eliminate Vite's `> 500 kB` chunk warning.
 
 
-### Phase 15 (`v1.2.0` / Dedicated Plex Phase): Direct Plex Media Server API Integration & Tautulli-Style Playback Telemetry (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C)
+### Phase 15 (`v1.2.0` / Dedicated Plex & UI Cleanup Phase): Direct Plex Media Server API Integration, Tautulli-Style Playback Telemetry & Global Icon-Only Action Polish (`FB-P9-005` / `BUG-P9-002`, `FB-P11-008` Proposal C, `FB-P14-001`..`FB-P14-003`)
 - **Deliverables:**
   1. **Direct Plex Client & Settings Integration (`FB-P9-005`):**
-     - Expose `PLEX_BASE_URL` and `PLEX_API_TOKEN` (`X-Plex-Token`) in `.env` and `System -> Integration Settings` with a live Test Connection diagnostic button.
-  2. **Tautulli-Style Playback & Session Telemetry (`FB-P9-005`):**
-     - Poll Plex `/status/sessions` and session history to correlate player IP/MAC addresses to local devices (`LGwebOSTV`, Apple TV, etc.), reporting exact per-device active streaming minutes, live stream states, media titles, and direct-play/transcode indicators.
+     - Expose `PLEX_BASE_URL` and `PLEX_API_TOKEN` (`X-Plex-Token`) in `.env` and `System -> Integration Settings` with a live Test Connection diagnostic button and system health status card/details.
+  2. **Tautulli-Style Playback & Session Telemetry (`FB-P9-005` / `FB-P11-008` Proposal C):**
+     - Poll Plex `/status/sessions` and playback history (`/status/sessions/history/all`) to correlate player IP addresses (`Player.address`) and device titles (`LGwebOSTV`, Apple TV, etc.) to local SQLite devices, persisting and reporting exact per-device active streaming minutes, live "Now Playing" session details (media title, user, player state, transcode vs. direct play), and Top 3 Devices in `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer`.
+  3. **Waterfalled from Phase 14 — Global Icon-Only Refresh & Mobile-Friendly Action Buttons (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`):**
+     - **`FB-P14-001`:** Convert all Refresh buttons across pages and drawers (`Devices`, `Schedules`, `Analytics`, `Firewall`, `System`, and all slide-over drawers) to clean icon-only (`<RefreshCw />`) buttons with tooltips/`aria-label`s.
+     - **`FB-P14-002`:** In `DevicesPage.tsx`, convert the per-device action buttons (`Inspect`/`Analytics`, `Timer`, `YouTube`, `Allowed`/`Blocked`) to slightly larger, touch-friendly icon-only buttons for easy mobile clicking.
+     - **`FB-P14-003`:** In `AnalyticsPage.tsx` (`Top Active LAN Devices` table), replace the text `Inspect` button with a Magnifying Glass (`<Search />`) icon-only button.
 

@@ -13,8 +13,10 @@ from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.config import Settings, get_settings
 from app.db import get_db_session
 from app.services.firewall_service import (
+    FirewallOpenPortSessionsResponse,
     FirewallOverviewResponse,
     get_firewall_overview_analytics,
+    get_open_wan_port_sessions,
 )
 
 router = APIRouter(prefix="/api/v1/firewall", tags=["firewall"])
@@ -67,3 +69,58 @@ async def read_firewall_overview(
         search=search,
         refresh=refresh,
     )
+
+
+@router.get("/open-ports/sessions", response_model=FirewallOpenPortSessionsResponse)
+async def read_open_wan_port_sessions(
+    destination_ip: str = Query(
+        ...,
+        description="Internal LAN destination IPv4 address for the open WAN port.",
+    ),
+    destination_port: int = Query(
+        ...,
+        ge=1,
+        le=65535,
+        description="Internal destination/redirect port.",
+    ),
+    external_port: int | None = Query(
+        default=None,
+        ge=1,
+        le=65535,
+        description="Optional external WAN incoming port.",
+    ),
+    protocol: str = Query(
+        default="tcp",
+        description="Transport protocol: tcp or udp.",
+    ),
+    window: TimeWindowLiteral = Query(
+        default="24h",
+        description="Firewall telemetry time window: 1h, 24h, 7d, or 30d.",
+    ),
+    search: str | None = Query(
+        default=None,
+        description="Optional filter by external IP, country, city, or ISP/ASN organization.",
+    ),
+    refresh: bool = Query(
+        default=False,
+        description="If true, bypass cache and query Elasticsearch directly.",
+    ),
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    es_client: ElasticsearchServiceClient = Depends(get_elasticsearch_client),
+) -> FirewallOpenPortSessionsResponse:
+    """Return connected external WAN IP details (GeoIP location, ASN/ISP, connection length,
+    source ports, TCP flags, TTL, and recent events) for an active open WAN port (`FB-P13-002`).
+    """
+    return await get_open_wan_port_sessions(
+        db=db,
+        es_client=es_client,
+        destination_ip=destination_ip,
+        destination_port=destination_port,
+        external_port=external_port,
+        protocol=protocol,
+        window=window,
+        search=search,
+        refresh=refresh,
+    )
+

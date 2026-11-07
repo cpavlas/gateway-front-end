@@ -166,7 +166,7 @@ async def check_sqlite_health(
             counts["schedules_count"] = int(stats_row[3] or 0)
             counts["audit_logs_count"] = int(stats_row[4] or 0)
             pragma_bytes = int(stats_row[5] or 0)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     db_path = settings.sqlite_db_path if settings is not None else None

@@ -1,13 +1,24 @@
-import React, { useState } from 'react'
+import React, { Suspense, lazy, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { type AppTab } from './components/AppLayout'
-import { AnalyticsPage } from './pages/AnalyticsPage'
-import { DevicesPage } from './pages/DevicesPage'
-import { FirewallPage } from './pages/FirewallPage'
 import { LoginPage } from './pages/LoginPage'
-import { SchedulesPage } from './pages/SchedulesPage'
-import { StatusPage } from './pages/StatusPage'
+
+const AnalyticsPage = lazy(() =>
+  import('./pages/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })),
+)
+const DevicesPage = lazy(() =>
+  import('./pages/DevicesPage').then((m) => ({ default: m.DevicesPage })),
+)
+const FirewallPage = lazy(() =>
+  import('./pages/FirewallPage').then((m) => ({ default: m.FirewallPage })),
+)
+const SchedulesPage = lazy(() =>
+  import('./pages/SchedulesPage').then((m) => ({ default: m.SchedulesPage })),
+)
+const StatusPage = lazy(() =>
+  import('./pages/StatusPage').then((m) => ({ default: m.StatusPage })),
+)
 
 const defaultQueryClient = new QueryClient({
   defaultOptions: {
@@ -17,6 +28,15 @@ const defaultQueryClient = new QueryClient({
     },
   },
 })
+
+const RouteLoadingFallback: React.FC = () => (
+  <div
+    data-testid="route-loading"
+    className="min-h-screen flex items-center justify-center bg-slate-950 text-sm text-slate-400"
+  >
+    Loading view...
+  </div>
+)
 
 export const AuthenticatedRouter: React.FC<{ initialTab?: AppTab }> = ({
   initialTab = 'devices',
@@ -39,23 +59,21 @@ export const AuthenticatedRouter: React.FC<{ initialTab?: AppTab }> = ({
     return <LoginPage />
   }
 
-  if (activeTab === 'schedules') {
-    return <SchedulesPage activeTab={activeTab} onSelectTab={setActiveTab} />
-  }
-
-  if (activeTab === 'analytics') {
-    return <AnalyticsPage activeTab={activeTab} onSelectTab={setActiveTab} />
-  }
-
-  if (activeTab === 'firewall') {
-    return <FirewallPage activeTab={activeTab} onSelectTab={setActiveTab} />
-  }
-
-  if (activeTab === 'status') {
-    return <StatusPage activeTab={activeTab} onSelectTab={setActiveTab} />
-  }
-
-  return <DevicesPage activeTab={activeTab} onSelectTab={setActiveTab} />
+  return (
+    <Suspense fallback={<RouteLoadingFallback />}>
+      {activeTab === 'schedules' ? (
+        <SchedulesPage activeTab={activeTab} onSelectTab={setActiveTab} />
+      ) : activeTab === 'analytics' ? (
+        <AnalyticsPage activeTab={activeTab} onSelectTab={setActiveTab} />
+      ) : activeTab === 'firewall' ? (
+        <FirewallPage activeTab={activeTab} onSelectTab={setActiveTab} />
+      ) : activeTab === 'status' ? (
+        <StatusPage activeTab={activeTab} onSelectTab={setActiveTab} />
+      ) : (
+        <DevicesPage activeTab={activeTab} onSelectTab={setActiveTab} />
+      )}
+    </Suspense>
+  )
 }
 
 export const App: React.FC<{

@@ -556,6 +556,6 @@ class OPNsenseClient:
                                 )
                 except httpx.HTTPError:
                     pass
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         return mappings

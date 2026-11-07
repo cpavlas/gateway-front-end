@@ -473,4 +473,38 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Feed-Forward into Phase 14 (`v1.2.0-rc3`):**
   - Phase 14 combines the originally scheduled **`FB-P11-004`** (Automated Code & Dependency Security Scanning, SAST/SCA, and FastAPI Route Auth-Bypass & RBAC Audit Suite) and **`FB-P11-008` Proposal D** (Frontend Route Code-Splitting via `React.lazy()` + Vite `manualChunks`) with the two Phase 13 waterfall items **`FB-P13-001`** (`PERFORMANCE_ANALYSIS` audit load-time tracking + `30d` optimization) and **`FB-P13-002`** (Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector).
 
+---
+
+## Phase 14 Exit Analysis & Unplanned-Information Retrospective (`v1.2.0-rc3` — 2026-11-07)
+
+### 1. Phase 14 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P13-001` / `BUG-P13-002`, `FB-P13-002`, `FB-P11-004`, `FB-P11-008` Proposal D):**
+  1. **`FB-P13-001` (`BUG-P13-002`) — `PERFORMANCE_ANALYSIS` Audit Label & `30d` Window Query Optimization (`models/__init__.py`, `audit_and_backup_service.py`, `elasticsearch.py`, `main.py`, `StatusPage.tsx`):**
+     - Added `"PERFORMANCE_ANALYSIS"` to `infer_audit_label()` (mapping `action.startswith("performance.")`), added `record_performance_analysis_audit_log()` with per-`(view, window)` deduplication, and surfaced cyan `PERFORMANCE_ANALYSIS` badges and filter option in `System -> Audit & Event History`.
+     - Optimized `30d` Analytics & Firewall queries by removing uncached `RFC1918_CIDRS` BKD range scans from `q_lan` and `q_app`, enabling `"collect_mode": "breadth_first"` on `q_lan` and `q_blocked`/`q_ext_blocked`, scaling `active_slots` histogram intervals (`5m`/`15m`/`30m`), and extending `run_telemetry_cache_prewarm()` + `300s` TTL to `7d` and `30d`.
+  2. **`FB-P13-002` — Firewall Active WAN Ports Connected External IPs Side-Drawer Inspector (`elasticsearch.py`, `firewall_service.py`, `api/firewall.py`, `FirewallOpenPortSessionsDrawer.tsx`, `FirewallPage.tsx`):**
+     - Implemented `GET /api/v1/firewall/open-ports/sessions` and `<FirewallOpenPortSessionsDrawer />`, making the `External IPs` count in the **Active Inbound WAN Exposure (Open Ports)** table a clickable interactive badge that opens a slide-over inspector showing connected external IP addresses, ISP/ASN organization, GeoIP city/region/country/coordinates, connection duration (`first_seen -> last_seen` and active minutes), packet/byte volume, TCP flags/TTL, source ports, and chronological packet logs.
+     - Aligned the drawer header and `Time Window & Refresh Bar` toolbar layout with `DeviceAnalyticsDrawer.tsx` (`BUG-P14-003`).
+  3. **`FB-P11-004` — Automated Code & Dependency Security Scanning, Route Auth-Bypass Audit Suite & CI/CD Workflow (`pyproject.toml`, `test_security_audit.py`, `.github/workflows/ci-security.yml`):**
+     - Enabled `ruff` `flake8-bandit` (`S`) security rules across all 31 backend modules (`0` lint/SAST errors).
+     - Created `backend/tests/test_security_audit.py` to recursively inspect all 38 FastAPI `/api/v1/*` routes, verifying `100%` enforce `401 Unauthorized` when unauthenticated and all strict-admin routes enforce `403 Forbidden` against `operator` role tokens.
+     - Verified `0` Python (`pip-audit`) or Node (`npm audit`) dependency vulnerabilities and added `.github/workflows/ci-security.yml`.
+  4. **`FB-P11-008` Proposal D — Frontend Route Code-Splitting (`App.tsx`, `vite.config.ts`):**
+     - Converted page views to `React.lazy()` + `<Suspense>` and configured `manualChunks` (`vendor-react`, `vendor-query`, `vendor-icons`), reducing the initial entry chunk to `21.15 kB` (`max` chunk `223.22 kB`) with `0` Vite warnings.
+- **Final Automated Quality Metrics (`v1.2.0-rc3`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `127 / 127` passed (`85%` coverage; `elasticsearch.py` `93%`, `api/firewall.py` `100%`), `0` ruff/SAST errors, `0` mypy issues across `31` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `29 / 29` passed across `7` test suites (`90.99%` coverage; `FirewallOpenPortSessionsDrawer.tsx` `96.79%`, `AppLayout.tsx` `98.65%`), `0` build/type errors.
+
+### 2. Unplanned Information Audit & Feed-Forward into Phase 15 (`v1.2.0`)
+- **Finding 1 — `PERFORMANCE_ANALYSIS` Audit Telemetry Immediately Pinpointed `30d` Firewall Sub-Aggregation Bottlenecks (`BUG-P14-003`):**
+  - Having `PERFORMANCE_ANALYSIS` and `DIAGNOSTIC_ERROR` persisted in `audit_logs` during live user testing immediately revealed that `analytics_overview:30d` (`3.13s`) was fast, whereas `firewall_overview:30d` and `wan_port_sessions:30d` were hitting the `15s` `.env` timeout due to `depth_first` global-ordinal allocation on `blocked_sources.sources` (`150,000+` unique scanner IPs) and per-bucket `@timestamp` sorting inside `latest_sample`. Splitting `q_blocked` (`must_not: [exists(source.as.number)]`) and `q_ext_blocked` (`exists(source.as.number)`) with `collect_mode: "breadth_first"` reduced `firewall_overview:30d` to `2.41s` and `wan_port_sessions:30d` to `0.17s–1.66s` (with remaining occasional `30d` latency spikes attributable to underlying Elasticsearch storage/shard I/O, which the user will investigate at the ES infrastructure layer).
+- **Finding 2 — User UI Cleanup Tasks Captured for Phase 15 (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`):**
+  - During Gate 2 validation (`PHASE14-Verify.md`), the user identified three high-value UI cleanup enhancements to include alongside the Phase 15 Plex integration:
+    1. **`FB-P14-001`:** Icon-only Refresh buttons across all views and drawers (removing the button text label while keeping the `<RefreshCw />` icon and `aria-label`/`title`).
+    2. **`FB-P14-002`:** Icon-only, slightly larger mobile-friendly action buttons in the `Devices` inventory list.
+    3. **`FB-P14-003`:** Magnifying Glass (`<Search />`) icon-only `Inspect` button in the `Analytics` Top Active LAN Devices list.
+- **Feed-Forward into Phase 15 (`v1.2.0` Final Release):**
+  - Phase 15 (`v1.2.0`) combines the dedicated **Direct Plex Media Server API & Tautulli-Style Session/History Integration (`FB-P9-005` / `FB-P11-008` Proposal C)** with the three UI cleanup items (`FB-P14-001`, `FB-P14-002`, `FB-P14-003`).
+
+
 

@@ -24,7 +24,7 @@ from app.config import (
 )
 from app.models import AuditLog, SystemSetting
 
-MASKED_SECRET_PLACEHOLDER = "••••••••"
+MASKED_SECRET_PLACEHOLDER = "••••••••"  # noqa: S105
 
 SECRET_SETTING_KEYS = frozenset(
     {

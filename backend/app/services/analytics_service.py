@@ -19,7 +19,10 @@ from app.clients.elasticsearch import (
 )
 from app.config import Settings
 from app.models import Device
-from app.services.audit_and_backup_service import record_upstream_error_audit_log
+from app.services.audit_and_backup_service import (
+    record_performance_analysis_audit_log,
+    record_upstream_error_audit_log,
+)
 from app.services.device_service import (
     DeviceResponse,
     build_device_response,
@@ -239,8 +242,17 @@ class AnalyticsCache:
             return None
         return value
 
-    def set(self, key: str, value: Any) -> None:
-        self._store[key] = (time.monotonic() + self._ttl, value)
+    def set(
+        self,
+        key: str,
+        value: Any,
+        *,
+        ttl_seconds: float | None = None,
+    ) -> None:
+        effective_ttl = (
+            float(ttl_seconds) if ttl_seconds is not None else self._ttl
+        )
+        self._store[key] = (time.monotonic() + effective_ttl, value)
 
     def clear(self) -> None:
         self._store.clear()
@@ -495,8 +507,10 @@ async def get_network_overview_analytics(
     es_client: ElasticsearchServiceClient,
     window: str = "24h",
     refresh: bool = False,
+    record_perf: bool = True,
 ) -> NetworkOverviewResponse:
     """Return network-wide usage, timeline, top devices (joined with SQLite), and top domains."""
+    start_t = time.perf_counter()
     win_key, _, _ = resolve_time_window(window)
     cache = get_analytics_cache()
     cache_key = f"overview:{win_key}"
@@ -504,6 +518,17 @@ async def get_network_overview_analytics(
     if not refresh:
         cached = cache.get(cache_key)
         if isinstance(cached, NetworkOverviewResponse):
+            if record_perf:
+                elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                await record_performance_analysis_audit_log(
+                    db,
+                    view="analytics_overview",
+                    window=win_key,
+                    elapsed_ms=elapsed_ms,
+                    cache_hit=True,
+                    force_refresh=False,
+                    total_events=cached.summary.total_events,
+                )
             return cached
 
     stmt = select(Device)
@@ -543,7 +568,19 @@ async def get_network_overview_analytics(
         settings=settings,
         window=win_key,
     )
-    cache.set(cache_key, response)
+    ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+    cache.set(cache_key, response, ttl_seconds=ttl)
+    if record_perf:
+        elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+        await record_performance_analysis_audit_log(
+            db,
+            view="analytics_overview",
+            window=win_key,
+            elapsed_ms=elapsed_ms,
+            cache_hit=False,
+            force_refresh=refresh,
+            total_events=response.summary.total_events,
+        )
     return response
 
 
@@ -558,6 +595,7 @@ async def get_device_analytics(
     client_ip: str | None = None,
 ) -> DeviceAnalyticsResponse:
     """Return per-device usage stats, 24-hour access profile, and visited domains."""
+    start_t = time.perf_counter()
     win_key, _, _ = resolve_time_window(window)
     clean_search = sanitize_domain_search(domain_search)
 
@@ -580,6 +618,17 @@ async def get_device_analytics(
     if not refresh:
         cached = cache.get(cache_key)
         if isinstance(cached, DeviceAnalyticsResponse):
+            if not clean_search:
+                elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                await record_performance_analysis_audit_log(
+                    db,
+                    view="device_analytics",
+                    window=win_key,
+                    elapsed_ms=elapsed_ms,
+                    cache_hit=True,
+                    force_refresh=False,
+                    total_events=cached.summary.total_events,
+                )
             return cached.model_copy(update={"device": dev_resp})
 
     try:
@@ -607,5 +656,17 @@ async def get_device_analytics(
         es_data=es_data,
         window=win_key,
     )
-    cache.set(cache_key, response)
+    ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+    cache.set(cache_key, response, ttl_seconds=ttl)
+    if not clean_search:
+        elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+        await record_performance_analysis_audit_log(
+            db,
+            view="device_analytics",
+            window=win_key,
+            elapsed_ms=elapsed_ms,
+            cache_hit=False,
+            force_refresh=refresh,
+            total_events=response.summary.total_events,
+        )
     return response
