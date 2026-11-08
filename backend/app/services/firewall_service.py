@@ -211,6 +211,30 @@ def build_firewall_overview_response(
     ]
 
     raw_wan_ports = list(es_data.get("open_wan_ports") or [])
+    existing_wan_keys = {
+        (
+            str(wp.get("destination_ip") or "").strip(),
+            int(wp.get("destination_port") or 0),
+            str(wp.get("protocol") or "tcp").lower(),
+        )
+        for wp in raw_wan_ports
+    }
+    for (nat_ip, nat_port, nat_proto), nat_ext in sorted(nat_map.items()):
+        if (nat_ip, nat_port, nat_proto) not in existing_wan_keys:
+            raw_wan_ports.append(
+                {
+                    "destination_ip": nat_ip,
+                    "destination_port": nat_port,
+                    "external_port": nat_ext,
+                    "protocol": nat_proto,
+                    "passed_packets": 0,
+                    "bytes": 0,
+                    "unique_external_sources": 0,
+                    "last_seen_at": None,
+                }
+            )
+            existing_wan_keys.add((nat_ip, nat_port, nat_proto))
+
     claimed_external_ports: set[tuple[int, str]] = set()
     explicit_ext_by_idx: dict[int, int] = {}
 
@@ -259,6 +283,7 @@ def build_firewall_overview_response(
                 last_seen_at=wp.get("last_seen_at"),
             )
         )
+    summary.open_wan_port_count = max(summary.open_wan_port_count, len(open_wan_ports))
 
     recent_events: list[FirewallLogEventItem] = []
     for ev in es_data.get("recent_events") or []:

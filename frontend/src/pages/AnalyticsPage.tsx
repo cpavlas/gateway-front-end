@@ -34,6 +34,7 @@ interface AnalyticsPageProps {
 }
 
 const TIME_WINDOWS: { key: TimeWindow; label: string }[] = [
+  { key: 'today', label: 'Today' },
   { key: '1h', label: 'Last 1h' },
   { key: '24h', label: 'Last 24h' },
   { key: '7d', label: 'Last 7d' },
@@ -45,7 +46,7 @@ export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
   onSelectTab,
 }) => {
   const queryClient = useQueryClient()
-  const [windowKey, setWindowKey] = useState<TimeWindow>('24h')
+  const [windowKey, setWindowKey] = useState<TimeWindow>('today')
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
   const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 

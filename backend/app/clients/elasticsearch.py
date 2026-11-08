@@ -33,6 +33,7 @@ NON_PUBLIC_WAN_CIDRS: list[str] = [
 ]
 
 TIME_WINDOW_CONFIG: dict[str, dict[str, str]] = {
+    "today": {"es_gte": "now/d", "interval": "1h", "label": "Today"},
     "1h": {"es_gte": "now-1h", "interval": "5m", "label": "Last 1 Hour"},
     "24h": {"es_gte": "now-24h", "interval": "1h", "label": "Last 24 Hours"},
     "7d": {"es_gte": "now-7d", "interval": "6h", "label": "Last 7 Days"},
@@ -60,6 +61,27 @@ def resolve_time_window(window: str | None) -> tuple[str, str, str]:
         )
     cfg = TIME_WINDOW_CONFIG[cleaned]
     return cleaned, cfg["es_gte"], cfg["interval"]
+
+
+def _round_es_gte(es_gte: str) -> str:
+    """Round relative ES date math to `/m` for shard cache reuse, preserving `/d`."""
+    if es_gte.endswith(("/m", "/d", "/h")):
+        return es_gte
+    return f"{es_gte}/m"
+
+
+def _build_timestamp_range_filter(
+    es_gte: str,
+    tz_name: str = "UTC",
+    *,
+    round_to_minute: bool = False,
+) -> dict[str, Any]:
+    """Construct an Elasticsearch `@timestamp` range filter (with `time_zone` for `now/d`)."""
+    target_gte = _round_es_gte(es_gte) if round_to_minute else es_gte
+    safe_tz = (tz_name or "UTC").strip() or "UTC"
+    if target_gte == "now/d":
+        return {"range": {"@timestamp": {"gte": target_gte, "time_zone": safe_tz}}}
+    return {"range": {"@timestamp": {"gte": target_gte}}}
 
 
 def sanitize_domain_search(raw_search: str | None) -> str | None:
@@ -399,13 +421,7 @@ def build_network_overview_query(
     return {
         "size": 0,
         "track_total_hits": False,
-        "query": {
-            "range": {
-                "@timestamp": {
-                    "gte": es_gte,
-                }
-            }
-        },
+        "query": _build_timestamp_range_filter(es_gte, safe_tz),
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
             "app_usage": _build_app_usage_agg(safe_tz, excluded_ips=excluded_ips),
@@ -611,7 +627,7 @@ def build_device_analytics_query(
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {"@timestamp": {"gte": es_gte}}},
+                    _build_timestamp_range_filter(es_gte, safe_tz),
                     {
                         "bool": {
                             "should": [
@@ -692,6 +708,7 @@ def build_device_recent_domains_query(
     window: str = "24h",
     domain_search: str | None = None,
     limit: int = 40,
+    tz_name: str = "UTC",
 ) -> dict[str, Any]:
     """Construct the Elasticsearch search query for chronological recent DNS queries by a device."""
     clean_ip = validate_ipv4_address(ipv4_address)
@@ -700,7 +717,7 @@ def build_device_recent_domains_query(
     safe_search = sanitize_domain_search(domain_search)
 
     filters: list[dict[str, Any]] = [
-        {"range": {"@timestamp": {"gte": es_gte}}},
+        _build_timestamp_range_filter(es_gte, tz_name),
         {"term": {"event.provider": "unbound"}},
         {
             "bool": {
@@ -901,7 +918,7 @@ def build_group_analytics_query(
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {"@timestamp": {"gte": es_gte}}},
+                    _build_timestamp_range_filter(es_gte, safe_tz),
                     {
                         "bool": {
                             "should": [
@@ -999,6 +1016,7 @@ def build_group_recent_domains_query(
     window: str = "24h",
     domain_search: str | None = None,
     limit: int = 40,
+    tz_name: str = "UTC",
 ) -> dict[str, Any]:
     """Construct the ES search query for chronological recent DNS queries across a group."""
     clean_ips = validate_ipv4_list(ipv4_addresses)
@@ -1007,7 +1025,7 @@ def build_group_recent_domains_query(
     safe_search = sanitize_domain_search(domain_search)
 
     filters: list[dict[str, Any]] = [
-        {"range": {"@timestamp": {"gte": es_gte}}},
+        _build_timestamp_range_filter(es_gte, tz_name),
         {"term": {"event.provider": "unbound"}},
         {
             "bool": {
@@ -1134,7 +1152,7 @@ def build_firewall_overview_query(
     safe_limit = max(1, min(int(recent_limit), 150))
 
     filters: list[dict[str, Any]] = [
-        {"range": {"@timestamp": {"gte": f"{es_gte}/m"}}},
+        _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
         {"term": {"event.provider": "filterlog"}},
     ]
 
@@ -1468,25 +1486,40 @@ def normalize_firewall_overview_response(
             if port_val is None:
                 continue
             d_port = int(port_val)
-            passed_cnt = int(pb.get("doc_count") or 0)
+            total_doc_cnt = int(pb.get("doc_count") or 0)
             proto_buckets = (pb.get("protocols") or {}).get("buckets") or []
             proto = str(proto_buckets[0].get("key") or "tcp") if proto_buckets else "tcp"
-            if proto.lower() == "udp" and d_port >= 52000 and passed_cnt < 2:
+            if proto.lower() == "udp" and d_port >= 52000 and total_doc_cnt < 2:
                 continue
+            if "in_window" in pb and isinstance(pb.get("in_window"), dict):
+                win_b = pb["in_window"]
+                passed_cnt = int(win_b.get("doc_count") or 0)
+                bytes_val = int(float((win_b.get("bytes") or {}).get("value") or 0))
+                uniq_src_val = int((win_b.get("unique_sources") or {}).get("value") or 0)
+                last_seen_val = (
+                    (win_b.get("last_seen") or {}).get("value_as_string")
+                    or (pb.get("last_seen") or {}).get("value_as_string")
+                )
+            else:
+                passed_cnt = total_doc_cnt
+                bytes_val = int(float((pb.get("bytes") or {}).get("value") or 0))
+                uniq_src_val = int((pb.get("unique_sources") or {}).get("value") or 0)
+                last_seen_val = (pb.get("last_seen") or {}).get("value_as_string")
             open_wan_ports.append(
                 {
                     "destination_ip": dest_ip,
                     "destination_port": d_port,
                     "protocol": proto,
                     "passed_packets": passed_cnt,
-                    "bytes": int(float((pb.get("bytes") or {}).get("value") or 0)),
-                    "unique_external_sources": int(
-                        (pb.get("unique_sources") or {}).get("value") or 0
-                    ),
-                    "last_seen_at": (pb.get("last_seen") or {}).get("value_as_string"),
+                    "bytes": bytes_val,
+                    "unique_external_sources": uniq_src_val,
+                    "last_seen_at": last_seen_val,
                 }
             )
-    open_wan_ports.sort(key=lambda item: item["passed_packets"], reverse=True)
+    open_wan_ports.sort(
+        key=lambda item: (item["passed_packets"], item["destination_port"]),
+        reverse=True,
+    )
 
     recent_events: list[dict[str, Any]] = []
     for hit in hits_meta.get("hits") or []:
@@ -1597,6 +1630,7 @@ def build_open_wan_port_sessions_query(
     window: str = "24h",
     search: str | None = None,
     recent_limit: int = 60,
+    tz_name: str = "UTC",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build paired `(aggs_body, recent_body)` queries for inspecting external WAN IPs
     connected to a specific active inbound open port (`FB-P13-002`).
@@ -1607,11 +1641,10 @@ def build_open_wan_port_sessions_query(
     if clean_proto not in ("tcp", "udp", "icmp", "ipv6-icmp", "igmp"):
         clean_proto = "tcp"
     _, es_gte, _ = resolve_time_window(window)
-    rounded_gte = es_gte if es_gte.endswith("/m") else f"{es_gte}/m"
     clean_search = sanitize_firewall_search(search)
 
     filters: list[dict[str, Any]] = [
-        {"range": {"@timestamp": {"gte": rounded_gte}}},
+        _build_timestamp_range_filter(es_gte, tz_name, round_to_minute=True),
         {"term": {"event.provider": "filterlog"}},
         {"term": {"event.action": "pass"}},
         {"term": {"destination.ip": valid_dest_ip}},
@@ -2113,13 +2146,15 @@ class ElasticsearchServiceClient:
                 aggs_all = dict(body.get("aggs") or {})
                 app_agg = aggs_all.pop("app_usage", None)
                 lan_agg = aggs_all.pop("lan_devices", None)
-                raw_gte = str(
-                    ((body.get("query") or {}).get("range") or {})
-                    .get("@timestamp", {})
-                    .get("gte", "now-24h")
+                ts_range = dict(
+                    ((body.get("query") or {}).get("range") or {}).get("@timestamp") or {}
                 )
-                rounded_gte = raw_gte if raw_gte.endswith("/m") else f"{raw_gte}/m"
-                range_q = {"range": {"@timestamp": {"gte": rounded_gte}}}
+                raw_gte = str(ts_range.get("gte", "now-24h"))
+                rounded_gte = _round_es_gte(raw_gte)
+                range_inner: dict[str, Any] = {"gte": rounded_gte}
+                if "time_zone" in ts_range:
+                    range_inner["time_zone"] = ts_range["time_zone"]
+                range_q = {"range": {"@timestamp": range_inner}}
 
                 q_core = {
                     "size": 0,
@@ -2257,6 +2292,7 @@ class ElasticsearchServiceClient:
             window=win_key,
             domain_search=domain_search,
             limit=recent_limit,
+            tz_name=self._tz,
         )
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
@@ -2307,6 +2343,7 @@ class ElasticsearchServiceClient:
             window=win_key,
             domain_search=domain_search,
             limit=recent_limit,
+            tz_name=self._tz,
         )
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
@@ -2436,13 +2473,43 @@ class ElasticsearchServiceClient:
                 }
                 wan_opt = dict(wan_agg) if isinstance(wan_agg, dict) else {}
                 wan_opt["filter"] = {"match_all": {}}
+                if win_key != "30d" and wan_opt:
+                    wan_aggs = dict(wan_opt.get("aggs") or {})
+                    by_dest = dict(wan_aggs.get("by_dest_ip") or {})
+                    by_dest_aggs = dict(by_dest.get("aggs") or {})
+                    by_port = dict(by_dest_aggs.get("by_port") or {})
+                    by_port_aggs = dict(by_port.get("aggs") or {})
+                    by_port_aggs["in_window"] = {
+                        "filter": base_filters[0],
+                        "aggs": {
+                            "bytes": {"sum": {"field": "network.bytes"}},
+                            "unique_sources": {
+                                "cardinality": {
+                                    "field": "source.ip",
+                                    "execution_hint": "direct",
+                                }
+                            },
+                            "last_seen": {"max": {"field": "@timestamp"}},
+                        },
+                    }
+                    by_port["aggs"] = by_port_aggs
+                    by_dest_aggs["by_port"] = by_port
+                    by_dest["aggs"] = by_dest_aggs
+                    wan_aggs["by_dest_ip"] = by_dest
+                    wan_opt["aggs"] = wan_aggs
+                wan_time_filter = (
+                    base_filters[0]
+                    if win_key == "30d"
+                    else {"range": {"@timestamp": {"gte": "now-30d/m"}}}
+                )
                 q_wan: dict[str, Any] = {
                     "size": 0,
                     "track_total_hits": False,
                     "query": {
                         "bool": {
                             "filter": [
-                                *base_filters,
+                                wan_time_filter,
+                                {"term": {"event.provider": "filterlog"}},
                                 {"term": {"event.action": "pass"}},
                                 {"term": {"observer.ingress.interface.name": "vtnet1"}},
                                 {"exists": {"field": "source.as.number"}},
@@ -2547,6 +2614,7 @@ class ElasticsearchServiceClient:
             window=win_key,
             search=search,
             recent_limit=recent_limit,
+            tz_name=self._tz,
         )
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()

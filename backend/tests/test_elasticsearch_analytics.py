@@ -26,9 +26,14 @@ from app.config import Settings
 
 def test_resolve_time_window_valid_and_invalid() -> None:
     assert resolve_time_window(None) == ("24h", "now-24h", "1h")
+    assert resolve_time_window("today") == ("today", "now/d", "1h")
     assert resolve_time_window("1h") == ("1h", "now-1h", "5m")
     assert resolve_time_window(" 7D ") == ("7d", "now-7d", "6h")
     assert resolve_time_window("30d") == ("30d", "now-30d", "1d")
+
+    q_today = build_network_overview_query(window="today", tz_name="America/Los_Angeles", top_n=8)
+    assert q_today["query"]["range"]["@timestamp"]["gte"] == "now/d"
+    assert q_today["query"]["range"]["@timestamp"]["time_zone"] == "America/Los_Angeles"
 
     with pytest.raises(ValueError, match="Unsupported time window"):
         resolve_time_window("90d")

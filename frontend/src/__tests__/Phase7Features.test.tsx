@@ -700,7 +700,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
 
     // Verify Bar Chart X/Y Axes and Stacked | Total toggle
     expect(screen.getByTestId('overview-timeline-y-axis')).toHaveTextContent('Events')
-    expect(screen.getByTestId('overview-timeline-x-axis')).toHaveTextContent('Time (24H Window)')
+    expect(screen.getByTestId('overview-timeline-x-axis')).toHaveTextContent('Time (TODAY Window)')
     expect(screen.getAllByTestId('timeline-dns-segment').length).toBeGreaterThan(0)
     await user.click(screen.getByTestId('overview-timeline-mode-total'))
     expect(screen.getAllByTestId('timeline-total-segment').length).toBeGreaterThan(0)
@@ -1223,7 +1223,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     await waitFor(() => {
       expect(firewallSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          window: '24h',
+          window: 'today',
           action: 'block',
           direction: 'outbound',
           protocol: 'tcp',

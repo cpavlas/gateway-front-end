@@ -21,14 +21,14 @@ from app.services.analytics_service import (
 
 router = APIRouter(prefix="/api/v1", tags=["analytics"])
 
-TimeWindowLiteral = Literal["1h", "24h", "7d", "30d"]
+TimeWindowLiteral = Literal["today", "1h", "24h", "7d", "30d"]
 
 
 @router.get("/analytics/overview", response_model=NetworkOverviewResponse)
 async def read_network_overview(
     window: TimeWindowLiteral = Query(
-        default="24h",
-        description="Analytics time window: 1h, 24h, 7d, or 30d.",
+        default="today",
+        description="Analytics time window: today, 1h, 24h, 7d, or 30d.",
     ),
     refresh: bool = Query(
         default=False,

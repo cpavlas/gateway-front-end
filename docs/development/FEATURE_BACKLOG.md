@@ -589,3 +589,17 @@
   - In [`frontend/src/components/FirewallOpenPortSessionsDrawer.tsx`](../../frontend/src/components/FirewallOpenPortSessionsDrawer.tsx), change the search input `placeholder` from `"Filter by external IP, city, country, or ISP/ASN..."` (which clips after `"or ISP/"` inside the input width) to `"Filter by external IP, city, country, or ISP"`.
 - **Complexity:** `1 / 5` (Low)
 - **Status:** `COMPLETED (Phase 15 — v1.2.0)`
+
+
+---
+
+### Area 13 — Phase 15.1 (`v1.2.1`) Hotfix & Time Window Selector Enhancement (`FB-P15-001`)
+
+#### `FB-P15-001` — Add `Today` Filter as the First & Default Time Window Selector Across All Views & Drawers
+- **User Feedback:**
+  - *"Lets also add one small item to this release to add a Today filter to time selectors that currently show 1hr / Last 24 hr / last 7 days etc. The today button should be the default and show as the first selection item."*
+- **Technical Evaluation & Planned Changes (`Phase 15.1 — v1.2.1`):**
+  - Add `"today": {"es_gte": "now/d", "interval": "1h", "label": "Today"}` (scoped to `00:00:00` in the configured local timezone `America/Los_Angeles` via `"time_zone": safe_tz` on `@timestamp` range queries and `resolve_window_cutoff_datetime()` in `plex_service.py`) and include `"today"` in `run_telemetry_cache_prewarm()`.
+  - Update `AnalyticsPage.tsx`, `FirewallPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, and `FirewallOpenPortSessionsDrawer.tsx` so `Today` (`'today'`) is the first option in the time window selector and the default active selection.
+- **Complexity:** `1.5 / 5` (Low–Medium)
+- **Status:** `COMPLETED (Phase 15.1 — v1.2.1)`

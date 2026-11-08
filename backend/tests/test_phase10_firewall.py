@@ -287,6 +287,64 @@ def test_build_and_normalize_firewall_overview_query_and_response() -> None:
     assert shared_overview.open_wan_ports[0].port_mapping == "32400:32400"
     assert shared_overview.open_wan_ports[1].port_mapping == "32401:32400"
 
+    # Regression test for BUG-P15-002: 30d open WAN port (e.g. WireGuard 51820/UDP)
+    # with 0 `in_window` packets in Today/24h stays visible with its 30d `last_seen_at`,
+    # and OPNsense `nat_port_mappings` entries are also merged when idle.
+    mock_wg_30d_raw: dict[str, Any] = {
+        **mock_raw_es,
+        "aggregations": {
+            **mock_raw_es["aggregations"],
+            "inbound_wan_passed": {
+                "by_dest_ip": {
+                    "buckets": [
+                        {
+                            "key": "192.168.1.200",
+                            "doc_count": 891,
+                            "by_port": {
+                                "buckets": [
+                                    {
+                                        "key": 51820,
+                                        "doc_count": 891,
+                                        "protocols": {
+                                            "buckets": [{"key": "udp", "doc_count": 891}]
+                                        },
+                                        "bytes": {"value": 128000},
+                                        "unique_sources": {"value": 2},
+                                        "last_seen": {
+                                            "value_as_string": "2026-11-06T18:43:09Z"
+                                        },
+                                        "in_window": {
+                                            "doc_count": 0,
+                                            "bytes": {"value": 0},
+                                            "unique_sources": {"value": 0},
+                                            "last_seen": {"value_as_string": None},
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
+            },
+        },
+    }
+    wg_norm = normalize_firewall_overview_response(mock_wg_30d_raw, window="today")
+    assert len(wg_norm["open_wan_ports"]) == 1
+    assert wg_norm["open_wan_ports"][0]["destination_port"] == 51820
+    assert wg_norm["open_wan_ports"][0]["passed_packets"] == 0
+    assert wg_norm["open_wan_ports"][0]["last_seen_at"] == "2026-11-06T18:43:09Z"
+
+    wg_overview = build_firewall_overview_response(
+        wg_norm,
+        [dev1, dev2],
+        settings,
+        window="today",
+        es_reachable=True,
+        nat_port_mappings={("192.168.1.55", 8443, "tcp"): 8443},
+    )
+    assert len(wg_overview.open_wan_ports) == 2
+    assert wg_overview.summary.open_wan_port_count == 2
+
     unreachable = build_firewall_overview_response(
         None,
         [dev1],
@@ -415,6 +473,10 @@ async def test_firewall_overview_api_endpoint(
         # Second call hits short-TTL cache
         cached_resp = await async_client.get("/api/v1/firewall/overview?window=24h")
         assert cached_resp.status_code == 200
+
+        # Verify `today` window query parameter is accepted by FastAPI `TimeWindowLiteral`
+        today_resp = await async_client.get("/api/v1/firewall/overview?window=today")
+        assert today_resp.status_code == 200
 
     # Test graceful fallback when Elasticsearch raises ElasticsearchQueryError
     with patch(
