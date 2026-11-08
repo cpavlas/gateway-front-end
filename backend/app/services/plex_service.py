@@ -6,6 +6,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,10 +32,20 @@ def clear_plex_live_cache() -> None:
 def resolve_window_cutoff_datetime(
     window: str,
     now_dt: datetime | None = None,
+    tz_name: str = "America/Los_Angeles",
 ) -> datetime:
-    """Return the UTC start `datetime` for a telemetry window (`1h`, `24h`, `7d`, `30d`)."""
+    """Return the UTC start `datetime` for a telemetry window (`today`, `1h`, `24h`, `7d`, `30d`).
+    """
     base_now = now_dt if now_dt is not None else datetime.now(UTC)
     clean_win = (window or "24h").strip().lower()
+    if clean_win == "today":
+        try:
+            tz = ZoneInfo((tz_name or "UTC").strip() or "UTC")
+        except Exception:
+            tz = ZoneInfo("UTC")
+        local_now = base_now.astimezone(tz)
+        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return local_midnight.astimezone(UTC)
     if clean_win == "1h":
         return base_now - timedelta(hours=1)
     if clean_win == "7d":

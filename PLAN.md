@@ -603,3 +603,12 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
      - **`FB-P14-003`:** In `AnalyticsPage.tsx` (`Top Active LAN Devices` table), replace the text `Inspect` button with a Magnifying Glass (`<Search />`) icon-only button.
      - **`FB-P14-004`:** In `FirewallOpenPortSessionsDrawer.tsx`, shorten the search input placeholder from `"Filter by external IP, city, country, or ISP/ASN..."` to `"Filter by external IP, city, country, or ISP"`.
 
+### Phase 15.1 (`v1.2.1` — COMPLETE): Open WAN Port Visibility Across All Windows (WireGuard `51820/UDP`) & `Today` Default Time Window Selector (`BUG-P15-002`, `FB-P15-001`)
+- **Deliverables:**
+  1. **Persistent Open WAN Port Visibility Across All Time Windows (`BUG-P15-002`):**
+     - Query `q_wan` (`inbound_wan_passed`) over a 30-day lookback (`now-30d/m`) with a nested `in_window` filter aggregation for the selected window's packet/byte/external-IP counts, and merge configured OPNsense Destination NAT rules (`nat_port_mappings`) so open WAN ports with `0` packets in shorter windows (`Today`, `1h`, `24h`)—such as **WireGuard (`51820:51820 / UDP`)**—always remain visible in **Active Inbound WAN Exposure (Open Ports)**.
+     - Document the `Firewall: NAT: Port Forward` (`page-firewall-nat-portforward`) privilege for `svc_gateway_ui` in `docs/API_KEYS_SETUP.md`.
+  2. **`Today` (`today`) Time Window Selector as First & Default Selection (`FB-P15-001`):**
+     - Add `Today` (`today`, from `00:00:00` local timezone to now with `1h` timeline buckets and background cache pre-warming) as the first and default selection across `AnalyticsPage`, `FirewallPage`, `DeviceAnalyticsDrawer`, `GroupAnalyticsDrawer`, and `FirewallOpenPortSessionsDrawer`.
+
+

@@ -21,14 +21,14 @@ from app.services.firewall_service import (
 
 router = APIRouter(prefix="/api/v1/firewall", tags=["firewall"])
 
-TimeWindowLiteral = Literal["1h", "24h", "7d", "30d"]
+TimeWindowLiteral = Literal["today", "1h", "24h", "7d", "30d"]
 
 
 @router.get("/overview", response_model=FirewallOverviewResponse)
 async def read_firewall_overview(
     window: TimeWindowLiteral = Query(
-        default="24h",
-        description="Firewall telemetry time window: 1h, 24h, 7d, or 30d.",
+        default="today",
+        description="Firewall telemetry time window: today, 1h, 24h, 7d, or 30d.",
     ),
     action: str | None = Query(
         default=None,

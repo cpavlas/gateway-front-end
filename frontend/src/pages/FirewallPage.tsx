@@ -38,6 +38,7 @@ interface FirewallPageProps {
 }
 
 const TIME_WINDOWS: { key: TimeWindow; label: string }[] = [
+  { key: 'today', label: 'Today' },
   { key: '1h', label: 'Last 1h' },
   { key: '24h', label: 'Last 24h' },
   { key: '7d', label: 'Last 7d' },
@@ -49,7 +50,7 @@ export const FirewallPage: React.FC<FirewallPageProps> = ({
   onSelectTab,
 }) => {
   const queryClient = useQueryClient()
-  const [windowKey, setWindowKey] = useState<TimeWindow>('24h')
+  const [windowKey, setWindowKey] = useState<TimeWindow>('today')
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [directionFilter, setDirectionFilter] = useState<string>('all')
   const [protocolFilter, setProtocolFilter] = useState<string>('all')

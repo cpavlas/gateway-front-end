@@ -534,6 +534,32 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Release Sign-Off (`v1.2.0`):**
   - All 5 verification sections (`Section A` through `Section E`) in `docs/development/Validation/PHASE15-Verify.md` passed user live validation on the first pass (`Validation complete with everything passing`).
 
+---
+
+## Phase 15.1 Exit Analysis & Unplanned-Information Retrospective (`v1.2.1` Patch Release — 2026-11-07)
+
+### 1. Phase 15.1 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`BUG-P15-002`, `FB-P15-001`):**
+  1. **`BUG-P15-002` — Persistent Open WAN Port Discovery Across All Time Windows (`clients/elasticsearch.py`, `services/firewall_service.py`, `docs/API_KEYS_SETUP.md`):**
+     - Updated `q_wan` (`inbound_wan_passed`) in `backend/app/clients/elasticsearch.py` to discover open WAN ports across a 30-day lookback (`now-30d/m`) while computing the selected window's `passed_packets`, `bytes`, and `unique_external_sources` inside a nested `in_window` filter aggregation.
+     - Updated `build_firewall_overview_response()` in `backend/app/services/firewall_service.py` to also merge configured OPNsense Destination NAT rules (`nat_port_mappings`) so newly created port-forward rules or open ports with `0` packets in shorter windows (`today`, `1h`, `24h`) remain visible in **Active Inbound WAN Exposure (Open Ports)** with their latest `Last Seen` timestamp (`2026-11-06T18:43:09Z` for WireGuard `51820:51820 / UDP`).
+     - Documented the `Firewall: NAT: Port Forward` (`page-firewall-nat-portforward`) privilege for `svc_gateway_ui` in `docs/API_KEYS_SETUP.md`.
+  2. **`FB-P15-001` — `Today` (`today`) Time Window Selector as First & Default Selection Across All Views & Drawers:**
+     - Added `"today": {"es_gte": "now/d", "interval": "1h", "label": "Today"}` scoped to `00:00:00` in the configured local timezone (`America/Los_Angeles`) across `elasticsearch.py`, `plex_service.py`, `main.py` (`run_telemetry_cache_prewarm()`), and FastAPI route query validators (`firewall.py`, `analytics.py`, `groups.py`).
+     - Updated `frontend/src/api/client.ts`, `AnalyticsPage.tsx`, `FirewallPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, and `FirewallOpenPortSessionsDrawer.tsx` so **`Today`** is the first selector button and the default active selection.
+- **Final Automated Quality Metrics (`v1.2.1` Patch Release):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `129 / 129` passed (`85%` coverage across `33` backend modules; `elasticsearch.py` `93%`, `firewall_service.py` `88%`, `api/firewall.py` `100%`), `0` ruff/SAST errors, `0` mypy issues across `33` source files.
+  - **Frontend (`vitest`, `tsc && vite build`):** `30 / 30` passed across `7` test suites (`90.98%` statement/line coverage), `0` build/type errors (`1.96s` build).
+
+### 2. Unplanned Information Audit & Release Retrospective (`v1.2.1`)
+- **Finding 1 — Decoupling Open-Port Discovery Horizon (`30d`) from Selected Window Metrics (`in_window`):**
+  - Because `inbound_wan_passed` only matches `rule.action="pass"` + `observer.ingress.interface.name="igc0"` + `not source.ip in RFC1918` (~`13,900` total documents over 30 days), running the `open_wan_ports` discovery bucket over `now-30d/m` adds `< 15 ms` while guaranteeing that sporadically used open ports (like WireGuard VPN `51820 / UDP`) never vanish when viewing `Today`, `Last 1h`, or `Last 24h`.
+- **Finding 2 — FastAPI Route `Literal` Query Synchronization (`BUG-P15-004`):**
+  - Adding a new time window key to `TIME_WINDOW_CONFIG` in `elasticsearch.py` also requires updating the `Literal[...]` query parameter annotations in `api/firewall.py`, `api/analytics.py`, and `api/groups.py`. Caught immediately by the live container HTTP smoke check and locked in with `test_firewall_overview_today_window_and_idle_open_port_discovery`.
+- **Release Sign-Off (`v1.2.1`):**
+  - Both verification sections (`Section A` and `Section B`) in `docs/development/Validation/PHASE15_1-Verify.md` passed user live validation (`[PASS]`).
+
+
 
 
 

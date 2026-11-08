@@ -1,6 +1,6 @@
 export type HealthLevel = 'healthy' | 'degraded' | 'unhealthy'
 export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected' | 'unassigned'
-export type TimeWindow = '1h' | '24h' | '7d' | '30d'
+export type TimeWindow = 'today' | '1h' | '24h' | '7d' | '30d'
 export type GroupColor = 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet' | 'slate'
 export type GroupAccessStatus = 'empty' | 'allowed' | 'partially_blocked' | 'blocked'
 export type OverrideMode = 'pause' | 'bonus'

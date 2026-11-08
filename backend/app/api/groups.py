@@ -34,7 +34,7 @@ from app.services.group_service import (
     update_group,
 )
 
-TimeWindow = Literal["1h", "24h", "7d", "30d"]
+TimeWindow = Literal["today", "1h", "24h", "7d", "30d"]
 
 router = APIRouter(prefix="/api/v1/groups", tags=["groups"])
 

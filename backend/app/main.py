@@ -112,7 +112,7 @@ async def run_telemetry_cache_prewarm(
         )
         if include_extended_windows or not force:
             cache = get_analytics_cache()
-            for ext_win in ("7d", "30d"):
+            for ext_win in ("today", "7d", "30d"):
                 if include_extended_windows or cache.get(f"overview:{ext_win}") is None:
                     await get_network_overview_analytics(
                         db=session,

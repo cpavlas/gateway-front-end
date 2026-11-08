@@ -36,6 +36,7 @@ interface GroupAnalyticsDrawerProps {
 }
 
 const TIME_WINDOWS: { key: TimeWindow; label: string }[] = [
+  { key: 'today', label: 'Today' },
   { key: '1h', label: 'Last 1h' },
   { key: '24h', label: 'Last 24h' },
   { key: '7d', label: 'Last 7d' },
@@ -44,7 +45,7 @@ const TIME_WINDOWS: { key: TimeWindow; label: string }[] = [
 
 export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
   groupId,
-  initialWindow = '24h',
+  initialWindow = 'today',
   onClose,
   onSelectDeviceId,
 }) => {
