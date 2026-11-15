@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import ipaddress
 import os
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.elasticsearch import ElasticsearchServiceClient
+from app.clients.elasticsearch import ElasticsearchServiceClient, parse_elasticsearch_hosts
 from app.clients.opnsense import OPNsenseClient, ServiceHealthStatus
-from app.clients.plex import PlexServiceClient
+from app.clients.plex import PlexServiceClient, parse_plex_urls
 from app.config import (
     DEFAULT_GATEWAY_IP,
     Settings,
@@ -117,6 +119,13 @@ class ConnectivityTestResponse(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class AllConnectivityTestResponse(BaseModel):
+    """Aggregated connectivity check results across OPNsense, Elasticsearch, and Plex."""
+
+    overall_reachable: bool
+    results: dict[str, ConnectivityTestResponse]
+
+
 def _derive_keystream(master_key: bytes, nonce: bytes, length: int) -> bytes:
     """Generate a deterministic SHA-256 counter keystream for secret encryption."""
     out = bytearray()
@@ -175,6 +184,24 @@ def validate_and_normalize_url(raw_url: str, field_name: str) -> str:
             f"{field_name} must start with http:// or https:// (got '{raw_url}')."
         )
     return cleaned
+
+
+def validate_and_normalize_elasticsearch_urls(raw_urls: str) -> str:
+    """Validate comma-separated Elasticsearch node URLs for HA failover (`FB-P16-002`)."""
+    parts = [item.strip().rstrip("/") for item in (raw_urls or "").split(",") if item.strip()]
+    if not parts:
+        raise ValueError("elasticsearch_url cannot be empty.")
+    normalized = [validate_and_normalize_url(part, "elasticsearch_url") for part in parts]
+    return ", ".join(dict.fromkeys(normalized))
+
+
+def validate_and_normalize_plex_urls(raw_urls: str) -> str:
+    """Validate comma-separated Plex Media Server URLs."""
+    parts = [item.strip().rstrip("/") for item in (raw_urls or "").split(",") if item.strip()]
+    if not parts:
+        return ""
+    normalized = [validate_and_normalize_url(part, "plex_base_url") for part in parts]
+    return ", ".join(dict.fromkeys(normalized))
 
 
 def validate_and_normalize_protected_ips(raw_ips: str) -> str:
@@ -270,6 +297,15 @@ def parse_setting_rows_to_overrides(
     return overrides
 
 
+def _normalize_utc_datetime(dt: datetime | None) -> datetime:
+    """Normalize naive or aware datetimes to timezone-aware UTC for safe comparison."""
+    if dt is None:
+        return datetime.fromtimestamp(0, tz=UTC)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def sync_runtime_cache_and_build_view(
     base_settings: Settings,
     rows: list[SystemSetting],
@@ -294,7 +330,11 @@ def sync_runtime_cache_and_build_view(
     )
     has_plex_tok = bool(raw_plex_tok.strip())
 
-    latest_row = max(rows, key=lambda r: r.updated_at) if rows else None
+    latest_row = (
+        max(rows, key=lambda r: _normalize_utc_datetime(r.updated_at))
+        if rows
+        else None
+    )
     return IntegrationSettingsView(
         source="ui_override" if rows else "env",
         opnsense_base_url=effective.opnsense_base_url,
@@ -319,7 +359,11 @@ def sync_runtime_cache_and_build_view(
         plex_verify_ssl=effective.plex_verify_ssl,
         plex_timeout_seconds=effective.plex_timeout_seconds,
         updated_by=latest_row.updated_by if latest_row else None,
-        updated_at=latest_row.updated_at.isoformat() if latest_row else None,
+        updated_at=(
+            _normalize_utc_datetime(latest_row.updated_at).isoformat()
+            if latest_row and latest_row.updated_at
+            else None
+        ),
     )
 
 
@@ -362,8 +406,8 @@ def build_temporary_settings_for_test(
         )
 
     if payload.elasticsearch_url is not None and payload.elasticsearch_url.strip():
-        updates["elasticsearch_url"] = validate_and_normalize_url(
-            payload.elasticsearch_url, "elasticsearch_url"
+        updates["elasticsearch_url"] = validate_and_normalize_elasticsearch_urls(
+            payload.elasticsearch_url
         )
     if (
         payload.elasticsearch_api_key is not None
@@ -391,12 +435,9 @@ def build_temporary_settings_for_test(
 
     if payload.plex_base_url is not None:
         clean_plex_url = payload.plex_base_url.strip()
-        if clean_plex_url:
-            updates["plex_base_url"] = validate_and_normalize_url(
-                clean_plex_url, "plex_base_url"
-            )
-        else:
-            updates["plex_base_url"] = ""
+        updates["plex_base_url"] = (
+            validate_and_normalize_plex_urls(clean_plex_url) if clean_plex_url else ""
+        )
     if (
         payload.plex_api_token is not None
         and payload.plex_api_token.strip() != MASKED_SECRET_PLACEHOLDER
@@ -497,6 +538,7 @@ def prepare_persisted_settings_rows(
             row.value_text = val_str
             row.is_secret = is_sec
             row.updated_by = actor
+            row.updated_at = datetime.now(UTC)
         else:
             new_rows.append(
                 SystemSetting(
@@ -642,6 +684,149 @@ async def reset_integration_settings_to_env(
     return sync_runtime_cache_and_build_view(base_settings, [])
 
 
+async def _probe_opnsense_with_nodes(
+    temp_settings: Settings,
+) -> tuple[ServiceHealthStatus, list[dict[str, Any]]]:
+    health = await OPNsenseClient(temp_settings).check_health()
+    node_results = [
+        {
+            "url": temp_settings.opnsense_base_url,
+            "reachable": health.status != "unhealthy",
+            "status": health.status,
+            "latency_ms": health.latency_ms,
+            "message": health.message,
+        }
+    ]
+    return health, node_results
+
+
+async def _probe_elasticsearch_with_nodes(
+    temp_settings: Settings,
+) -> tuple[ServiceHealthStatus, list[dict[str, Any]]]:
+    hosts = parse_elasticsearch_hosts(temp_settings.elasticsearch_url)
+    if len(hosts) <= 1:
+        health = await ElasticsearchServiceClient(temp_settings).check_health()
+        node_results = [
+            {
+                "url": hosts[0],
+                "reachable": health.status != "unhealthy",
+                "status": health.status,
+                "latency_ms": health.latency_ms,
+                "message": health.message,
+            }
+        ]
+        return health, node_results
+
+    overall_health, *per_host_statuses = await asyncio.gather(
+        ElasticsearchServiceClient(temp_settings).check_health(),
+        *[
+            ElasticsearchServiceClient(
+                temp_settings.model_copy(update={"elasticsearch_url": host})
+            ).check_health()
+            for host in hosts
+        ],
+    )
+    node_results = [
+        {
+            "url": host,
+            "reachable": st.status != "unhealthy",
+            "status": st.status,
+            "latency_ms": st.latency_ms,
+            "message": st.message,
+        }
+        for host, st in zip(hosts, per_host_statuses, strict=True)
+    ]
+    return overall_health, node_results
+
+
+async def _probe_plex_with_nodes(
+    temp_settings: Settings,
+    *,
+    optional_mode: bool = False,
+) -> tuple[ServiceHealthStatus, list[dict[str, Any]]]:
+    plex_urls = parse_plex_urls(temp_settings.plex_base_url)
+    base_client = PlexServiceClient(temp_settings)
+    if not base_client.is_configured:
+        if optional_mode:
+            health = ServiceHealthStatus(
+                service="plex",
+                status="degraded",
+                latency_ms=0.0,
+                message="Plex Media Server not configured (optional).",
+                details={"url": temp_settings.plex_base_url, "configured": False},
+            )
+        else:
+            health = await base_client.check_health()
+        node_results = [
+            {
+                "url": u,
+                "reachable": False,
+                "status": "unhealthy",
+                "latency_ms": 0.0,
+                "message": health.message,
+            }
+            for u in plex_urls
+        ]
+        return health, node_results
+
+    if len(plex_urls) <= 1:
+        health = await base_client.check_health()
+        target_u = plex_urls[0] if plex_urls else temp_settings.plex_base_url
+        node_results = [
+            {
+                "url": target_u,
+                "reachable": health.status != "unhealthy",
+                "status": health.status,
+                "latency_ms": health.latency_ms,
+                "message": health.message,
+            }
+        ]
+        return health, node_results
+
+    per_url_statuses = await asyncio.gather(
+        *[
+            PlexServiceClient(
+                temp_settings.model_copy(update={"plex_base_url": url})
+            ).check_health()
+            for url in plex_urls
+        ]
+    )
+    node_results = [
+        {
+            "url": url,
+            "reachable": st.status != "unhealthy",
+            "status": st.status,
+            "latency_ms": st.latency_ms,
+            "message": st.message,
+        }
+        for url, st in zip(plex_urls, per_url_statuses, strict=True)
+    ]
+    healthy_items = [st for st in per_url_statuses if st.status != "unhealthy"]
+    first_item = healthy_items[0] if healthy_items else per_url_statuses[0]
+    agg_status: Literal["healthy", "degraded", "unhealthy"]
+    if len(healthy_items) == len(per_url_statuses):
+        agg_status = "healthy"
+    elif healthy_items:
+        agg_status = "degraded"
+    else:
+        agg_status = "unhealthy"
+    health = ServiceHealthStatus(
+        service="plex",
+        status=agg_status,
+        latency_ms=round(max((st.latency_ms for st in per_url_statuses), default=0.0), 2),
+        message=(
+            f"{len(healthy_items)}/{len(plex_urls)} Plex server(s) reachable. "
+            f"{first_item.message}"
+        ),
+        details={
+            **dict(first_item.details or {}),
+            "url": ", ".join(plex_urls),
+            "configured": True,
+        },
+    )
+    return health, node_results
+
+
 async def run_connectivity_diagnostic(
     db: AsyncSession,
     base_settings: Settings,
@@ -656,17 +841,83 @@ async def run_connectivity_diagnostic(
 
     if service == "opnsense":
         target_url = temp_settings.opnsense_base_url
-        health = await OPNsenseClient(temp_settings).check_health()
+        health, node_results = await _probe_opnsense_with_nodes(temp_settings)
     elif service == "plex":
         target_url = temp_settings.plex_base_url or "plex://unconfigured"
-        health = await PlexServiceClient(temp_settings).check_health()
+        health, node_results = await _probe_plex_with_nodes(temp_settings)
     else:
         target_url = temp_settings.elasticsearch_url
-        health = await ElasticsearchServiceClient(temp_settings).check_health()
+        health, node_results = await _probe_elasticsearch_with_nodes(temp_settings)
 
     resp, audit = evaluate_connectivity_diagnostic_result(
         service, target_url, health, actor=actor
     )
+    resp.details["node_results"] = node_results
     db.add(audit)
     await db.commit()
     return resp
+
+
+async def run_all_connectivity_diagnostics(
+    db: AsyncSession,
+    base_settings: Settings,
+    payload: IntegrationSettingsUpdatePayload,
+    *,
+    actor: str,
+) -> AllConnectivityTestResponse:
+    """Run OPNsense, Elasticsearch, and Plex connectivity probes concurrently (`FB-P16-002`)."""
+    await load_runtime_settings_from_db(db, base_settings)
+    temp_settings = build_temporary_settings_for_test(base_settings, payload)
+
+    (opn_health, opn_nodes), (es_health, es_nodes), (plex_health, plex_nodes) = (
+        await asyncio.gather(
+            _probe_opnsense_with_nodes(temp_settings),
+            _probe_elasticsearch_with_nodes(temp_settings),
+            _probe_plex_with_nodes(temp_settings, optional_mode=True),
+        )
+    )
+
+    opn_resp, opn_audit = evaluate_connectivity_diagnostic_result(
+        "opnsense", temp_settings.opnsense_base_url, opn_health, actor=actor
+    )
+    opn_resp.details["node_results"] = opn_nodes
+
+    es_resp, es_audit = evaluate_connectivity_diagnostic_result(
+        "elasticsearch", temp_settings.elasticsearch_url, es_health, actor=actor
+    )
+    es_resp.details["node_results"] = es_nodes
+
+    if temp_settings.has_plex_configured:
+        plex_resp, plex_audit = evaluate_connectivity_diagnostic_result(
+            "plex",
+            temp_settings.plex_base_url or "plex://unconfigured",
+            plex_health,
+            actor=actor,
+        )
+        plex_resp.details["node_results"] = plex_nodes
+        audits = [opn_audit, es_audit, plex_audit]
+        overall_ok = opn_resp.reachable and es_resp.reachable and plex_resp.reachable
+    else:
+        plex_resp = ConnectivityTestResponse(
+            service="plex",
+            reachable=False,
+            status="degraded",
+            latency_ms=0.0,
+            message="Plex Media Server not configured (optional).",
+            details={"configured": False, "node_results": plex_nodes},
+        )
+        audits = [opn_audit, es_audit]
+        overall_ok = opn_resp.reachable and es_resp.reachable
+
+    for audit_row in audits:
+        db.add(audit_row)
+    await db.commit()
+
+    return AllConnectivityTestResponse(
+        overall_reachable=overall_ok,
+        results={
+            "opnsense": opn_resp,
+            "elasticsearch": es_resp,
+            "plex": plex_resp,
+        },
+    )

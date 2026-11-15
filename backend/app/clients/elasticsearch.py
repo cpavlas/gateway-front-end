@@ -64,10 +64,22 @@ def resolve_time_window(window: str | None) -> tuple[str, str, str]:
 
 
 def _round_es_gte(es_gte: str) -> str:
-    """Round relative ES date math to `/m` for shard cache reuse, preserving `/d`."""
+    """Round relative ES date math for high shard request cache hit rates (`Q4`)."""
     if es_gte.endswith(("/m", "/d", "/h")):
         return es_gte
+    if es_gte.startswith(("now-7d", "now-30d")):
+        return f"{es_gte}/h"
     return f"{es_gte}/m"
+
+
+def parse_elasticsearch_hosts(raw_url: str) -> list[str]:
+    """Split a comma-separated Elasticsearch URL string into normalized node URLs."""
+    hosts: list[str] = []
+    for item in (raw_url or "").split(","):
+        cleaned = item.strip().rstrip("/")
+        if cleaned and cleaned not in hosts:
+            hosts.append(cleaned)
+    return hosts or ["http://localhost:9200"]
 
 
 def _build_timestamp_range_filter(
@@ -421,7 +433,7 @@ def build_network_overview_query(
     return {
         "size": 0,
         "track_total_hits": False,
-        "query": _build_timestamp_range_filter(es_gte, safe_tz),
+        "query": _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
             "app_usage": _build_app_usage_agg(safe_tz, excluded_ips=excluded_ips),
@@ -627,7 +639,7 @@ def build_device_analytics_query(
         "query": {
             "bool": {
                 "filter": [
-                    _build_timestamp_range_filter(es_gte, safe_tz),
+                    _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
                     {
                         "bool": {
                             "should": [
@@ -743,6 +755,7 @@ def build_device_recent_domains_query(
 
     return {
         "size": safe_limit,
+        "track_total_hits": False,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "_source": [
             "@timestamp",
@@ -918,7 +931,7 @@ def build_group_analytics_query(
         "query": {
             "bool": {
                 "filter": [
-                    _build_timestamp_range_filter(es_gte, safe_tz),
+                    _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
                     {
                         "bool": {
                             "should": [
@@ -1051,6 +1064,7 @@ def build_group_recent_domains_query(
 
     return {
         "size": safe_limit,
+        "track_total_hits": False,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "_source": [
             "@timestamp",
@@ -1622,6 +1636,48 @@ def format_geo_location_label(
     return ", ".join(deduped)
 
 
+def _extract_hit_fields(hit: dict[str, Any]) -> dict[str, Any]:
+    """Return nested document fields from `_source` or ES `docvalue_fields` output (`Q1`)."""
+    src = hit.get("_source")
+    if isinstance(src, dict) and src:
+        return src
+    raw_fields = hit.get("fields") or {}
+    if not isinstance(raw_fields, dict):
+        return {}
+    nested: dict[str, Any] = {}
+    for dotted_key, raw_vals in raw_fields.items():
+        if isinstance(raw_vals, list):
+            if not raw_vals:
+                continue
+            val: Any = raw_vals[0]
+        else:
+            val = raw_vals
+        if dotted_key == "source.geo.location":
+            if isinstance(val, str) and "," in val:
+                parts = [p.strip() for p in val.split(",", 1)]
+                try:
+                    val = {"lat": float(parts[0]), "lon": float(parts[1])}
+                except ValueError:
+                    pass
+            elif isinstance(val, dict) and isinstance(val.get("coordinates"), list):
+                coords = val["coordinates"]
+                if len(coords) >= 2:
+                    try:
+                        val = {"lat": float(coords[1]), "lon": float(coords[0])}
+                    except (TypeError, ValueError):
+                        pass
+        cursor = nested
+        segments = str(dotted_key).split(".")
+        for seg in segments[:-1]:
+            existing = cursor.get(seg)
+            if not isinstance(existing, dict):
+                existing = {}
+                cursor[seg] = existing
+            cursor = existing
+        cursor[segments[-1]] = val
+    return nested
+
+
 def build_open_wan_port_sessions_query(
     *,
     destination_ip: str,
@@ -1730,6 +1786,7 @@ def build_open_wan_port_sessions_query(
                 "terms": {
                     "field": "source.ip",
                     "size": 50,
+                    "collect_mode": "breadth_first",
                 },
                 "aggs": {
                     "bytes": {"sum": {"field": "network.bytes"}},
@@ -1746,7 +1803,9 @@ def build_open_wan_port_sessions_query(
                     "latest_sample": {
                         "top_hits": {
                             "size": 1,
-                            "_source": source_fields,
+                            "sort": [{"@timestamp": {"order": "desc"}}],
+                            "_source": False,
+                            "docvalue_fields": source_fields,
                         }
                     },
                 },
@@ -1760,7 +1819,8 @@ def build_open_wan_port_sessions_query(
         "track_total_hits": False,
         "sort": [{"@timestamp": {"order": "desc"}}],
         "query": {"bool": {"filter": filters}},
-        "_source": source_fields,
+        "_source": False,
+        "docvalue_fields": source_fields,
     }
     return aggs_body, recent_body
 
@@ -1824,7 +1884,7 @@ def normalize_open_wan_port_sessions_response(
         sample_hits = (
             ((eb.get("latest_sample") or {}).get("hits") or {}).get("hits") or []
         )
-        sample_src = (sample_hits[0].get("_source") or {}) if sample_hits else {}
+        sample_src = _extract_hit_fields(sample_hits[0]) if sample_hits else {}
         source_obj = sample_src.get("source") or {}
         as_obj = source_obj.get("as") or {}
         geo_obj = source_obj.get("geo") or {}
@@ -1901,7 +1961,7 @@ def normalize_open_wan_port_sessions_response(
     recent_events: list[dict[str, Any]] = []
     hits_list = ((recent_resp.get("hits") or {}).get("hits")) or []
     for hit in hits_list:
-        src = hit.get("_source") or {}
+        src = _extract_hit_fields(hit)
         s_obj = src.get("source") or {}
         s_as = s_obj.get("as") or {}
         s_geo = s_obj.get("geo") or {}
@@ -1968,7 +2028,8 @@ class ElasticsearchServiceClient:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._url = settings.elasticsearch_url
+        self._hosts = parse_elasticsearch_hosts(settings.elasticsearch_url)
+        self._url = ", ".join(self._hosts)
         self._api_key = settings.elasticsearch_api_key.get_secret_value()
         self._verify_certs = settings.elasticsearch_verify_ssl
         self._ca_certs = settings.elasticsearch_ca_cert_path.strip() or None
@@ -1977,13 +2038,16 @@ class ElasticsearchServiceClient:
         self._tz = settings.tz
 
     def create_es_client(self) -> AsyncElasticsearch:
-        """Instantiate an AsyncElasticsearch v9 client."""
+        """Instantiate an AsyncElasticsearch v9 client (with multi-node HA failover)."""
         kwargs: dict[str, Any] = {
-            "hosts": [self._url],
+            "hosts": self._hosts,
             "api_key": self._api_key,
             "verify_certs": self._verify_certs,
             "request_timeout": self._timeout,
         }
+        if len(self._hosts) > 1:
+            kwargs["retry_on_timeout"] = True
+            kwargs["max_retries"] = 2
         if self._ca_certs:
             kwargs["ca_certs"] = self._ca_certs
         return AsyncElasticsearch(**kwargs)
@@ -2006,9 +2070,9 @@ class ElasticsearchServiceClient:
         )
         if use_msearch:
             searches: list[dict[str, Any]] = [
-                {"index": target_pattern},
+                {"index": target_pattern, "request_cache": True},
                 aggs_body,
-                {"index": target_pattern},
+                {"index": target_pattern, "request_cache": False},
                 recent_body,
             ]
             mresp = await client.msearch(
@@ -2065,6 +2129,7 @@ class ElasticsearchServiceClient:
             assigned_shards = 0
             unassigned_shards = 0
             relocating_shards = 0
+            cluster_nodes = 0
             try:
                 health_resp = await client.cluster.health()
                 if hasattr(health_resp, "get"):
@@ -2074,6 +2139,7 @@ class ElasticsearchServiceClient:
                         assigned_shards = int(health_resp.get("active_shards", 0) or 0)
                         unassigned_shards = int(health_resp.get("unassigned_shards", 0) or 0)
                         relocating_shards = int(health_resp.get("relocating_shards", 0) or 0)
+                        cluster_nodes = int(health_resp.get("number_of_nodes", 0) or 0)
             except Exception:  # noqa: S110
                 pass
 
@@ -2088,6 +2154,9 @@ class ElasticsearchServiceClient:
                 ),
                 details={
                     "url": self._url,
+                    "configured_nodes": self._hosts,
+                    "configured_node_count": len(self._hosts),
+                    "cluster_nodes": cluster_nodes,
                     "cluster_name": cluster_name,
                     "version": es_version,
                     "index_patterns": self._index_patterns,
@@ -2182,19 +2251,17 @@ class ElasticsearchServiceClient:
                 q_lan = {
                     "size": 0,
                     "track_total_hits": False,
-                    "query": range_q,
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                range_q,
+                                {"terms": {"source.ip": RFC1918_CIDRS}},
+                            ]
+                        }
+                    },
                     "aggs": {"lan_devices": lan_agg_opt} if lan_agg_opt else {},
                 }
-                if isinstance(app_agg, dict):
-                    app_agg_opt = dict(app_agg)
-                    app_sub = dict(app_agg_opt.get("aggs") or {})
-                    by_dev_obj = dict(app_sub.get("by_device") or {})
-                    if "filter" in by_dev_obj:
-                        by_dev_obj["filter"] = {"match_all": {}}
-                        app_sub["by_device"] = by_dev_obj
-                        app_agg_opt["aggs"] = app_sub
-                else:
-                    app_agg_opt = app_agg
+                app_agg_opt = app_agg
                 yt_f = (
                     ((app_agg_opt or {}).get("filters") or {})
                     .get("filters", {})
@@ -2225,11 +2292,11 @@ class ElasticsearchServiceClient:
                 }
                 mresp = await client.msearch(
                     searches=[
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_core,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_lan,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_app,
                     ],
                     ignore_unavailable=True,
@@ -2500,7 +2567,7 @@ class ElasticsearchServiceClient:
                 wan_time_filter = (
                     base_filters[0]
                     if win_key == "30d"
-                    else {"range": {"@timestamp": {"gte": "now-30d/m"}}}
+                    else {"range": {"@timestamp": {"gte": "now-30d/h"}}}
                 )
                 q_wan: dict[str, Any] = {
                     "size": 0,
@@ -2520,15 +2587,15 @@ class ElasticsearchServiceClient:
                 }
                 mresp = await client.msearch(
                     searches=[
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_core,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_blocked,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_ext_blocked,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": True},
                         q_wan,
-                        {"index": target_pattern},
+                        {"index": target_pattern, "request_cache": False},
                         recent_body,
                     ],
                     ignore_unavailable=True,

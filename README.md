@@ -20,6 +20,8 @@ Self-hosted, single-container Dockerized web application (`http://localhost:8080
    - Stacked activity timelines (Unbound DNS Queries vs. Firewall Filterlog Events), 24-hour access distribution profiles, Top Visited Domains, Top Destination Organizations (ASN), searchable chronological DNS query feeds, and **YouTube & Plex Active Usage Time** tracking (`active_minutes` derived from 5-minute activity windows).
 6. **System Connectivity, SQLite Telemetry, Audit History & Configuration Backup/Restore (Phase 7):**
    - Live health probes for OPNsense, Elasticsearch, and Local SQLite Store (including on-disk **Storage Size** and **Record Count** stats), filterable **Audit & Event History** (with 90-day retention pruning), and one-click **JSON Configuration Export & Restore**.
+7. **Global Quick Search Keyboard Shortcut (`Ctrl+K` / `Cmd+K`):**
+   - Press `Ctrl+K` (Windows/Linux) or `Cmd+K` (macOS) from any screen to open the Global Quick Search modal for instant device, group, schedule, and navigation lookup.
 
 ---
 

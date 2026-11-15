@@ -5,6 +5,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  KeyRound,
   Laptop,
   LogOut,
   Palette,
@@ -13,7 +14,8 @@ import {
   UserCheck,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import type { HealthLevel, ThemePreference } from '../api/client'
+import { apiClient, type HealthLevel, type ThemePreference } from '../api/client'
+import { GlobalQuickSearchModal } from './GlobalQuickSearchModal'
 import { UnicornLogo } from './UnicornLogo'
 
 export type AppTab = 'devices' | 'schedules' | 'analytics' | 'firewall' | 'status'
@@ -60,6 +62,20 @@ const THEME_OPTIONS: {
     bgSwatch: '#091326',
     accentSwatch: '#2b7ad9',
   },
+  {
+    key: 'emerald',
+    label: 'Emerald & Forest',
+    description: 'Deep pine surfaces & soft mint accents',
+    bgSwatch: '#081e15',
+    accentSwatch: '#10b981',
+  },
+  {
+    key: 'amber',
+    label: 'Amber & Carbon',
+    description: 'Warm carbon surfaces & soft gold accents',
+    bgSwatch: '#1c1508',
+    accentSwatch: '#f59e0b',
+  },
 ]
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -71,6 +87,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
   const { user, themePreference, updateThemePreference, logout } = useAuth()
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null)
+  const [pwdError, setPwdError] = useState<string | null>(null)
   const [systemClock, setSystemClock] = useState<string>(() =>
     new Date().toLocaleTimeString('en-GB', { hour12: false }),
   )
@@ -81,6 +105,47 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }, 1000)
     return () => window.clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setIsQuickSearchOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwdError(null)
+    setPwdSuccess(null)
+    if (!currentPassword || !newPassword) {
+      setPwdError('Current and new passwords are required.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError('New password and confirmation do not match.')
+      return
+    }
+    setPwdSaving(true)
+    try {
+      const resp = await apiClient.changeOwnPassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      })
+      setPwdSuccess(resp.message || 'Password updated successfully.')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      setPwdError(err instanceof Error ? err.message : 'Failed to update password.')
+    } finally {
+      setPwdSaving(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -186,74 +251,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-3">
-            {onSelectTab && (
-              <div className="flex md:hidden items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('devices')}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    activeTab === 'devices'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  Devices
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('schedules')}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    activeTab === 'schedules'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  Schedules
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('analytics')}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    activeTab === 'analytics'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  Analytics
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('firewall')}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    activeTab === 'firewall'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  Firewall
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('status')}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    activeTab === 'status'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  System
-                </button>
-              </div>
-            )}
-
             {overallStatus && (
-              <div
+              <button
+                type="button"
                 data-testid="overall-health-badge"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${STATUS_BADGE_STYLES[overallStatus]}`}
+                onClick={() => onSelectTab?.('status')}
+                title="View System Connectivity & Health"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide transition hover:opacity-90 cursor-pointer ${STATUS_BADGE_STYLES[overallStatus]}`}
               >
                 <Activity className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>{overallStatus === 'unhealthy' ? 'DOWN' : overallStatus}</span>
-              </div>
+              </button>
             )}
 
             {user && (
@@ -274,7 +282,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {isUserMenuOpen && (
                   <div
                     data-testid="header-user-menu-popover"
-                    className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-700 bg-slate-900 p-3.5 shadow-2xl z-50 space-y-3"
+                    className="absolute right-0 mt-2 w-72 max-h-[80vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-3.5 shadow-2xl z-50 space-y-3"
                   >
                     <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
                       <div>
@@ -344,6 +352,88 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         })}
                       </div>
                     </div>
+
+                    <div className="border-t border-slate-800 pt-2.5 space-y-2">
+                      <button
+                        type="button"
+                        data-testid="user-menu-change-password-toggle"
+                        onClick={() => {
+                          setShowChangePassword((prev) => !prev)
+                          setPwdError(null)
+                          setPwdSuccess(null)
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:border-indigo-500/40 cursor-pointer"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <KeyRound className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
+                          <span>Change My Password</span>
+                        </span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                            showChangePassword ? 'rotate-180' : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {showChangePassword && (
+                        <form
+                          onSubmit={(e) => {
+                            void handlePasswordSubmit(e)
+                          }}
+                          className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5"
+                        >
+                          <input
+                            type="password"
+                            data-testid="current-password-input"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="Current password"
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          />
+                          <input
+                            type="password"
+                            data-testid="new-password-input"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="New password (min 12 chars)"
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          />
+                          <input
+                            type="password"
+                            data-testid="confirm-password-input"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="Confirm new password"
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          />
+                          {pwdError && (
+                            <p
+                              data-testid="change-password-error"
+                              className="text-[11px] text-rose-300"
+                            >
+                              {pwdError}
+                            </p>
+                          )}
+                          {pwdSuccess && (
+                            <p
+                              data-testid="change-password-success"
+                              className="text-[11px] text-emerald-300"
+                            >
+                              {pwdSuccess}
+                            </p>
+                          )}
+                          <button
+                            type="submit"
+                            data-testid="submit-change-password-btn"
+                            disabled={pwdSaving}
+                            className="w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+                          >
+                            {pwdSaving ? 'Updating...' : 'Update Password'}
+                          </button>
+                        </form>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -361,9 +451,79 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 pt-8 pb-20 sm:px-6 md:pb-8 lg:px-8">
         {children}
       </main>
+
+      {onSelectTab && (
+        <nav
+          data-testid="mobile-bottom-nav"
+          aria-label="Mobile navigation"
+          className="md:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 border-t border-slate-800 bg-slate-900/95 backdrop-blur px-1 py-1.5"
+        >
+          <button
+            type="button"
+            data-testid="mobile-nav-tab-devices"
+            onClick={() => onSelectTab('devices')}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-semibold ${
+              activeTab === 'devices' ? 'text-indigo-300 bg-indigo-500/15' : 'text-slate-400'
+            }`}
+          >
+            <Laptop className="h-4 w-4" aria-hidden="true" />
+            <span>Devices</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mobile-nav-tab-schedules"
+            onClick={() => onSelectTab('schedules')}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-semibold ${
+              activeTab === 'schedules' ? 'text-indigo-300 bg-indigo-500/15' : 'text-slate-400'
+            }`}
+          >
+            <CalendarClock className="h-4 w-4" aria-hidden="true" />
+            <span>Schedules</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mobile-nav-tab-analytics"
+            onClick={() => onSelectTab('analytics')}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-semibold ${
+              activeTab === 'analytics' ? 'text-indigo-300 bg-indigo-500/15' : 'text-slate-400'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" aria-hidden="true" />
+            <span>Analytics</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mobile-nav-tab-firewall"
+            onClick={() => onSelectTab('firewall')}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-semibold ${
+              activeTab === 'firewall' ? 'text-indigo-300 bg-indigo-500/15' : 'text-slate-400'
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+            <span>Firewall</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mobile-nav-tab-status"
+            onClick={() => onSelectTab('status')}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-semibold ${
+              activeTab === 'status' ? 'text-indigo-300 bg-indigo-500/15' : 'text-slate-400'
+            }`}
+          >
+            <Server className="h-4 w-4" aria-hidden="true" />
+            <span>System</span>
+          </button>
+        </nav>
+      )}
+
+      <GlobalQuickSearchModal
+        isOpen={isQuickSearchOpen}
+        onClose={() => setIsQuickSearchOpen(false)}
+        onSelectTab={onSelectTab}
+      />
     </div>
   )
 }

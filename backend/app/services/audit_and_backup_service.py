@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -45,7 +45,17 @@ class AuditLogListResponse(BaseModel):
     """Response payload for GET /api/v1/audit-logs."""
 
     total_count: int
+    offset: int = 0
+    limit: int = 50
     items: list[AuditLogItem]
+
+
+class AuditLogPruneResponse(BaseModel):
+    """Response payload for POST /api/v1/system/audit-logs/prune (`FB-P16-004`)."""
+
+    deleted_count: int
+    retention_days: int
+    audit_label: str | None = None
 
 
 class ConfigBackupDeviceItem(BaseModel):
@@ -126,6 +136,7 @@ def filter_and_paginate_audit_logs(
     action_filter: str | None = None,
     audit_label_filter: str | None = None,
     search: str | None = None,
+    offset: int = 0,
     limit: int = 50,
 ) -> AuditLogListResponse:
     """Sort, filter, and slice `AuditLog` rows in pure Python for deterministic test coverage."""
@@ -167,8 +178,15 @@ def filter_and_paginate_audit_logs(
         ]
 
     safe_limit = max(1, min(int(limit), 250))
-    items = [build_audit_log_item(r) for r in filtered[:safe_limit]]
-    return AuditLogListResponse(total_count=len(filtered), items=items)
+    safe_offset = max(0, int(offset))
+    sliced = filtered[safe_offset : safe_offset + safe_limit]
+    items = [build_audit_log_item(r) for r in sliced]
+    return AuditLogListResponse(
+        total_count=len(filtered),
+        offset=safe_offset,
+        limit=safe_limit,
+        items=items,
+    )
 
 
 def assemble_backup_payload(
@@ -385,12 +403,67 @@ async def prune_old_audit_logs(db: AsyncSession, retention_days: int = 90) -> in
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+async def prune_audit_logs_by_criteria(
+    db: AsyncSession,
+    *,
+    retention_days: int = 7,
+    audit_label: str | None = "PERFORMANCE_ANALYSIS",
+    actor: str = "admin",
+) -> AuditLogPruneResponse:
+    """Prune audit logs older than `retention_days` (optionally scoped by `audit_label`)."""
+    safe_days = max(0, min(int(retention_days), 3650))
+    cutoff = utc_now() - timedelta(days=safe_days)
+    conditions: list[object] = []
+    if safe_days > 0:
+        conditions.append(AuditLog.created_at < cutoff)
+
+    clean_label = (audit_label or "").strip().upper() or None
+    if clean_label and clean_label != "ALL":
+        if clean_label == "PERFORMANCE_ANALYSIS":
+            conditions.append(
+                or_(
+                    AuditLog.audit_label == clean_label,
+                    AuditLog.action.like("performance.%"),
+                )
+            )
+        else:
+            conditions.append(AuditLog.audit_label == clean_label)
+    else:
+        clean_label = None
+
+    stmt = delete(AuditLog)
+    if conditions:
+        stmt = stmt.where(*conditions)  # type: ignore[arg-type]
+    result = await db.execute(stmt)
+    deleted_count = int(getattr(result, "rowcount", 0) or 0)
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="audit.prune",
+            audit_label="SYSTEM",
+            target=clean_label or "all_logs",
+            status="success",
+            details=(
+                f"Pruned {deleted_count} audit log record(s) "
+                f"(label={clean_label or 'ALL'}, retention_days={safe_days})."
+            ),
+        )
+    )
+    await db.commit()
+    return AuditLogPruneResponse(
+        deleted_count=deleted_count,
+        retention_days=safe_days,
+        audit_label=clean_label,
+    )
+
+
 async def list_audit_logs(
     db: AsyncSession,
     *,
     action_filter: str | None = None,
     audit_label_filter: str | None = None,
     search: str | None = None,
+    offset: int = 0,
     limit: int = 50,
 ) -> AuditLogListResponse:
     """Prune expired (>90d) audit logs and return filtered/paginated audit history."""
@@ -401,6 +474,7 @@ async def list_audit_logs(
         action_filter=action_filter,
         audit_label_filter=audit_label_filter,
         search=search,
+        offset=offset,
         limit=limit,
     )
 

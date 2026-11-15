@@ -16,23 +16,28 @@ from app import __version__
 from app.auth import AuthUserResponse, require_admin_role, require_admin_session
 from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.clients.opnsense import OPNsenseClient, ServiceHealthStatus
+from app.clients.plex import PlexServiceClient
 from app.config import Settings, apply_runtime_overrides, get_settings
 from app.db import get_db_session
 from app.services.audit_and_backup_service import (
     AuditLogListResponse,
+    AuditLogPruneResponse,
     ConfigBackupPayload,
     ConfigRestoreSummary,
     export_configuration_backup,
     list_audit_logs,
+    prune_audit_logs_by_criteria,
     restore_configuration_backup,
 )
 from app.services.runtime_settings_service import (
+    AllConnectivityTestResponse,
     ConnectivityTestResponse,
     IntegrationSettingsUpdatePayload,
     IntegrationSettingsView,
     get_integration_settings,
     load_runtime_settings_from_db,
     reset_integration_settings_to_env,
+    run_all_connectivity_diagnostics,
     run_connectivity_diagnostic,
     update_integration_settings,
 )
@@ -199,15 +204,33 @@ async def system_health(
     elasticsearch: ElasticsearchServiceClient = Depends(get_elasticsearch_client),
     settings: Settings = Depends(get_settings),
 ) -> SystemHealthResponse:
-    """Check live connectivity and credentials for SQLite, OPNsense, and Elasticsearch."""
+    """Check live connectivity and credentials for SQLite, OPNsense, Elasticsearch, and Plex."""
     await load_runtime_settings_from_db(db, settings)
-    sqlite_status, opnsense_status, es_status = await asyncio.gather(
+    effective_settings = apply_runtime_overrides(settings)
+    plex_client = PlexServiceClient(effective_settings)
+
+    async def _probe_plex() -> ServiceHealthStatus:
+        if not plex_client.is_configured:
+            return ServiceHealthStatus(
+                service="plex",
+                status="degraded",
+                latency_ms=0.0,
+                message="Plex Media Server not configured (optional).",
+                details={"url": "", "configured": False},
+            )
+        return await plex_client.check_health()
+
+    sqlite_status, opnsense_status, es_status, plex_status = await asyncio.gather(
         check_sqlite_health(db, settings),
         opnsense.check_health(),
         elasticsearch.check_health(),
+        _probe_plex(),
     )
 
     statuses = {sqlite_status.status, opnsense_status.status, es_status.status}
+    if plex_client.is_configured:
+        statuses.add(plex_status.status)
+
     overall: Literal["healthy", "degraded", "unhealthy"]
     if "unhealthy" in statuses:
         overall = "unhealthy"
@@ -223,6 +246,7 @@ async def system_health(
             "sqlite": sqlite_status,
             "opnsense": opnsense_status,
             "elasticsearch": es_status,
+            "plex": plex_status,
         },
     )
 
@@ -235,17 +259,35 @@ async def get_audit_logs(
         default=None, description="Filter by audit_label badge category."
     ),
     search: str | None = Query(default=None, description="Search actor, target, or details."),
+    offset: int = Query(default=0, ge=0, description="Pagination offset."),
     limit: int = Query(default=50, ge=1, le=250),
     _current_user: AuthUserResponse = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db_session),
 ) -> AuditLogListResponse:
-    """List audit history records with optional action/label/search filter and 90d pruning."""
+    """List audit history records with optional action/label/search filter and pagination."""
     return await list_audit_logs(
         db,
         action_filter=action,
         audit_label_filter=audit_label,
         search=search,
+        offset=offset,
         limit=limit,
+    )
+
+
+@router.post("/audit-logs/prune", response_model=AuditLogPruneResponse)
+async def post_prune_audit_logs(
+    retention_days: int = Query(default=7, ge=0, le=3650),
+    audit_label: str | None = Query(default="PERFORMANCE_ANALYSIS"),
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    db: AsyncSession = Depends(get_db_session),
+) -> AuditLogPruneResponse:
+    """Prune historical audit records (default: PERFORMANCE_ANALYSIS older than 7 days)."""
+    return await prune_audit_logs_by_criteria(
+        db,
+        retention_days=retention_days,
+        audit_label=audit_label,
+        actor=current_user.username,
     )
 
 
@@ -374,6 +416,28 @@ async def post_test_plex_connectivity(
             db,
             settings,
             "plex",
+            payload,
+            actor=current_user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/settings/test-all", response_model=AllConnectivityTestResponse)
+async def post_test_all_connectivity(
+    payload: IntegrationSettingsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_role),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> AllConnectivityTestResponse:
+    """Test OPNsense, Elasticsearch, and Plex connectivity in one parallel action (`FB-P16-002`)."""
+    try:
+        return await run_all_connectivity_diagnostics(
+            db,
+            settings,
             payload,
             actor=current_user.username,
         )

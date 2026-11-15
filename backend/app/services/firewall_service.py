@@ -21,7 +21,11 @@ from app.clients.elasticsearch import (
 from app.clients.opnsense import OPNsenseClient
 from app.config import Settings
 from app.models import Device
-from app.services.analytics_service import TimelineBucketItem, get_analytics_cache
+from app.services.analytics_service import (
+    TimelineBucketItem,
+    get_analytics_cache,
+    resolve_telemetry_cache_ttl,
+)
 from app.services.audit_and_backup_service import (
     record_performance_analysis_audit_log,
     record_upstream_error_audit_log,
@@ -441,7 +445,7 @@ async def get_firewall_overview_analytics(
             protocol=clean_proto if clean_proto != "all" else None,
             search=clean_search or None,
         )
-        ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+        ttl = resolve_telemetry_cache_ttl(win_key)
         if window_aggs is None:
             window_aggs = {
                 "summary": es_data.get("summary"),
@@ -727,7 +731,7 @@ async def get_open_wan_port_sessions(
             window=win_key,
             search=clean_search or None,
         )
-        ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+        ttl = resolve_telemetry_cache_ttl(win_key)
         cache.set(cache_key, es_data, ttl_seconds=ttl)
         resp = build_open_wan_port_sessions_response(
             es_data,

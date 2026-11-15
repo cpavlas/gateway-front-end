@@ -12,7 +12,12 @@ const THEME_STORAGE_KEY = 'gateway_theme_preference'
 
 export function normalizeThemePreference(raw?: string | null): ThemePreference {
   const cleaned = (raw || '').trim().toLowerCase()
-  if (cleaned === 'crimson' || cleaned === 'ocean') {
+  if (
+    cleaned === 'crimson' ||
+    cleaned === 'ocean' ||
+    cleaned === 'emerald' ||
+    cleaned === 'amber'
+  ) {
     return cleaned
   }
   return 'default'

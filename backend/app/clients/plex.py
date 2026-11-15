@@ -251,12 +251,23 @@ def normalize_plex_history_payload(
     return records
 
 
+def parse_plex_urls(raw_url: str) -> list[str]:
+    """Split a comma-separated Plex Media Server URL string into normalized URLs."""
+    urls: list[str] = []
+    for item in (raw_url or "").split(","):
+        cleaned = item.strip().rstrip("/")
+        if cleaned and cleaned not in urls:
+            urls.append(cleaned)
+    return urls
+
+
 class PlexServiceClient:
     """Async HTTP client for Plex Media Server session and playback telemetry (`FB-P9-005`)."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._base_url = settings.plex_base_url.strip().rstrip("/")
+        self._urls = parse_plex_urls(settings.plex_base_url)
+        self._base_url = self._urls[0] if self._urls else ""
         raw_tok = (
             settings.plex_api_token.get_secret_value()
             if isinstance(settings.plex_api_token, SecretStr)

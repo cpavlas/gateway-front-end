@@ -18,9 +18,9 @@
 | **`FB-P4-004`** | Devices & Access Control Tab | Internet Access column button: remove `— Click to Block` / `— Click to Allow` and show only current state (`Blocked` / `Allowed`) | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-005`** | Analytics Pop-Out Drawer | Remove ``(`dns.question.name`)`` from `Top Visited Domains` panel title | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-006`** | Analytics Pop-Out Drawer | Convert `Usage & Activity Timeline` bar chart to a **Stacked Bar Graph** (distinct colors for **DNS Queries** vs. **Firewall Events**, visible color legend, and breakdown in hover tooltip) | Data Visualization | `1.5 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
-| **`FB-P4-007`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each domain in `Top Visited Domains` to block that domain on the viewed device | New Control Feature (Per-Device Domain Block) | `4 / 5` | **Phase 6 / 7** *(Needs Architecture Sign-Off)* | `EVALUATING` |
-| **`FB-P4-008`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each organization in `Top Destination Organizations (ASN)` to block that ASN on the viewed device | New Control Feature (Per-Device ASN Block) | `4 / 5` | **Phase 6 / 7** *(Needs Architecture Sign-Off)* | `EVALUATING` |
-| **`FB-P4-009`** | Analytics Pop-Out Drawer | Add **Blocked Domains & ASN Organizations** panel below `Chronological Recent DNS Queries` with an **Unblock / Remove** button per item | New Control Feature (Per-Device Block Management UI) | `3 / 5` | **Phase 6 / 7** *(Paired with `FB-P4-007` & `008`)* | `EVALUATING` |
+| **`FB-P4-007`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each domain in `Top Visited Domains` to block that domain on the viewed device | New Control Feature (Per-Device Domain Block) | `4 / 5` | **Phase 18 (`v1.3.0-rc3`)** *(Bundled with `FB-P18-001`)* | `SCHEDULED (Phase 18)` |
+| **`FB-P4-008`** | Analytics Pop-Out Drawer | Add per-device **Block** button next to each organization in `Top Destination Organizations (ASN)` to block that ASN on the viewed device | New Control Feature (Per-Device ASN Block) | `4 / 5` | **Phase 18 (`v1.3.0-rc3`)** *(Bundled with `FB-P18-001`)* | `SCHEDULED (Phase 18)` |
+| **`FB-P4-009`** | Analytics Pop-Out Drawer | Add **Blocked Domains & ASN Organizations** panel below `Chronological Recent DNS Queries` with an **Unblock / Remove** button per item | New Control Feature (Per-Device Block Management UI) | `3 / 5` | **Phase 18 (`v1.3.0-rc3`)** *(Paired with `FB-P4-007` & `008`)* | `SCHEDULED (Phase 18)` |
 | **`FB-P4-010`** | Traffic & DNS Analytics Tab | Remove ``(`logs-pfsense.log*`)`` from page title and change `Inspect Device` button label to `Inspect` in `Top Active LAN Devices` | UI Copy / Polish | `1 / 5` | **Phase 5** *(Quick-Win Batch)* | `COMPLETED (Phase 5)` |
 | **`FB-P4-011`** | System Connectivity Tab | Evaluate & replace/remove stale Phase 1 `Network Device Inventory & Internet Access Control` placeholder box at bottom of `StatusPage.tsx` | Architecture / Design Review | `1.5 / 5` | **Phase 5** *(Design Decision Below)* | `COMPLETED (Phase 5 — Option A)` |
 | **`FB-P5-001`** | Timer Controls (Modal) | Open Timer controls as a **centered screen modal dialog** instead of an inline dropdown so it never requires scrolling and prevents multiple menus from opening simultaneously | UX / Modal Interaction | `1.5 / 5` | **Phase 6** *(Scheduled Batch)* | `COMPLETED (Phase 6)` |
@@ -53,6 +53,24 @@
 | **FB-P10-001** | New Firewall & Security Tab | Dedicated Firewall log explorer & security dashboard showing passed/blocked packet metrics, direction, searchable ilterlog stream, **Suspected Bad Actors / Scanners** (with 1-click LAN block), and **Active Inbound WAN Exposure (Open Ports)** | Security & Firewall Telemetry | 3.5 / 5 | **Phase 10 (1.0.4)** | COMPLETED (Phase 10) |
 | **FB-P11-001** | Header Logo & Browser Favicon | Replace the shield icon with a custom **side-profile Unicorn with Rainbow Horn** SVG icon in the app header, login screen, and browser tab favicon | Branding & Iconography | 1.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
 | **FB-P11-002** | Header User Menu & Color Themes | Clicking the user's Name in the top header opens User Settings with **3 Eye-Friendly Dark-Room Color Themes** (Default Slate, Crimson & Obsidian light/dark red on black, and Ocean & Navy light/dark blue on deep navy) persisted per user | User Preferences & Theming | 2.5 / 5 | **Phase 11 (1.1.0)** | SCHEDULED (Phase 11) |
+
+| **`FB-P15-001`** | Global Time Selectors | Add `Today` filter (`now/d` local timezone) as the first and default selection across all views and drawers | UX / Time Filtering | `1.5 / 5` | **Phase 15.1 (`v1.2.1`)** | `COMPLETED (Phase 15.1)` |
+| **`FB-P16-001`** | Elasticsearch 9.4.3 (`logsdb`) | Apply Batch 5 ES read optimizations (`Q1` `docvalue_fields` + `breadth_first`, `Q2` `30d` WAN port cache decoupling & TTL tuning, `Q3` `RFC1918_CIDRS` pre-filter on `q_lan`/`q_app`, `Q4` `/5m` & `/h` rounding + `_msearch` `request_cache: True`) | Performance / Elasticsearch | `2.5 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
+| **`FB-P16-002`** | Elasticsearch HA & Integration Settings | Support comma-separated multi-node `ELASTICSEARCH_URL` failover + optional `ELASTICSEARCH_CA_CERT_PATH`, per-node status on ES Health Card, and `Test All Connections` button | Infrastructure / HA | `2 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
+| **`FB-P16-003`** | System Tab (Service Cards & Enforcement Summary) | Add 4th Service Health Card for `Plex Media Server`, format raw Service Card `details` with human-readable labels + collapsible Technical Details, and add `YouTube Blocked` & Enforcement KPI counters | Observability / UI Polish | `2 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
+| **`FB-P16-004`** | System Tab (User Mgmt & Audit History) | Add Admin password reset & role toggle (`Admin` <-> `Operator`) for existing users, self-service `Change My Password` in Header User Menu, auto-loaded Audit History with pagination (`50`/`100`/`250`) + CSV export, and `Prune Old Performance Logs` button | Admin & Security | `2.5 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
+| **`FB-P16-005`** | Global Header, Themes & Navigation | Make `HEALTHY`/`DEGRADED`/`DOWN` badge click navigate to `System` tab, add 2 new color themes (`Emerald & Forest`, `Amber & Carbon`), add `Ctrl+K` global quick-search modal, and add mobile bottom navigation bar | UX / Theming / Navigation | `2.5 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
+| **`FB-P17-001`** | Devices Tab (Device Groups & Profiles) | Add collapsible/compact toggle for `Device Groups & Profiles` section and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon buttons | UX / Layout | `2 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P17-002`** | Devices Tab (Inventory Table) | Merge `Telemetry` + `Internet Access` into a single right-aligned `Actions` column, add clickable column sorting, add inline `+ Group` assignment popover on device rows, and allow archiving/deleting offline devices with an `Archived` filter pill | UX / Device Management | `3 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P17-003`** | Device & Group Analytics Drawers | Upgrade Drawer headers with compact icon buttons for `Internet Access`, `YouTube`, and inline `Timer` (`TimerPopoverMenu`) | UX / Control Consistency | `1.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P17-004`** | Schedules Tab (Rule Capabilities) | Allow Schedules to block either `Full Internet Access` or `YouTube Only`, allow changing Target (Group/Device) when editing a schedule, and add `Duplicate / Clone Schedule` action | Policy Engine & Schedules | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P17-005`** | Schedules Tab (Visual Weekly Timeline & Controls) | Add visual 7-Day / 24-Hour Weekly Schedule Coverage Timeline bar, convert Schedule Card controls to compact buttons, add `Snooze / Skip Active Schedule` button, and add `AutoRefreshSelector` to Schedules header | Data Visualization & UX | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P18-001`** | Analytics & Device Drawer (`FB-P4-007`..`009`) | Per-device & global Domain and ASN Organization blocking (OPNsense aliases/rules + Unbound), `destination.as.number` enrichment, Blocked Domains & ASNs management panel, and Backup/Restore support | New Control Feature (Domain/ASN Filtering) | `4 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
+| **`FB-P18-002`** | Analytics Tab (Expanded App Usage & Plex Details) | Track additional apps (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) with expandable device/bandwidth breakdown, and enhance Plex `Now Playing` with username, progress bar %, and bitrate | Application Analytics | `3 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
+| **`FB-P18-003`** | Analytics Tab (LAN Table & Domain/ASN Drilldowns) | Add column sorting + search input to `Top Active LAN Devices` table, and make Domain/FQDN/ASN items clickable to inspect which LAN devices queried/contacted them | Analytics Drilldown | `2.5 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
+| **`FB-P19-001`** | Firewall Tab (Noisy LAN & Open WAN Ports) | Convert `Noisy LAN Devices` Block/Unblock to compact icon buttons + add `Inspect` (`DeviceAnalyticsDrawer`) button, and show friendly NAT service descriptions (`Plex Media Server`, `WireGuard VPN`) + `Last Seen` in `Open WAN Ports` | Security UX & Polish | `2 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
+| **`FB-P19-002`** | Firewall Tab (External Scanners & WAN IP Blocklist) | Display GeoIP Country/City badges on `Top Blocked External WAN Scanners` (clickable to filter logs), and add Country summary bar + `Block External IP at WAN` (`gateway_wan_blocked_ips`) in `FirewallOpenPortSessionsDrawer` | Security & WAN Enforcement | `3 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
+| **`FB-P19-003`** | Firewall Tab (Packet Log Explorer) | Make `Source IP`, `Destination IP`, `Port`, `Protocol`, and `Interface` cells clickable to filter with active filter chips, and add row limit selector (`50`/`100`/`250`) + CSV/JSON export | Log Explorer UX | `2 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
 
 ---
 
@@ -603,3 +621,107 @@
   - Update `AnalyticsPage.tsx`, `FirewallPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, and `FirewallOpenPortSessionsDrawer.tsx` so `Today` (`'today'`) is the first option in the time window selector and the default active selection.
 - **Complexity:** `1.5 / 5` (Low–Medium)
 - **Status:** `COMPLETED (Phase 15.1 — v1.2.1)`
+
+---
+
+### Area 14 — `v1.3` Interactive UI & Architecture Q&A Backlog Specifications (`FB-P16-001` – `FB-P19-003`)
+
+#### `FB-P16-001` — Apply Batch 5 Elasticsearch 9.4.3 (`logsdb`) Read Optimizations (`Q1`–`Q4`)
+- **Source & Rationale:** Cluster-side Batch 5 optimization audit recorded in [`docs/development/Optimizations-suggestions.md`](Optimizations-suggestions.md).
+- **Planned Changes (`Phase 16 — v1.3.0-rc1`):**
+  1. **`Q1` (`build_open_wan_port_sessions_query` & `normalize_open_wan_port_sessions_response`):** Disable `_source` reconstruction (`"_source": False`) in `latest_sample.top_hits` and `recent_body`, use verified `docvalue_fields` decoded via a backwards-compatible `_extract_hit_fields()` helper, add `"collect_mode": "breadth_first"` on `external_ips.terms`, and sort `latest_sample.top_hits` deterministically by `[{"@timestamp": {"order": "desc"}}]` (`2–11 ms` vs `1.3s–17.2s`).
+  2. **`Q3` (`fetch_network_overview`):** Move `{"terms": {"source.ip": RFC1918_CIDRS}}` into `q_lan.query.bool.filter` and preserve `RFC1918_CIDRS` filtering on `q_app`'s `lan_devices` / `by_device.filter` instead of overwriting with `{"match_all": {}}`, preventing high-cardinality external WAN scanner IPs from entering `top_ips` ordinal collection.
+  3. **`Q2` (`run_telemetry_cache_prewarm` & `fetch_firewall_overview`):** Cache the `now-30d/h` open WAN port discovery aggregation (`q_wan`) in `AnalyticsCache` (`"firewall:wan_ports_30d"`, `ttl=1800.0`), raise `today`/`7d`/`30d` cache TTLs (`180s` / `900s` / `1800s`), and tune background pre-warmer cadence from `60s` to `180s`.
+  4. **`Q4` (`_round_es_gte`, `_msearch` `request_cache`, & `track_total_hits`):** Round `7d`/`30d` queries to `/h` and `24h` to `/5m`, enable rounding across `build_network_overview_query`, `build_device_analytics_query`, and `build_group_analytics_query`, explicitly mark `size: 0` `_msearch` headers `"request_cache": True` (and `"request_cache": False` on `recent_body`), and add `"track_total_hits": False` on `build_device_recent_domains_query()` and `build_group_recent_domains_query()`.
+- **Complexity:** `2.5 / 5`
+- **Status:** `COMPLETED (Phase 16 — v1.3.0-rc1)`
+
+#### `FB-P16-002` — Multi-Node Elasticsearch HA Failover, `CA Cert Path` & `Test All Connections`
+- **User Feedback (`v1.3` Q&A):** Support comma-separated multi-node `ELASTICSEARCH_URL` + optional `ELASTICSEARCH_CA_CERT_PATH`, display cluster/node status on the ES Health Card, and add a `Test All Connections` button in Integration Settings.
+- **Complexity:** `2 / 5`
+- **Status:** `COMPLETED (Phase 16 — v1.3.0-rc1)`
+
+#### `FB-P16-003` — `System` Tab 4th Service Card (`Plex Media Server`), Formatted Service Details & Enforcement Summary KPIs
+- **User Feedback (`v1.3` Q&A):** Add a 4th Service Health Card for `Plex Media Server` (version, active streams, latency), format raw Service Card `details` with clean human-readable labels and a collapsible `Technical Details` toggle, and add `YouTube Blocked` + Enforcement Summary KPI counters.
+- **Complexity:** `2 / 5`
+- **Status:** `COMPLETED (Phase 16 — v1.3.0-rc1)`
+
+#### `FB-P16-004` — User Password/Role Management, Self-Service Password Change & Audit History Pagination / CSV Export / Pruning
+- **User Feedback (`v1.3` Q&A):** Allow Admins to reset an existing user's password or switch roles (`Admin` <-> `Operator`), add `Change My Password` inside the Header User Menu, auto-load Audit & Event History with pagination (`50` / `100` / `250`), CSV export, and a `Prune Old Performance Logs` maintenance action.
+- **Complexity:** `2.5 / 5`
+- **Status:** `COMPLETED (Phase 16 — v1.3.0-rc1)`
+
+#### `FB-P16-005` — Global Header Health Link, 2 New Dark-Room Color Themes, `Ctrl+K` Quick-Search & Mobile Bottom Nav
+- **User Feedback (`v1.3` Q&A + `PHASE16-Verify.md` Round 2):** Make clicking the top header `HEALTHY` / `DEGRADED` / `DOWN` badge navigate to the `System` tab, add `Emerald & Forest` and `Amber & Carbon` color themes to the User Menu (`5` total themes), add a global `Ctrl+K` / `Cmd+K` quick-search modal (documented in `README.md`, with header button removed in Round 2 to preserve clean header sizing), and add a mobile bottom navigation bar.
+- **Complexity:** `2.5 / 5`
+- **Status:** `COMPLETED (Phase 16 — v1.3.0-rc1)`
+
+#### `FB-P16-006` — Holistic Mobile Responsive UI Redesign (Hamburger Navigation, Zero Horizontal Scroll & Core Mobile Focus)
+- **User Feedback (`PHASE16-Verify.md`):**
+  - *"All of the pages will need to be updated to fit in the default mobile view that displays properly in the default Chrome DevTools mobile view. The number of changes we will need to make to make this usable will need a lot of testing and UI/UX redesign. The goal will be to not need any left to right scrolling and easy button access through some method. Perhaps a hamburger menu that contains everything will be the easiest method. Aligning with applications like what Asus does with their router app. It might also make sense to reduce the number of features available in a mobile view and only target core features that are used most often on mobile and can be accessed easily."*
+- **Technical Evaluation & Planned Scope (`v1.3` Backlog / Future Phase):**
+  - Conduct a dedicated responsive mobile UX pass (`375px–430px` viewport target) introducing a clean slide-out / Asus-router-style hamburger drawer menu replacing multi-row toolbars on small viewports, responsive card layouts replacing wide tables without horizontal overflow, and mobile-prioritized quick controls for core tasks (`Devices` allow/block/YouTube/timer toggles, `Groups`, `Schedules` status).
+- **Complexity:** `3.5 / 5` (High — requires multi-page UX audit & viewport testing)
+- **Status:** `EVALUATING (Scheduled Post-v1.3 Core Stabilization / Phase 19+)`
+
+#### `FB-P16-007` — Clickable GeoIP Locations Opening Google Maps with Centered Marker (`Firewall` & `Devices`/`Analytics` External Connection Views)
+- **User Feedback (`PHASE16-Verify.md` Round 2):** *"When viewing data that shows GEOIP location, make the location clickable such that it opens google maps in a new tab with the location centered and a marker at the location."*
+- **Technical Evaluation & Planned Scope:** Wherever GeoIP location data is rendered (`FirewallOpenPortSessionsDrawer.tsx`, `ExternalConnectionDrawer.tsx`, and **Top Blocked External WAN Scanners** on `FirewallPage.tsx`), render the GeoIP location badge/text as an interactive external link (`target="_blank" rel="noopener noreferrer"`) pointing to `https://www.google.com/maps/search/?api=1&query=<lat>,<lon>` (when `latitude`/`longitude` coordinates are present in ES `source.geo.location` / `destination.geo.location`) or `https://www.google.com/maps/search/?api=1&query=<encoded City, Region, Country>` so Google Maps opens in a new tab centered with a marker pin at that location.
+- **Complexity:** `1.5 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P17-001` — `Devices` Tab Collapsible Group Section & Compact Icon Group Action Controls
+- **User Feedback (`v1.3` Q&A):** Add a collapsible/compact mode for `Device Groups & Profiles` and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact mobile-friendly icon buttons matching the Device Table rows.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P17-002` — `Devices` Tab Unified `Actions` Column, Column Sorting, Inline `+ Group` Popover & Offline Device Archiving
+- **User Feedback (`v1.3` Q&A):** Merge `Telemetry` and `Internet Access` into a single right-aligned `Actions` column, add clickable column sorting (`Name`, `IPv4`, `Online`, `Vendor`, `Blocked`), add inline `+ Group` quick assignment on device rows and inline editing, and allow archiving/deleting stale offline devices with an `Archived` filter pill.
+- **Complexity:** `3 / 5`
+- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P17-003` — Device & Group Analytics Drawer Compact Header Controls & Inline Timer
+- **User Feedback (`v1.3` Q&A):** Convert Drawer header controls (`Internet Access`, `YouTube`) to compact icons and add a `Timer` control (`TimerPopoverMenu`) directly inside the drawer header.
+- **Complexity:** `1.5 / 5`
+- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P17-004` — `Schedules` Tab Expanded Rule Capabilities (`YouTube Only` Mode, Editable Target & Clone Rule)
+- **User Feedback (`v1.3` Q&A):** Allow recurring Schedules to block either `Full Internet Access` or `YouTube Only`, allow changing the Target (`Group` or `Device`) when editing an existing Schedule Rule, and add a `Duplicate / Clone Schedule` action.
+- **Complexity:** `2.5 / 5`
+- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P17-005` — `Schedules` Tab Visual 7-Day Weekly Timeline Bar, Compact Card Controls, Snooze & Auto-Refresh
+- **User Feedback (`v1.3` Q&A):** Add a visual 7-Day / 24-Hour Weekly Schedule Coverage Timeline bar at the top of the `Schedules` tab, convert Schedule Card controls to consistent compact buttons, add a `Skip Next Occurrence / Snooze Schedule` action on active cards, and add `AutoRefreshSelector` to the `Schedules` header.
+- **Complexity:** `2.5 / 5`
+- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P18-001` — Per-Device & Global Domain and ASN Organization Blocking (`FB-P4-007`..`009`) + Backup/Restore Support
+- **User Feedback (`v1.3` Q&A):** Implement per-device Domain & ASN Organization blocking (`FB-P4-007`, `FB-P4-008`, `FB-P4-009`) in the Device Analytics Drawer backed by OPNsense per-device/global Host & BGP ASN aliases + automation filter rules (plus global Unbound/alias toggles from the `Analytics` tab), and include custom Domain/ASN rules & archived device flags in Configuration Backup & Restore JSON exports.
+- **Complexity:** `4 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P18-002` — Expanded Application Usage Telemetry (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) & Enhanced Plex `Now Playing`
+- **User Feedback (`v1.3` Q&A):** Track additional apps (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) with expandable Top Devices + bandwidth breakdowns, and enhance live Plex `Now Playing` stream cards with username, playback progress bar / percentage, and transcode bitrate details.
+- **Complexity:** `3 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P18-003` — `Analytics` Tab Sortable/Searchable LAN Table & Clickable Domain/ASN Client Attribution Drilldowns
+- **User Feedback (`v1.3` Q&A):** Add column sorting (`DNS Queries`, `Firewall Bytes`, `Total Events`, `Device Name`) + search filter input to `Top Active LAN Devices`, and make domains & ASN organizations clickable to inspect which LAN devices queried/contacted them (with direct action links).
+- **Complexity:** `2.5 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P19-001` — `Firewall` Tab Compact `Noisy LAN` Controls (`Inspect` Trigger) & Open WAN Port Service Descriptions
+- **User Feedback (`v1.3` Q&A):** Convert `Noisy LAN Devices` Block/Unblock controls to compact icon buttons and add the Magnifying Glass `Inspect` button to open `DeviceAnalyticsDrawer` directly from the `Firewall` tab; display friendly OPNsense D-NAT rule descriptions (`Plex Media Server`, `WireGuard VPN`) and `Last Seen` timestamps in `Active Inbound WAN Exposure (Open Ports)`.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-002` — `Firewall` Tab External WAN Scanner GeoIP Badges, Clickable Google Maps Links (`FB-P16-007`) & `Block External IP at WAN` Enforcement
+- **User Feedback (`v1.3` Q&A + `PHASE16-Verify.md` Round 2):** Display GeoIP Country/City badges on `Top Blocked External WAN Scanners` (clickable to filter logs), render clickable GeoIP locations across external connection drawers and scanner views (`FB-P16-007`) opening Google Maps centered with a location marker in a new tab, and add a Country summary breakdown bar + `Block External IP at WAN` button (backed by an OPNsense WAN blocklist alias) inside `FirewallOpenPortSessionsDrawer`.
+- **Complexity:** `3 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-003` — `Firewall` Tab Interactive Click-to-Filter Packet Log Explorer, Row Limits & CSV/JSON Export
+- **User Feedback (`v1.3` Q&A):** Make `Source IP`, `Destination IP`, `Port`, and `Interface` cells clickable inside the Firewall Packet Log Explorer to apply removable filter chips, and add configurable row limit selectors (`50` / `100` / `250`) plus CSV/JSON export.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+

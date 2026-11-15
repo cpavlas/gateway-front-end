@@ -102,6 +102,9 @@ def _mock_opnsense_discovery_endpoints(
             json={"rows": [{"ip": ip} for ip in (blocked_ips or [])]},
         )
     )
+    respx.get(
+        "https://opnsense.example.local/api/firewall/alias_util/list/gateway_youtube_blocked_devices"
+    ).mock(return_value=httpx.Response(200, json={"rows": []}))
 
 
 @pytest.mark.asyncio
