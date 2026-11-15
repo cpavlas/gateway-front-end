@@ -22,10 +22,13 @@ import {
   formatBytes,
   formatClock24h,
   type TimeWindow,
+  type TimerStartPayload,
 } from '../api/client'
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 import { TelemetryLoadingShell } from './TelemetryLoadingShell'
+import { TimerPopoverMenu } from './TimerPopoverMenu'
+import { YouTubeLogoIcon } from './YouTubeLogoIcon'
 
 interface DeviceAnalyticsDrawerProps {
   deviceId: number | null
@@ -115,11 +118,45 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
     onSuccess: () => {
       setActionBanner(null)
       void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
       void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics', deviceId] })
     },
     onError: (err: unknown) => {
       setActionBanner(
         err instanceof Error ? err.message : 'Failed to toggle YouTube access.',
+      )
+    },
+  })
+
+  const timerMutation = useMutation({
+    mutationFn: (payload: TimerStartPayload) => {
+      if (!deviceId) throw new Error('No device selected')
+      return apiClient.startDeviceTimer(deviceId, payload)
+    },
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics', deviceId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to start device timer.',
+      )
+    },
+  })
+
+  const cancelTimerMutation = useMutation({
+    mutationFn: (overrideId: number) => apiClient.cancelTimer(overrideId, true),
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics', deviceId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to cancel active timer.',
       )
     },
   })
@@ -181,42 +218,82 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {device && (
               <>
+                {!device.is_protected && (
+                  <button
+                    type="button"
+                    data-testid="drawer-youtube-toggle"
+                    disabled={youtubeMutation.isPending || !device.ipv4_address}
+                    aria-label={
+                      device.is_youtube_blocked
+                        ? `YouTube Blocked for ${device.effective_name}. Click to allow YouTube`
+                        : `YouTube Allowed for ${device.effective_name}. Click to block YouTube`
+                    }
+                    title={
+                      device.is_youtube_blocked
+                        ? 'YouTube Blocked (Plex & Internet allowed) - Click to allow YouTube'
+                        : 'YouTube Allowed - Click to block YouTube only'
+                    }
+                    onClick={() =>
+                      youtubeMutation.mutate(device.is_youtube_blocked ? 'unblock' : 'block')
+                    }
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border p-2 transition cursor-pointer disabled:opacity-50 ${
+                      device.is_youtube_blocked
+                        ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
+                        : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
+                    }`}
+                  >
+                    <YouTubeLogoIcon className="h-4 w-4" testId="drawer-yt-icon" />
+                  </button>
+                )}
+
+                <TimerPopoverMenu
+                  testIdPrefix="drawer-"
+                  targetType="device"
+                  targetId={device.id}
+                  targetName={device.effective_name}
+                  activeOverride={device.active_override}
+                  disabled={device.is_protected || !device.ipv4_address}
+                  iconOnly
+                  isPending={timerMutation.isPending || cancelTimerMutation.isPending}
+                  onStartTimer={(payload) => timerMutation.mutate(payload)}
+                  onCancelTimer={(ovId) => cancelTimerMutation.mutate(ovId)}
+                />
+
                 {device.is_protected ? (
                   <span
                     data-testid="drawer-access-protected"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300"
+                    aria-label="Protected (Always Allowed)"
+                    title={device.protection_reason ?? 'Protected (Always Allowed)'}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300"
                   >
-                    <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Protected (Always Allowed)</span>
+                    <Lock className="h-4 w-4" aria-hidden="true" />
                   </span>
                 ) : device.is_blocked ? (
                   <button
                     type="button"
                     data-testid="drawer-access-toggle"
                     disabled={accessMutation.isPending}
+                    aria-label={accessMutation.isPending ? 'Updating...' : 'Blocked, Click to Allow'}
+                    title="Blocked, Click to Allow"
                     onClick={() => accessMutation.mutate('unblock')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 cursor-pointer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25 cursor-pointer disabled:opacity-60"
                   >
-                    <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-                    <span>
-                      {accessMutation.isPending ? 'Updating...' : 'Blocked, Click to Allow'}
-                    </span>
+                    <ShieldAlert className="h-4 w-4 text-rose-400" aria-hidden="true" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     data-testid="drawer-access-toggle"
                     disabled={accessMutation.isPending || !device.ipv4_address}
+                    aria-label={accessMutation.isPending ? 'Blocking...' : 'Allowed, Click to Block'}
+                    title="Allowed, Click to Block"
                     onClick={() => accessMutation.mutate('block')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 cursor-pointer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 cursor-pointer disabled:opacity-50"
                   >
-                    <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                    <span>
-                      {accessMutation.isPending ? 'Blocking...' : 'Allowed, Click to Block'}
-                    </span>
+                    <Globe className="h-4 w-4 text-emerald-400" aria-hidden="true" />
                   </button>
                 )}
               </>
@@ -227,7 +304,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
               data-testid="close-analytics-drawer"
               aria-label="Close analytics drawer"
               onClick={onClose}
-              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -466,7 +543,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                             </span>
                             <button
                               type="button"
-                              data-testid="drawer-youtube-toggle"
+                              data-testid="drawer-app-youtube-toggle"
                               disabled={youtubeMutation.isPending || !device.ipv4_address}
                               onClick={() =>
                                 youtubeMutation.mutate(

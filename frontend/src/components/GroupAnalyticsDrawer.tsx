@@ -22,11 +22,14 @@ import {
   formatBytes,
   formatClock24h,
   type TimeWindow,
+  type TimerStartPayload,
 } from '../api/client'
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { getGroupBadgeClasses } from './GroupFormModal'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 import { TelemetryLoadingShell } from './TelemetryLoadingShell'
+import { TimerPopoverMenu } from './TimerPopoverMenu'
+import { YouTubeLogoIcon } from './YouTubeLogoIcon'
 
 interface GroupAnalyticsDrawerProps {
   groupId: number | null
@@ -127,6 +130,39 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
     },
   })
 
+  const groupTimerMutation = useMutation({
+    mutationFn: (payload: TimerStartPayload) => {
+      if (!groupId) throw new Error('No group selected')
+      return apiClient.startGroupTimer(groupId, payload)
+    },
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics', groupId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to start group timer.',
+      )
+    },
+  })
+
+  const cancelTimerMutation = useMutation({
+    mutationFn: (overrideId: number) => apiClient.cancelTimer(overrideId, true),
+    onSuccess: () => {
+      setActionBanner(null)
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics', groupId] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(
+        err instanceof Error ? err.message : 'Failed to cancel active timer.',
+      )
+    },
+  })
+
   if (groupId === null) {
     return null
   }
@@ -202,34 +238,71 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 self-start sm:self-center">
+          <div className="flex items-center gap-1.5 self-start sm:self-center">
             {group && group.blockable_devices > 0 && (
               <>
+                <button
+                  type="button"
+                  data-testid="group-drawer-youtube-toggle"
+                  disabled={youtubeMutation.isPending}
+                  aria-label={
+                    group.youtube_status === 'blocked'
+                      ? 'YouTube Blocked for Group - Click to Allow'
+                      : 'YouTube Allowed for Group - Click to Block'
+                  }
+                  title={
+                    group.youtube_status === 'blocked'
+                      ? 'YouTube Blocked for Group (Plex & Internet allowed) - Click to allow YouTube'
+                      : 'YouTube Allowed for Group - Click to block YouTube only'
+                  }
+                  onClick={() =>
+                    youtubeMutation.mutate(group.youtube_status === 'blocked' ? 'unblock' : 'block')
+                  }
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border p-2 transition cursor-pointer disabled:opacity-50 ${
+                    group.youtube_status === 'blocked'
+                      ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
+                      : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
+                  }`}
+                >
+                  <YouTubeLogoIcon className="h-4 w-4" testId="group-drawer-yt-icon" />
+                </button>
+
+                <TimerPopoverMenu
+                  testIdPrefix="drawer-"
+                  targetType="group"
+                  targetId={group.id}
+                  targetName={group.name}
+                  activeOverride={group.active_override}
+                  disabled={group.blockable_devices === 0}
+                  iconOnly
+                  isPending={groupTimerMutation.isPending || cancelTimerMutation.isPending}
+                  onStartTimer={(payload) => groupTimerMutation.mutate(payload)}
+                  onCancelTimer={(ovId) => cancelTimerMutation.mutate(ovId)}
+                />
+
                 {group.access_status === 'blocked' ? (
                   <button
                     type="button"
                     data-testid="group-drawer-access-toggle"
                     disabled={bulkAccessMutation.isPending}
+                    aria-label={bulkAccessMutation.isPending ? 'Updating...' : 'Allow Group Internet'}
+                    title="Allow Group Internet"
                     onClick={() => bulkAccessMutation.mutate('unblock')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
                   >
-                    <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-                    <span>
-                      {bulkAccessMutation.isPending ? 'Updating...' : 'Allow Group Internet'}
-                    </span>
+                    <ShieldAlert className="h-4 w-4 text-rose-400" aria-hidden="true" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     data-testid="group-drawer-access-toggle"
                     disabled={bulkAccessMutation.isPending}
+                    aria-label={bulkAccessMutation.isPending ? 'Blocking...' : 'Block Group Internet'}
+                    title="Block Group Internet"
                     onClick={() => bulkAccessMutation.mutate('block')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
                   >
-                    <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                    <span>
-                      {bulkAccessMutation.isPending ? 'Blocking...' : 'Block Group Internet'}
-                    </span>
+                    <Globe className="h-4 w-4 text-emerald-400" aria-hidden="true" />
                   </button>
                 )}
               </>
@@ -239,7 +312,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
               type="button"
               aria-label="Close group analytics drawer"
               onClick={onClose}
-              className="rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -509,7 +582,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                             </span>
                             <button
                               type="button"
-                              data-testid="group-drawer-youtube-toggle"
+                              data-testid="group-drawer-app-youtube-toggle"
                               disabled={youtubeMutation.isPending}
                               onClick={() =>
                                 youtubeMutation.mutate(

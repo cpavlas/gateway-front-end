@@ -60,11 +60,14 @@
 | **`FB-P16-003`** | System Tab (Service Cards & Enforcement Summary) | Add 4th Service Health Card for `Plex Media Server`, format raw Service Card `details` with human-readable labels + collapsible Technical Details, and add `YouTube Blocked` & Enforcement KPI counters | Observability / UI Polish | `2 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
 | **`FB-P16-004`** | System Tab (User Mgmt & Audit History) | Add Admin password reset & role toggle (`Admin` <-> `Operator`) for existing users, self-service `Change My Password` in Header User Menu, auto-loaded Audit History with pagination (`50`/`100`/`250`) + CSV export, and `Prune Old Performance Logs` button | Admin & Security | `2.5 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
 | **`FB-P16-005`** | Global Header, Themes & Navigation | Make `HEALTHY`/`DEGRADED`/`DOWN` badge click navigate to `System` tab, add 2 new color themes (`Emerald & Forest`, `Amber & Carbon`), add `Ctrl+K` global quick-search modal, and add mobile bottom navigation bar | UX / Theming / Navigation | `2.5 / 5` | **Phase 16 (`v1.3.0-rc1`)** | `COMPLETED (Phase 16 — v1.3.0-rc1)` |
-| **`FB-P17-001`** | Devices Tab (Device Groups & Profiles) | Add collapsible/compact toggle for `Device Groups & Profiles` section and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon buttons | UX / Layout | `2 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
-| **`FB-P17-002`** | Devices Tab (Inventory Table) | Merge `Telemetry` + `Internet Access` into a single right-aligned `Actions` column, add clickable column sorting, add inline `+ Group` assignment popover on device rows, and allow archiving/deleting offline devices with an `Archived` filter pill | UX / Device Management | `3 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
-| **`FB-P17-003`** | Device & Group Analytics Drawers | Upgrade Drawer headers with compact icon buttons for `Internet Access`, `YouTube`, and inline `Timer` (`TimerPopoverMenu`) | UX / Control Consistency | `1.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
-| **`FB-P17-004`** | Schedules Tab (Rule Capabilities) | Allow Schedules to block either `Full Internet Access` or `YouTube Only`, allow changing Target (Group/Device) when editing a schedule, and add `Duplicate / Clone Schedule` action | Policy Engine & Schedules | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
-| **`FB-P17-005`** | Schedules Tab (Visual Weekly Timeline & Controls) | Add visual 7-Day / 24-Hour Weekly Schedule Coverage Timeline bar, convert Schedule Card controls to compact buttons, add `Snooze / Skip Active Schedule` button, and add `AutoRefreshSelector` to Schedules header | Data Visualization & UX | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `SCHEDULED (Phase 17)` |
+| **`FB-P17-001`** | Devices Tab (Device Groups & Profiles) | Add collapsible/compact toggle for `Device Groups & Profiles` section and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon buttons | UX / Layout | `2 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `COMPLETED (Phase 17 — v1.3.0-rc2)` |
+| **`FB-P17-002`** | Devices Tab (Inventory Table) | Merge `Telemetry` + `Internet Access` into a single right-aligned `Actions` column, add clickable column sorting, add inline `+ Group` assignment popover on device rows, and allow archiving/deleting offline devices with an `Archived` filter pill | UX / Device Management | `3 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `COMPLETED (Phase 17 — v1.3.0-rc2)` |
+| **`FB-P17-003`** | Device & Group Analytics Drawers | Upgrade Drawer headers with compact icon buttons for `Internet Access`, `YouTube`, and inline `Timer` (`TimerPopoverMenu`) | UX / Control Consistency | `1.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `COMPLETED (Phase 17 — v1.3.0-rc2)` |
+| **`FB-P17-004`** | Schedules Tab (Rule Capabilities) | Allow Schedules to block either `Full Internet Access` or `YouTube Only`, allow changing Target (Group/Device) when editing a schedule, and add `Duplicate / Clone Schedule` action | Policy Engine & Schedules | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `COMPLETED (Phase 17 — v1.3.0-rc2)` |
+| **`FB-P17-005`** | Schedules Tab (Visual Weekly Timeline & Controls) | Add visual 7-Day / 24-Hour Weekly Schedule Coverage Timeline bar, convert Schedule Card controls to compact buttons, add `Snooze / Skip Active Schedule` button, and add `AutoRefreshSelector` to Schedules header | Data Visualization & UX | `2.5 / 5` | **Phase 17 (`v1.3.0-rc2`)** | `COMPLETED (Phase 17 — v1.3.0-rc2)` |
+| **`FB-P17-006`** | Devices / Groups & Policy Engine | Configure a daily YouTube viewing time quota (e.g., `1h / day`) on a Device Group so YouTube is automatically blocked once today's active YouTube usage reaches the quota, while Reward / Bonus Timers always take strict precedence over daily limits | Policy Engine & Quotas | `3 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18 — v1.3.0-rc3)` |
+| **`FB-P17-007`** | Devices Tab (Mobile UX) | On mobile viewports showing the bottom nav bar, display only Device/Friendly Name and Action buttons in the `Devices` inventory table so the table stays compact with zero horizontal scroll | Mobile UX | `1.5 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18 — v1.3.0-rc3)` |
+| **`FB-P17-008`** | Devices Tab (Default Filter & Persistence) | Default the `Devices` inventory status filter to `Online` on initial load and persist the user's selected status filter in `localStorage` | UX / Persistence | `1 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18 — v1.3.0-rc3)` |
 | **`FB-P18-001`** | Analytics & Device Drawer (`FB-P4-007`..`009`) | Per-device & global Domain and ASN Organization blocking (OPNsense aliases/rules + Unbound), `destination.as.number` enrichment, Blocked Domains & ASNs management panel, and Backup/Restore support | New Control Feature (Domain/ASN Filtering) | `4 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
 | **`FB-P18-002`** | Analytics Tab (Expanded App Usage & Plex Details) | Track additional apps (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) with expandable device/bandwidth breakdown, and enhance Plex `Now Playing` with username, progress bar %, and bitrate | Application Analytics | `3 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
 | **`FB-P18-003`** | Analytics Tab (LAN Table & Domain/ASN Drilldowns) | Add column sorting + search input to `Top Active LAN Devices` table, and make Domain/FQDN/ASN items clickable to inspect which LAN devices queried/contacted them | Analytics Drilldown | `2.5 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
@@ -673,27 +676,42 @@
 #### `FB-P17-001` — `Devices` Tab Collapsible Group Section & Compact Icon Group Action Controls
 - **User Feedback (`v1.3` Q&A):** Add a collapsible/compact mode for `Device Groups & Profiles` and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact mobile-friendly icon buttons matching the Device Table rows.
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+- **Status:** `COMPLETED (Phase 17 — v1.3.0-rc2)`
 
 #### `FB-P17-002` — `Devices` Tab Unified `Actions` Column, Column Sorting, Inline `+ Group` Popover & Offline Device Archiving
 - **User Feedback (`v1.3` Q&A):** Merge `Telemetry` and `Internet Access` into a single right-aligned `Actions` column, add clickable column sorting (`Name`, `IPv4`, `Online`, `Vendor`, `Blocked`), add inline `+ Group` quick assignment on device rows and inline editing, and allow archiving/deleting stale offline devices with an `Archived` filter pill.
 - **Complexity:** `3 / 5`
-- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+- **Status:** `COMPLETED (Phase 17 — v1.3.0-rc2)`
 
 #### `FB-P17-003` — Device & Group Analytics Drawer Compact Header Controls & Inline Timer
 - **User Feedback (`v1.3` Q&A):** Convert Drawer header controls (`Internet Access`, `YouTube`) to compact icons and add a `Timer` control (`TimerPopoverMenu`) directly inside the drawer header.
 - **Complexity:** `1.5 / 5`
-- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+- **Status:** `COMPLETED (Phase 17 — v1.3.0-rc2)`
 
 #### `FB-P17-004` — `Schedules` Tab Expanded Rule Capabilities (`YouTube Only` Mode, Editable Target & Clone Rule)
 - **User Feedback (`v1.3` Q&A):** Allow recurring Schedules to block either `Full Internet Access` or `YouTube Only`, allow changing the Target (`Group` or `Device`) when editing an existing Schedule Rule, and add a `Duplicate / Clone Schedule` action.
 - **Complexity:** `2.5 / 5`
-- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+- **Status:** `COMPLETED (Phase 17 — v1.3.0-rc2)`
 
 #### `FB-P17-005` — `Schedules` Tab Visual 7-Day Weekly Timeline Bar, Compact Card Controls, Snooze & Auto-Refresh
 - **User Feedback (`v1.3` Q&A):** Add a visual 7-Day / 24-Hour Weekly Schedule Coverage Timeline bar at the top of the `Schedules` tab, convert Schedule Card controls to consistent compact buttons, add a `Skip Next Occurrence / Snooze Schedule` action on active cards, and add `AutoRefreshSelector` to the `Schedules` header.
 - **Complexity:** `2.5 / 5`
-- **Status:** `SCHEDULED (Phase 17 — v1.3.0-rc2)`
+- **Status:** `COMPLETED (Phase 17 — v1.3.0-rc2)`
+
+#### `FB-P17-006` — Device Group Daily YouTube Viewing Time Quota with Reward / Bonus Precedence
+- **User Feedback (`PHASE17-Verify.md`):** Allow configuring a daily YouTube viewing time limit (e.g., `1h / day`) when creating/editing a Device Group (`daily_youtube_limit_minutes`) so no more than that quota of active YouTube watch time can be used per day, automatically blocking YouTube for the group once exceeded while ensuring **Reward / Bonus Timers always take strict precedence** over daily limits and schedules.
+- **Complexity:** `3 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P17-007` — `Devices` Tab Mobile-Compact Layout (Friendly Name + Action Buttons Only)
+- **User Feedback (`PHASE17-Verify.md`):** On mobile screen widths (where the bottom navigation bar is displayed), render only the **Device / Friendly Name** and the **Action Buttons** in the `Devices` inventory table (hiding secondary columns such as IPv4/MAC, Vendor, Lease, Groups, and Last Seen on `< sm` viewports) so rows stay compact and actionable without horizontal scrolling.
+- **Complexity:** `1.5 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P17-008` — `Devices` Tab Default to `Online` Filter & Remember User Selection
+- **User Feedback (`PHASE17-Verify.md`):** Default the `Devices` inventory filter pill to **`Online`** on first load (`gateway_devices_status_filter` in `localStorage`) and persist the user's selected filter across subsequent visits/reloads.
+- **Complexity:** `1 / 5`
+- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P18-001` — Per-Device & Global Domain and ASN Organization Blocking (`FB-P4-007`..`009`) + Backup/Restore Support
 - **User Feedback (`v1.3` Q&A):** Implement per-device Domain & ASN Organization blocking (`FB-P4-007`, `FB-P4-008`, `FB-P4-009`) in the Device Analytics Drawer backed by OPNsense per-device/global Host & BGP ASN aliases + automation filter rules (plus global Unbound/alias toggles from the `Analytics` tab), and include custom Domain/ASN rules & archived device flags in Configuration Backup & Restore JSON exports.

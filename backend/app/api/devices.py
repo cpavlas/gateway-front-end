@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,12 @@ from app.services.device_service import (
     DeviceResponse,
     DeviceStatusFilter,
     DeviceUpdateRequest,
+    archive_device,
     block_device_internet,
     block_device_youtube,
+    delete_device,
     list_devices_inventory,
+    restore_device,
     sync_devices_from_opnsense,
     unblock_device_internet,
     unblock_device_youtube,
@@ -210,3 +213,61 @@ async def post_unblock_device_youtube(
         actor=current_user.username,
         client_ip=client_ip,
     )
+
+
+@router.post("/{device_id}/archive", response_model=DeviceResponse)
+async def post_archive_device(
+    device_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> DeviceResponse:
+    """Archive an offline device so it moves out of the default device table."""
+    client_ip = get_client_ip(request)
+    return await archive_device(
+        db,
+        settings,
+        device_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.post("/{device_id}/restore", response_model=DeviceResponse)
+async def post_restore_device(
+    device_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> DeviceResponse:
+    """Restore an archived device back into the active device inventory."""
+    client_ip = get_client_ip(request)
+    return await restore_device(
+        db,
+        settings,
+        device_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+
+
+@router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_existing_device(
+    device_id: int,
+    request: Request,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """Permanently delete a stale offline non-protected device record."""
+    client_ip = get_client_ip(request)
+    await delete_device(
+        db,
+        settings,
+        device_id,
+        actor=current_user.username,
+        client_ip=client_ip,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

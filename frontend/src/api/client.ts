@@ -1,5 +1,12 @@
 export type HealthLevel = 'healthy' | 'degraded' | 'unhealthy'
-export type DeviceStatusFilter = 'all' | 'online' | 'blocked' | 'protected' | 'unassigned'
+export type DeviceStatusFilter =
+  | 'all'
+  | 'online'
+  | 'blocked'
+  | 'protected'
+  | 'unassigned'
+  | 'archived'
+export type ScheduleBlockMode = 'internet' | 'youtube'
 export type TimeWindow = 'today' | '1h' | '24h' | '7d' | '30d'
 export type GroupColor = 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet' | 'slate'
 export type GroupAccessStatus = 'empty' | 'allowed' | 'partially_blocked' | 'blocked'
@@ -183,11 +190,13 @@ export interface ActiveOverrideInfo {
 }
 
 export interface ActiveScheduleInfo {
-  id: number
+  id?: number
+  schedule_id?: number
   name: string
   target_type: OverrideTargetType
   device_id?: number | null
   group_id?: number | null
+  block_mode?: ScheduleBlockMode
   start_time: string
   end_time: string
   timezone: string
@@ -201,12 +210,15 @@ export interface ScheduleRule {
   device_id?: number | null
   group_id?: number | null
   target_name: string
+  block_mode?: ScheduleBlockMode
   days_of_week: number[]
   start_time: string
   end_time: string
   timezone: string
   is_enabled: boolean
   is_active_now: boolean
+  is_snoozed?: boolean
+  snoozed_until?: string | null
   created_at: string
   updated_at: string
 }
@@ -217,6 +229,7 @@ export interface ScheduleCreatePayload {
   target_type: OverrideTargetType
   device_id?: number | null
   group_id?: number | null
+  block_mode?: ScheduleBlockMode
   days_of_week: number[]
   start_time: string
   end_time: string
@@ -227,11 +240,21 @@ export interface ScheduleCreatePayload {
 export interface ScheduleUpdatePayload {
   name?: string
   description?: string
+  target_type?: OverrideTargetType
+  device_id?: number | null
+  group_id?: number | null
+  block_mode?: ScheduleBlockMode
   days_of_week?: number[]
   start_time?: string
   end_time?: string
   timezone?: string | null
   is_enabled?: boolean
+}
+
+export interface ScheduleSnoozePayload {
+  duration_minutes?: number
+  until_end_of_window?: boolean
+  clear?: boolean
 }
 
 export interface ScheduleListResponse {
@@ -288,6 +311,7 @@ export interface DeviceItem {
   is_manually_blocked?: boolean
   is_youtube_blocked?: boolean
   is_protected: boolean
+  is_archived?: boolean
   protection_reason: string | null
   notes: string
   groups?: DeviceGroupBadge[]
@@ -303,6 +327,7 @@ export interface DeviceSummaryStats {
   online_devices: number
   blocked_devices: number
   protected_devices: number
+  archived_devices?: number
 }
 
 export interface DeviceListResponse {
@@ -315,6 +340,8 @@ export interface DeviceUpdatePayload {
   display_name?: string | null
   notes?: string | null
   is_protected?: boolean
+  is_archived?: boolean
+  group_ids?: number[]
 }
 
 export interface DeviceActionResponse {
@@ -975,6 +1002,24 @@ export const apiClient = {
     })
   },
 
+  archiveDevice(deviceId: number): Promise<DeviceItem> {
+    return requestJson<DeviceItem>(`/api/v1/devices/${deviceId}/archive`, {
+      method: 'POST',
+    })
+  },
+
+  restoreDevice(deviceId: number): Promise<DeviceItem> {
+    return requestJson<DeviceItem>(`/api/v1/devices/${deviceId}/restore`, {
+      method: 'POST',
+    })
+  },
+
+  deleteDevice(deviceId: number): Promise<void> {
+    return requestJson<void>(`/api/v1/devices/${deviceId}`, {
+      method: 'DELETE',
+    })
+  },
+
   getGroups(): Promise<GroupListResponse> {
     return requestJson<GroupListResponse>('/api/v1/groups', {
       method: 'GET',
@@ -1116,6 +1161,19 @@ export const apiClient = {
   reconcileSchedules(): Promise<ScheduleReconcileResponse> {
     return requestJson<ScheduleReconcileResponse>('/api/v1/schedules/reconcile', {
       method: 'POST',
+    })
+  },
+
+  cloneSchedule(scheduleId: number): Promise<ScheduleRule> {
+    return requestJson<ScheduleRule>(`/api/v1/schedules/${scheduleId}/clone`, {
+      method: 'POST',
+    })
+  },
+
+  snoozeSchedule(scheduleId: number, payload: ScheduleSnoozePayload): Promise<ScheduleRule> {
+    return requestJson<ScheduleRule>(`/api/v1/schedules/${scheduleId}/snooze`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     })
   },
 

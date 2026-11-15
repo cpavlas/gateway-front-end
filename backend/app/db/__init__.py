@@ -145,6 +145,29 @@ async def init_db(settings: Settings | None = None) -> None:
                     "BOOLEAN NOT NULL DEFAULT 0"
                 )
             )
+        if existing_cols and "is_archived" not in existing_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE devices ADD COLUMN is_archived "
+                    "BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+
+        res_sched = await conn.execute(text("PRAGMA table_info(schedules)"))
+        existing_sched_cols = {str(row[1]) for row in res_sched.fetchall()}
+        if existing_sched_cols and "block_mode" not in existing_sched_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE schedules ADD COLUMN block_mode "
+                    "VARCHAR(16) NOT NULL DEFAULT 'internet'"
+                )
+            )
+        if existing_sched_cols and "snoozed_until" not in existing_sched_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE schedules ADD COLUMN snoozed_until DATETIME NULL"
+                )
+            )
 
         res_audit = await conn.execute(text("PRAGMA table_info(audit_logs)"))
         existing_audit_cols = {str(row[1]) for row in res_audit.fetchall()}

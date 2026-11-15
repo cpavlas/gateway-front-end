@@ -15,6 +15,7 @@ interface TimerPopoverMenuProps {
   disabled?: boolean
   isPending?: boolean
   iconOnly?: boolean
+  testIdPrefix?: string
   onStartTimer: (payload: TimerStartPayload) => void
   onCancelTimer: (overrideId: number) => void
 }
@@ -41,6 +42,7 @@ export function TimerPopoverMenu({
   disabled = false,
   isPending = false,
   iconOnly = false,
+  testIdPrefix = '',
   onStartTimer,
   onCancelTimer,
 }: TimerPopoverMenuProps) {
@@ -103,7 +105,9 @@ export function TimerPopoverMenu({
       {!disabled && (
         <div
           data-testid={
-            hasActiveOverride ? `active-timer-pill-${targetType}-${targetId}` : undefined
+            hasActiveOverride
+              ? `${testIdPrefix}active-timer-pill-${targetType}-${targetId}`
+              : undefined
           }
           className={`inline-flex items-center rounded-lg border text-xs font-semibold transition ${
             hasActiveOverride && activeOverride
@@ -117,7 +121,7 @@ export function TimerPopoverMenu({
         >
           <button
             type="button"
-            data-testid={`open-timer-menu-${targetType}-${targetId}`}
+            data-testid={`${testIdPrefix}open-timer-menu-${targetType}-${targetId}`}
             disabled={isPending}
             onClick={() => setIsOpen((prev) => !prev)}
             aria-label={
@@ -157,7 +161,7 @@ export function TimerPopoverMenu({
           {hasActiveOverride && activeOverride && (
             <button
               type="button"
-              data-testid={`cancel-timer-${targetType}-${targetId}`}
+              data-testid={`${testIdPrefix}cancel-timer-${targetType}-${targetId}`}
               disabled={isPending}
               onClick={(e) => {
                 e.stopPropagation()
@@ -182,7 +186,7 @@ export function TimerPopoverMenu({
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
         >
           <div
-            data-testid={`timer-popover-${targetType}-${targetId}`}
+            data-testid={`${testIdPrefix}timer-popover-${targetType}-${targetId}`}
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-4 text-left shadow-2xl"
           >
@@ -222,7 +226,7 @@ export function TimerPopoverMenu({
                 </div>
                 <button
                   type="button"
-                  data-testid={`modal-cancel-timer-${targetType}-${targetId}`}
+                  data-testid={`${testIdPrefix}modal-cancel-timer-${targetType}-${targetId}`}
                   disabled={isPending}
                   onClick={() => {
                     onCancelTimer(activeOverride.id)
@@ -246,7 +250,7 @@ export function TimerPopoverMenu({
                     <button
                       key={item.preset}
                       type="button"
-                      data-testid={`timer-preset-pause-${item.preset}-${targetType}-${targetId}`}
+                      data-testid={`${testIdPrefix}timer-preset-pause-${item.preset}-${targetType}-${targetId}`}
                       onClick={() => handleSelectPreset('pause', item.preset)}
                       className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 transition cursor-pointer"
                     >
@@ -266,7 +270,7 @@ export function TimerPopoverMenu({
                     <button
                       key={item.preset}
                       type="button"
-                      data-testid={`timer-preset-bonus-${item.preset}-${targetType}-${targetId}`}
+                      data-testid={`${testIdPrefix}timer-preset-bonus-${item.preset}-${targetType}-${targetId}`}
                       onClick={() => handleSelectPreset('bonus', item.preset)}
                       className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 transition cursor-pointer"
                     >
@@ -287,12 +291,12 @@ export function TimerPopoverMenu({
                     max={1440}
                     value={customMinutes}
                     onChange={(e) => setCustomMinutes(e.target.value)}
-                    data-testid={`custom-timer-minutes-${targetType}-${targetId}`}
+                    data-testid={`${testIdPrefix}custom-timer-minutes-${targetType}-${targetId}`}
                     className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
                   />
                   <button
                     type="button"
-                    data-testid={`custom-timer-pause-${targetType}-${targetId}`}
+                    data-testid={`${testIdPrefix}custom-timer-pause-${targetType}-${targetId}`}
                     onClick={() => handleCustomSubmit('pause')}
                     className="flex-1 rounded-lg border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 cursor-pointer"
                   >
@@ -300,7 +304,7 @@ export function TimerPopoverMenu({
                   </button>
                   <button
                     type="button"
-                    data-testid={`custom-timer-bonus-${targetType}-${targetId}`}
+                    data-testid={`${testIdPrefix}custom-timer-bonus-${targetType}-${targetId}`}
                     onClick={() => handleCustomSubmit('bonus')}
                     className="flex-1 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 cursor-pointer"
                   >

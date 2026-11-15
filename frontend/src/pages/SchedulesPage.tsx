@@ -2,27 +2,39 @@ import React, { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  BellOff,
+  BellRing,
   CalendarClock,
   CheckCircle2,
   Clock,
+  Copy,
   Edit2,
   Laptop,
   Moon,
   PauseCircle,
   Plus,
+  Power,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   Users,
 } from 'lucide-react'
-import { apiClient, formatClock24h, type ScheduleRule } from '../api/client'
+import {
+  apiClient,
+  formatClock24h,
+  type ScheduleRule,
+  type ScheduleSnoozePayload,
+} from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
+import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
 import {
   ScheduleFormModal,
   WEEKDAY_LABELS,
   formatDaysSummary,
 } from '../components/ScheduleFormModal'
+import { WeeklyScheduleTimeline } from '../components/WeeklyScheduleTimeline'
+import { YouTubeLogoIcon } from '../components/YouTubeLogoIcon'
 
 interface SchedulesPageProps {
   activeTab?: AppTab
@@ -40,6 +52,7 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
     type: 'info' | 'warning' | 'error'
     text: string
   } | null>(null)
+  const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const {
     data: scheduleList,
@@ -50,7 +63,7 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
   } = useQuery({
     queryKey: ['schedules'],
     queryFn: () => apiClient.getSchedules(),
-    refetchInterval: 30_000,
+    refetchInterval,
     placeholderData: (prev) => prev,
   })
 
@@ -128,6 +141,47 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
     },
   })
 
+  const cloneMutation = useMutation({
+    mutationFn: (id: number) => apiClient.cloneSchedule(id),
+    onSuccess: (cloned) => {
+      setBannerMessage({
+        type: 'info',
+        text: `Cloned schedule as "${cloned.name}".`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to clone schedule.',
+      })
+    },
+  })
+
+  const snoozeMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: ScheduleSnoozePayload }) =>
+      apiClient.snoozeSchedule(id, payload),
+    onSuccess: (updated) => {
+      setBannerMessage({
+        type: 'info',
+        text: updated.is_snoozed
+          ? `Schedule "${updated.name}" snoozed until ${formatClock24h(updated.snoozed_until)}.`
+          : `Snooze cleared for "${updated.name}".`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+    },
+    onError: (err: unknown) => {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to update schedule snooze.',
+      })
+    },
+  })
+
   const schedules = scheduleList?.schedules ?? []
   const activeCount = schedules.filter((s) => s.is_active_now).length
   const enabledCount = schedules.filter((s) => s.is_enabled).length
@@ -181,6 +235,11 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                     aria-hidden="true"
                   />
                 </button>
+                <AutoRefreshSelector
+                  value={intervalOption}
+                  onChange={setIntervalOption}
+                  testId="schedules-auto-refresh-select"
+                />
               </div>
               {lastSchedulesClock && (
                 <span
@@ -285,6 +344,11 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
           </div>
         )}
 
+        {/* 7-Day / 24-Hour Weekly Timeline Coverage Bar (FB-P17-005) */}
+        {schedules.length > 0 && (
+          <WeeklyScheduleTimeline schedules={schedules} onSelectSchedule={openEditModal} />
+        )}
+
         {/* Schedule Cards Grid */}
         {isLoading && !scheduleList ? (
           <div
@@ -342,6 +406,26 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                             {rule.name}
                           </h3>
                           <span
+                            data-testid={`schedule-mode-badge-${rule.id}`}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              rule.block_mode === 'youtube'
+                                ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                            }`}
+                          >
+                            {rule.block_mode === 'youtube' ? (
+                              <>
+                                <YouTubeLogoIcon
+                                  className="h-3 w-3"
+                                  testId={`schedule-yt-icon-${rule.id}`}
+                                />
+                                <span>YouTube Only</span>
+                              </>
+                            ) : (
+                              <span>Full Internet</span>
+                            )}
+                          </span>
+                          <span
                             data-testid={`schedule-status-${rule.id}`}
                             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
                               !rule.is_enabled
@@ -368,19 +452,45 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                               </>
                             )}
                           </span>
+                          {rule.is_snoozed && (
+                            <span
+                              data-testid={`schedule-snoozed-badge-${rule.id}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-200"
+                            >
+                              <BellOff className="h-3 w-3" aria-hidden="true" />
+                              <span>
+                                Snoozed
+                                {rule.snoozed_until
+                                  ? ` until ${formatClock24h(rule.snoozed_until)}`
+                                  : ''}
+                              </span>
+                            </span>
+                          )}
                         </div>
                         {rule.description && (
                           <p className="mt-1 text-xs text-slate-400">{rule.description}</p>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          data-testid={`clone-schedule-${rule.id}`}
+                          aria-label={`Clone schedule ${rule.name}`}
+                          title="Duplicate / Clone schedule"
+                          disabled={cloneMutation.isPending}
+                          onClick={() => cloneMutation.mutate(rule.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-indigo-300 cursor-pointer disabled:opacity-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
                         <button
                           type="button"
                           data-testid={`edit-schedule-${rule.id}`}
                           aria-label={`Edit schedule ${rule.name}`}
+                          title="Edit schedule"
                           onClick={() => openEditModal(rule)}
-                          className="rounded-lg border border-slate-800 bg-slate-950 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
                         >
                           <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -388,8 +498,9 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                           type="button"
                           data-testid={`delete-schedule-card-${rule.id}`}
                           aria-label={`Delete schedule ${rule.name}`}
+                          title="Delete schedule"
                           onClick={() => deleteMutation.mutate(rule.id)}
-                          className="rounded-lg border border-slate-800 bg-slate-950 p-1.5 text-slate-400 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 cursor-pointer"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -452,25 +563,94 @@ export const SchedulesPage: React.FC<SchedulesPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Card Footer: Enable / Disable Toggle */}
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
-                    <span className="text-slate-400 font-mono text-[11px]">
-                      TZ: {rule.timezone}
-                    </span>
+                  {/* Card Footer: Snooze Controls & Enable / Disable Toggle */}
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-slate-400 font-mono text-[11px] mr-1">
+                        TZ: {rule.timezone}
+                      </span>
+                      {rule.is_enabled &&
+                        (rule.is_snoozed ? (
+                          <button
+                            type="button"
+                            data-testid={`clear-snooze-btn-${rule.id}`}
+                            disabled={snoozeMutation.isPending}
+                            onClick={() =>
+                              snoozeMutation.mutate({ id: rule.id, payload: { clear: true } })
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-500/40 bg-sky-500/15 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/25 cursor-pointer disabled:opacity-50"
+                          >
+                            <BellRing className="h-3 w-3" aria-hidden="true" />
+                            <span>Resume</span>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              data-testid={`snooze-schedule-30m-${rule.id}`}
+                              disabled={snoozeMutation.isPending}
+                              title="Snooze schedule for 30 minutes"
+                              onClick={() =>
+                                snoozeMutation.mutate({
+                                  id: rule.id,
+                                  payload: { duration_minutes: 30 },
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:border-sky-500/40 hover:text-sky-200 cursor-pointer disabled:opacity-50"
+                            >
+                              <BellOff className="h-3 w-3" aria-hidden="true" />
+                              <span>30m</span>
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`snooze-schedule-60m-${rule.id}`}
+                              disabled={snoozeMutation.isPending}
+                              title="Snooze schedule for 60 minutes"
+                              onClick={() =>
+                                snoozeMutation.mutate({
+                                  id: rule.id,
+                                  payload: { duration_minutes: 60 },
+                                })
+                              }
+                              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:border-sky-500/40 hover:text-sky-200 cursor-pointer disabled:opacity-50"
+                            >
+                              60m
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`snooze-schedule-window-${rule.id}`}
+                              disabled={snoozeMutation.isPending}
+                              title="Skip current/next window"
+                              onClick={() =>
+                                snoozeMutation.mutate({
+                                  id: rule.id,
+                                  payload: { until_end_of_window: true },
+                                })
+                              }
+                              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:border-sky-500/40 hover:text-sky-200 cursor-pointer disabled:opacity-50"
+                            >
+                              Skip Window
+                            </button>
+                          </>
+                        ))}
+                    </div>
+
                     <button
                       type="button"
                       data-testid={`toggle-schedule-${rule.id}`}
+                      aria-label={rule.is_enabled ? 'Disable Rule' : 'Enable Rule'}
                       disabled={toggleMutation.isPending}
                       onClick={() =>
                         toggleMutation.mutate({ id: rule.id, isEnabled: !rule.is_enabled })
                       }
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                         rule.is_enabled
                           ? 'border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
                           : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
                       }`}
                     >
-                      <span>{rule.is_enabled ? 'Disable Rule' : 'Enable Rule'}</span>
+                      <Power className="h-3 w-3" aria-hidden="true" />
+                      <span>{rule.is_enabled ? 'Disable' : 'Enable'}</span>
                     </button>
                   </div>
                 </div>

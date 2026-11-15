@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Laptop, Moon, Search, Trash2, Users, X } from 'lucide-react'
+import { CalendarClock, Laptop, Moon, Search, ShieldAlert, Trash2, Users, X } from 'lucide-react'
 import {
   apiClient,
   type DeviceItem,
   type GroupItem,
   type OverrideTargetType,
+  type ScheduleBlockMode,
   type ScheduleRule,
 } from '../api/client'
+import { YouTubeLogoIcon } from './YouTubeLogoIcon'
 
 export const WEEKDAY_LABELS: Array<{ day: number; short: string; full: string }> = [
   { day: 0, short: 'Mon', full: 'Monday' },
@@ -57,6 +59,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [blockMode, setBlockMode] = useState<ScheduleBlockMode>('internet')
   const [targetType, setTargetType] = useState<OverrideTargetType>('group')
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('')
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | ''>('')
@@ -88,9 +91,10 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
     if (editingSchedule) {
       setName(editingSchedule.name)
       setDescription(editingSchedule.description ?? '')
+      setBlockMode(editingSchedule.block_mode ?? 'internet')
       setTargetType(editingSchedule.target_type)
-      setSelectedGroupId(editingSchedule.group_id ?? '')
-      setSelectedDeviceId(editingSchedule.device_id ?? '')
+      setSelectedGroupId(editingSchedule.group_id ?? groups[0]?.id ?? '')
+      setSelectedDeviceId(editingSchedule.device_id ?? blockableDevices[0]?.id ?? '')
       setDaysOfWeek([...editingSchedule.days_of_week].sort((a, b) => a - b))
       setStartTime(editingSchedule.start_time)
       setEndTime(editingSchedule.end_time)
@@ -98,6 +102,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
     } else {
       setName('')
       setDescription('')
+      setBlockMode('internet')
       if (groups.length > 0) {
         setTargetType('group')
         setSelectedGroupId(groups[0].id)
@@ -126,11 +131,21 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
       if (startTime === endTime) {
         throw new Error('Start time and end time cannot be identical.')
       }
+      if (targetType === 'group' && !selectedGroupId) {
+        throw new Error('Please select a target device group.')
+      }
+      if (targetType === 'device' && !selectedDeviceId) {
+        throw new Error('Please select a target device.')
+      }
 
       if (editingSchedule) {
         return await apiClient.updateSchedule(editingSchedule.id, {
           name: trimmedName,
           description: description.trim(),
+          target_type: targetType,
+          group_id: targetType === 'group' ? Number(selectedGroupId) : null,
+          device_id: targetType === 'device' ? Number(selectedDeviceId) : null,
+          block_mode: blockMode,
           days_of_week: daysOfWeek,
           start_time: startTime,
           end_time: endTime,
@@ -139,14 +154,12 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
       }
 
       if (targetType === 'group') {
-        if (!selectedGroupId) {
-          throw new Error('Please select a target device group.')
-        }
         return await apiClient.createSchedule({
           name: trimmedName,
           description: description.trim(),
           target_type: 'group',
           group_id: Number(selectedGroupId),
+          block_mode: blockMode,
           days_of_week: daysOfWeek,
           start_time: startTime,
           end_time: endTime,
@@ -154,14 +167,12 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
         })
       }
 
-      if (!selectedDeviceId) {
-        throw new Error('Please select a target device.')
-      }
       return await apiClient.createSchedule({
         name: trimmedName,
         description: description.trim(),
         target_type: 'device',
         device_id: Number(selectedDeviceId),
+        block_mode: blockMode,
         days_of_week: daysOfWeek,
         start_time: startTime,
         end_time: endTime,
@@ -293,144 +304,171 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
             </div>
           </div>
 
-          {/* Target Type & Target Selector */}
-          {!editingSchedule ? (
-            <div className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-3.5">
-              <span className="block text-xs font-semibold text-slate-300">
-                Apply Schedule To
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  data-testid="schedule-target-group"
-                  onClick={() => setTargetType('group')}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    targetType === 'group'
-                      ? 'border-indigo-500 bg-indigo-600/25 text-indigo-200'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Device Group / Profile</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="schedule-target-device"
-                  onClick={() => setTargetType('device')}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    targetType === 'device'
-                      ? 'border-indigo-500 bg-indigo-600/25 text-indigo-200'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Laptop className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Single Device</span>
-                </button>
-              </div>
+          {/* Enforcement Block Mode Selector (FB-P17-004) */}
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3.5">
+            <span className="block text-xs font-semibold text-slate-300">
+              Schedule Enforcement Mode
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-testid="schedule-mode-internet"
+                aria-pressed={blockMode === 'internet'}
+                onClick={() => setBlockMode('internet')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  blockMode === 'internet'
+                    ? 'border-rose-500 bg-rose-600/25 text-rose-100'
+                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+                <span>Full Internet Block</span>
+              </button>
+              <button
+                type="button"
+                data-testid="schedule-mode-youtube"
+                aria-pressed={blockMode === 'youtube'}
+                onClick={() => setBlockMode('youtube')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  blockMode === 'youtube'
+                    ? 'border-amber-500 bg-amber-600/20 text-amber-100'
+                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <YouTubeLogoIcon className="h-3.5 w-3.5" testId="schedule-mode-yt-icon" />
+                <span>YouTube Only (Plex &amp; Web Allowed)</span>
+              </button>
+            </div>
+          </div>
 
-              {targetType === 'group' ? (
-                <div>
-                  <label
-                    htmlFor="schedule-group-select"
-                    className="block text-[11px] font-medium text-slate-400"
-                  >
-                    Target Group
-                  </label>
-                  <select
-                    id="schedule-group-select"
-                    data-testid="schedule-group-select"
-                    value={selectedGroupId}
-                    onChange={(e) =>
-                      setSelectedGroupId(e.target.value ? Number(e.target.value) : '')
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="">Select a group...</option>
-                    {groups.map((grp) => (
-                      <option key={grp.id} value={grp.id}>
-                        {grp.name} ({grp.total_devices} devices)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label
-                    htmlFor="schedule-device-select"
-                    className="block text-[11px] font-medium text-slate-400"
-                  >
-                    Search &amp; Select Target Device
-                  </label>
-                  <div className="relative mt-1 mb-2">
-                    <Search
-                      className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500"
-                      aria-hidden="true"
-                    />
-                    <input
-                      type="text"
-                      data-testid="schedule-device-search"
-                      aria-label="Search target device"
-                      value={deviceSearch}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setDeviceSearch(val)
-                        const q = val.trim().toLowerCase()
-                        if (q) {
-                          const matches = blockableDevices.filter(
-                            (d) =>
-                              d.effective_name.toLowerCase().includes(q) ||
-                              (d.hostname ?? '').toLowerCase().includes(q) ||
-                              (d.display_name ?? '').toLowerCase().includes(q) ||
-                              (d.ipv4_address ?? '').toLowerCase().includes(q) ||
-                              d.mac_address.toLowerCase().includes(q) ||
-                              (d.vendor ?? '').toLowerCase().includes(q),
-                          )
-                          if (
-                            matches.length > 0 &&
-                            !matches.some((m) => m.id === selectedDeviceId)
-                          ) {
-                            setSelectedDeviceId(matches[0].id)
-                          }
+          {/* Target Type & Target Selector (Editable on both Create & Edit) */}
+          <div className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-3.5">
+            <span className="block text-xs font-semibold text-slate-300">
+              Apply Schedule To
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-testid="schedule-target-group"
+                onClick={() => setTargetType('group')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  targetType === 'group'
+                    ? 'border-indigo-500 bg-indigo-600/25 text-indigo-200'
+                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Device Group / Profile</span>
+              </button>
+              <button
+                type="button"
+                data-testid="schedule-target-device"
+                onClick={() => setTargetType('device')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  targetType === 'device'
+                    ? 'border-indigo-500 bg-indigo-600/25 text-indigo-200'
+                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Laptop className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Single Device</span>
+              </button>
+            </div>
+
+            {targetType === 'group' ? (
+              <div>
+                <label
+                  htmlFor="schedule-group-select"
+                  className="block text-[11px] font-medium text-slate-400"
+                >
+                  Target Group
+                </label>
+                <select
+                  id="schedule-group-select"
+                  data-testid="schedule-group-select"
+                  value={selectedGroupId}
+                  onChange={(e) =>
+                    setSelectedGroupId(e.target.value ? Number(e.target.value) : '')
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Select a group...</option>
+                  {groups.map((grp) => (
+                    <option key={grp.id} value={grp.id}>
+                      {grp.name} ({grp.total_devices} devices)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="schedule-device-select"
+                  className="block text-[11px] font-medium text-slate-400"
+                >
+                  Search &amp; Select Target Device
+                </label>
+                <div className="relative mt-1 mb-2">
+                  <Search
+                    className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="text"
+                    data-testid="schedule-device-search"
+                    aria-label="Search target device"
+                    value={deviceSearch}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setDeviceSearch(val)
+                      const q = val.trim().toLowerCase()
+                      if (q) {
+                        const matches = blockableDevices.filter(
+                          (d) =>
+                            d.effective_name.toLowerCase().includes(q) ||
+                            (d.hostname ?? '').toLowerCase().includes(q) ||
+                            (d.display_name ?? '').toLowerCase().includes(q) ||
+                            (d.ipv4_address ?? '').toLowerCase().includes(q) ||
+                            d.mac_address.toLowerCase().includes(q) ||
+                            (d.vendor ?? '').toLowerCase().includes(q),
+                        )
+                        if (
+                          matches.length > 0 &&
+                          !matches.some((m) => m.id === selectedDeviceId)
+                        ) {
+                          setSelectedDeviceId(matches[0].id)
                         }
-                      }}
-                      placeholder="Search device by name, IP, hostname, or MAC..."
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                  <label
-                    htmlFor="schedule-device-select"
-                    className="block text-[11px] font-medium text-slate-400"
-                  >
-                    Target Device
-                  </label>
-                  <select
-                    id="schedule-device-select"
-                    data-testid="schedule-device-select"
-                    value={selectedDeviceId}
-                    onChange={(e) =>
-                      setSelectedDeviceId(e.target.value ? Number(e.target.value) : '')
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="">Select a device...</option>
-                    {filteredBlockableDevices.map((dev) => (
-                      <option key={dev.id} value={dev.id}>
-                        {dev.effective_name} ({dev.ipv4_address ?? dev.mac_address})
-                      </option>
-                    ))}
-                  </select>
+                      }
+                    }}
+                    placeholder="Search device by name, IP, hostname, or MAC..."
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-300">
-              Target:{' '}
-              <strong className="text-white">
-                {editingSchedule.target_type === 'group' ? 'Group' : 'Device'},{' '}
-                {editingSchedule.target_name}
-              </strong>
-            </div>
-          )}
+                <label
+                  htmlFor="schedule-device-select"
+                  className="block text-[11px] font-medium text-slate-400"
+                >
+                  Target Device
+                </label>
+                <select
+                  id="schedule-device-select"
+                  data-testid="schedule-device-select"
+                  value={selectedDeviceId}
+                  onChange={(e) =>
+                    setSelectedDeviceId(e.target.value ? Number(e.target.value) : '')
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Select a device...</option>
+                  {filteredBlockableDevices.map((dev) => (
+                    <option key={dev.id} value={dev.id}>
+                      {dev.effective_name} ({dev.ipv4_address ?? dev.mac_address})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           {/* Days of Week Picker & Presets */}
           <div className="space-y-2">

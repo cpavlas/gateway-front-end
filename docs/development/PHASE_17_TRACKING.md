@@ -6,27 +6,27 @@
 
 ## 1. Phase Objectives & Scheduled Backlog Items
 
-- [ ] **`FB-P17-001` — `Devices` Tab Collapsible Group Section & Compact Icon Group Action Controls:**
+- [x] **`FB-P17-001` — `Devices` Tab Collapsible Group Section & Compact Icon Group Action Controls:**
   - Add a collapsible/compact header toggle (state persisted in `localStorage`) for the **Device Groups & Profiles** section on `DevicesPage.tsx`.
   - Convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon-only touch-friendly buttons matching the Device Table rows.
   - Ensure inline/quick group membership visibility and compact card spacing on both desktop and narrow screens.
 
-- [ ] **`FB-P17-002` — `Devices` Tab Unified `Actions` Column, Column Sorting, Inline `+ Group` Popover & Offline Device Archiving:**
+- [x] **`FB-P17-002` — `Devices` Tab Unified `Actions` Column, Column Sorting, Inline `+ Group` Popover & Offline Device Archiving:**
   - Merge `Telemetry` and `Internet Access` into a single right-aligned **`Actions`** column (`Analytics`, `YouTube`, `Timer`, `Internet Access`) with clean spacing and mobile legibility.
   - Make Device Inventory column headers clickable to sort ascending/descending (`Name`, `IPv4`, `Online`, `Vendor`, `Blocked`).
   - Add an inline **`+ Group`** popover trigger directly on each device row (and inside inline row editing) to assign or remove group memberships in one click without opening the full Group modal.
   - Add **`is_archived`** (`Boolean`, default `False`) to the `Device` model with an Alembic migration, add archive/restore/delete endpoints (`POST /api/v1/devices/{id}/archive`, `POST /api/v1/devices/{id}/restore`, `DELETE /api/v1/devices/{id}` for offline archived devices), and add an **`Archived`** filter pill (`All` excludes archived devices by default).
 
-- [ ] **`FB-P17-003` — Device & Group Analytics Drawer Compact Header Controls & Inline Timer:**
+- [x] **`FB-P17-003` — Device & Group Analytics Drawer Compact Header Controls & Inline Timer:**
   - Convert header enforcement toggles (`Internet Access`, `YouTube`) inside `DeviceAnalyticsDrawer.tsx` and `GroupAnalyticsDrawer.tsx` into consistent compact icon buttons matching `DevicesPage.tsx`.
   - Embed `<TimerPopoverMenu />` directly inside both drawer headers so temporary allow/block/YouTube timers can be set without closing the drawer.
 
-- [ ] **`FB-P17-004` — `Schedules` Tab Expanded Rule Capabilities (`YouTube Only` Mode, Editable Target & Clone Rule):**
+- [x] **`FB-P17-004` — `Schedules` Tab Expanded Rule Capabilities (`YouTube Only` Mode, Editable Target & Clone Rule):**
   - Add **`block_mode`** (`Literal["internet", "youtube"]`, default `"internet"`) to `ScheduleRule` (SQLite + Alembic migration, backup/restore export/import, and scheduler enforcement routing via OPNsense YouTube vs. Internet block aliases).
   - Allow switching/editing a Schedule's Target (**`Group`** or **`Device`**) inside `ScheduleFormModal.tsx` when editing an existing rule.
   - Add a **`Duplicate / Clone Schedule`** action (`POST /api/v1/schedules/{id}/clone` or pre-filled modal clone workflow) to duplicate an existing schedule rule quickly.
 
-- [ ] **`FB-P17-005` — `Schedules` Tab Visual 7-Day Weekly Timeline Bar, Compact Card Controls, Snooze & Auto-Refresh:**
+- [x] **`FB-P17-005` — `Schedules` Tab Visual 7-Day Weekly Timeline Bar, Compact Card Controls, Snooze & Auto-Refresh:**
   - Add a visual **7-Day / 24-Hour Weekly Schedule Coverage Timeline** bar at the top of `SchedulesPage.tsx` visualizing active Internet blackout and YouTube-Only windows across Monday–Sunday (color-coded by `block_mode`).
   - Convert Schedule Card action buttons (`Edit`, `Clone`, `Enable/Disable`, `Delete`, and active **Snooze / Skip Next Occurrence**) into consistent compact icon/action controls, add backend `POST /api/v1/schedules/{id}/snooze` (`skip_until` / `snoozed_until` field respected by the scheduler engine), and add `AutoRefreshSelector` to the `Schedules` header.
 
@@ -45,11 +45,11 @@ flowchart TD
 
 | Checkpoint | Target Description | Status |
 | :--- | :--- | :--- |
-| **`CP-17.1`** | Backend DB migrations & APIs for `devices.is_archived`, archive/restore/delete offline devices, `schedule_rules.block_mode` (`internet` / `youtube`), editable targets, clone & `snoozed_until` enforcement (`FB-P17-002`, `FB-P17-004`, `FB-P17-005`). | Pending |
-| **`CP-17.2`** | Frontend `DevicesPage.tsx` overhaul (collapsible groups, compact icons, unified `Actions` column, column sorting, `+ Group` popover, archived filter) and compact Drawer header controls + inline Timer (`FB-P17-001`, `FB-P17-002`, `FB-P17-003`). | Pending |
-| **`CP-17.3`** | Frontend `SchedulesPage.tsx` & `ScheduleFormModal.tsx` upgrades (weekly timeline bar, `YouTube Only` mode, editable target, Clone, Snooze, `AutoRefreshSelector`) & >= 85% test suites (`pytest`, `ruff`, `mypy`, `vitest`, `vite build`). | Pending |
-| **`CP-17.4`** | Bump version to `1.3.0-rc2`, rebuild Docker container, run live API smoke check, and publish `docs/development/Validation/PHASE17-Verify.md` (Gate 2). | Pending |
-| **`CP-17.5`** | Ingest validation feedback, write exit analysis, merge `phase17`, tag `v1.3.0-rc2`, and create `PHASE_18_TRACKING.md` (Gate 3). | Pending |
+| **`CP-17.1`** | Backend DB migrations & APIs for `devices.is_archived`, archive/restore/delete offline devices, `schedule_rules.block_mode` (`internet` / `youtube`), editable targets, clone & `snoozed_until` enforcement (`FB-P17-002`, `FB-P17-004`, `FB-P17-005`). | [x] Complete |
+| **`CP-17.2`** | Frontend `DevicesPage.tsx` overhaul (collapsible groups, compact icons, unified `Actions` column, column sorting, `+ Group` popover, archived filter) and compact Drawer header controls + inline Timer (`FB-P17-001`, `FB-P17-002`, `FB-P17-003`). | [x] Complete |
+| **`CP-17.3`** | Frontend `SchedulesPage.tsx` & `ScheduleFormModal.tsx` upgrades (weekly timeline bar, `YouTube Only` mode, editable target, Clone, Snooze, `AutoRefreshSelector`) & >= 85% test suites (`pytest`, `ruff`, `mypy`, `vitest`, `vite build`). | [x] Complete |
+| **`CP-17.4`** | Bump version to `1.3.0-rc2`, rebuild Docker container, run live API smoke check, and publish `docs/development/Validation/PHASE17-Verify.md` (Gate 2). | [x] Complete |
+| **`CP-17.5`** | Ingest validation feedback, write exit analysis, merge `phase17`, tag `v1.3.0-rc2`, and create `PHASE_18_TRACKING.md` (Gate 3). | [x] Complete |
 
 ---
 

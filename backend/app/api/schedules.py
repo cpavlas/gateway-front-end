@@ -15,12 +15,15 @@ from app.services.schedule_service import (
     ScheduleListResponse,
     ScheduleReconciliationSummary,
     ScheduleResponse,
+    ScheduleSnoozeRequest,
     ScheduleToggleRequest,
     ScheduleUpdateRequest,
+    clone_schedule,
     create_schedule,
     delete_schedule,
     list_schedules,
     reconcile_schedules_and_policies,
+    snooze_schedule,
     toggle_schedule,
     update_schedule,
 )
@@ -133,4 +136,48 @@ async def post_reconcile_schedules(
 ) -> ScheduleReconciliationSummary:
     """Trigger an immediate 5-tier policy and DHCP IP drift reconciliation cycle."""
     return await reconcile_schedules_and_policies(db, opnsense, settings)
+
+
+@router.post(
+    "/{schedule_id}/clone",
+    response_model=ScheduleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_clone_schedule(
+    schedule_id: int,
+    request: Request,
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+) -> ScheduleResponse:
+    """Duplicate an existing recurring schedule rule (`FB-P17-004`)."""
+    return await clone_schedule(
+        db,
+        opnsense,
+        settings,
+        schedule_id,
+        actor_ip=get_client_ip(request),
+    )
+
+
+@router.post("/{schedule_id}/snooze", response_model=ScheduleResponse)
+async def post_snooze_schedule(
+    schedule_id: int,
+    payload: ScheduleSnoozeRequest,
+    request: Request,
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+) -> ScheduleResponse:
+    """Temporarily snooze or clear snooze on an active recurring schedule (`FB-P17-005`)."""
+    return await snooze_schedule(
+        db,
+        opnsense,
+        settings,
+        schedule_id,
+        payload,
+        actor_ip=get_client_ip(request),
+    )
 
