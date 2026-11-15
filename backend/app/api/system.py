@@ -108,8 +108,14 @@ def build_sqlite_health_details(
     timers_count = int(counts.get("timers_count", 0))
     schedules_count = int(counts.get("schedules_count", 0))
     audit_logs_count = int(counts.get("audit_logs_count", 0))
+    custom_blocked_targets_count = int(counts.get("custom_blocked_targets_count", 0))
     total_records = (
-        devices_count + groups_count + timers_count + schedules_count + audit_logs_count
+        devices_count
+        + groups_count
+        + timers_count
+        + schedules_count
+        + audit_logs_count
+        + custom_blocked_targets_count
     )
     storage_bytes = compute_sqlite_file_bytes(sqlite_db_path, pragma_bytes=pragma_bytes)
     return {
@@ -121,6 +127,7 @@ def build_sqlite_health_details(
         "timers_count": timers_count,
         "schedules_count": schedules_count,
         "audit_logs_count": audit_logs_count,
+        "custom_blocked_targets_count": custom_blocked_targets_count,
     }
 
 
@@ -147,6 +154,7 @@ async def check_sqlite_health(
         "timers_count": 0,
         "schedules_count": 0,
         "audit_logs_count": 0,
+        "custom_blocked_targets_count": 0,
     }
     pragma_bytes = 0
     try:
@@ -159,6 +167,8 @@ async def check_sqlite_health(
                     "(SELECT COUNT(*) FROM temporary_overrides) AS timers_count, "
                     "(SELECT COUNT(*) FROM schedules) AS schedules_count, "
                     "(SELECT COUNT(*) FROM audit_logs) AS audit_logs_count, "
+                    "(SELECT COUNT(*) FROM blocked_targets WHERE is_enabled = 1) "
+                    "AS custom_blocked_targets_count, "
                     "(SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()) "
                     "AS pragma_bytes"
                 )
@@ -170,7 +180,8 @@ async def check_sqlite_health(
             counts["timers_count"] = int(stats_row[2] or 0)
             counts["schedules_count"] = int(stats_row[3] or 0)
             counts["audit_logs_count"] = int(stats_row[4] or 0)
-            pragma_bytes = int(stats_row[5] or 0)
+            counts["custom_blocked_targets_count"] = int(stats_row[5] or 0)
+            pragma_bytes = int(stats_row[6] or 0)
     except Exception:  # noqa: S110
         pass
 

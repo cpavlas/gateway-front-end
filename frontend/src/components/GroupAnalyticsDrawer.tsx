@@ -401,6 +401,57 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
               loadingMessage="Refreshing group telemetry..."
               testId="group-drawer-telemetry-shell"
             >
+              {/* Daily YouTube Quota Progress Banner (FB-P17-006) */}
+              {group?.daily_youtube_limit_minutes != null &&
+                group.daily_youtube_limit_minutes > 0 && (
+                  <div
+                    data-testid="group-drawer-youtube-quota-banner"
+                    className={`rounded-xl border p-3.5 text-xs ${
+                      group.is_youtube_quota_reached
+                        ? 'border-rose-500/40 bg-rose-950/25 text-rose-100'
+                        : 'border-indigo-500/35 bg-indigo-950/20 text-indigo-100'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <YouTubeLogoIcon className="h-4 w-4 text-rose-400" />
+                        <span>Daily YouTube Viewing Time Quota</span>
+                      </div>
+                      <span className="font-mono font-bold">
+                        {formatActiveMinutes(group.today_youtube_minutes ?? 0)} /{' '}
+                        {formatActiveMinutes(group.daily_youtube_limit_minutes)}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-950">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          group.is_youtube_quota_reached ? 'bg-rose-500' : 'bg-indigo-500'
+                        }`}
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.round(
+                              ((group.today_youtube_minutes ?? 0) /
+                                group.daily_youtube_limit_minutes) *
+                                100,
+                            ),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-300">
+                      {group.is_youtube_quota_reached
+                        ? 'Daily cap reached — YouTube is auto-blocked until midnight (active Bonus Timers override).'
+                        : `${formatActiveMinutes(
+                            Math.max(
+                              0,
+                              group.daily_youtube_limit_minutes - (group.today_youtube_minutes ?? 0),
+                            ),
+                          )} remaining today before auto-block.`}
+                    </p>
+                  </div>
+                )}
+
               {/* Summary KPI Cards */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5">
@@ -489,8 +540,25 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {appUsage.map((app) => {
                     const isYoutube = app.app_key === 'youtube'
+                    const isPlex = app.app_key === 'plex'
                     const appTopDevices = (app.top_devices ?? []).slice(0, 3)
                     const activeSessions = app.active_sessions ?? []
+                    const iconColor =
+                      isYoutube
+                        ? 'text-rose-400'
+                        : isPlex
+                          ? 'text-amber-400'
+                          : app.app_key === 'netflix'
+                            ? 'text-red-400'
+                            : app.app_key === 'disney_plus'
+                              ? 'text-cyan-400'
+                              : app.app_key === 'twitch'
+                                ? 'text-violet-400'
+                                : app.app_key === 'tiktok'
+                                  ? 'text-pink-400'
+                                  : app.app_key === 'discord'
+                                    ? 'text-indigo-400'
+                                    : 'text-emerald-400'
                     return (
                       <div
                         key={app.app_key}
@@ -501,7 +569,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <Tv
-                                className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
+                                className={`h-4 w-4 ${iconColor}`}
                                 aria-hidden="true"
                               />
                               <div>
@@ -525,24 +593,46 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                             </div>
                           </div>
 
-                          {!isYoutube && activeSessions.length > 0 && (
+                          {isPlex && activeSessions.length > 0 && (
                             <div
                               data-testid="group-drawer-plex-now-playing"
-                              className="mt-2.5 rounded-md border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] space-y-1"
+                              className="mt-2.5 rounded-md border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] space-y-2"
                             >
-                              {activeSessions.map((sess) => (
-                                <div
-                                  key={sess.session_key}
-                                  className="flex items-center justify-between gap-2"
-                                >
-                                  <span className="truncate font-semibold text-amber-200">
-                                    {sess.effective_name} · {sess.media_title}
-                                  </span>
-                                  <span className="shrink-0 font-mono text-[10px] uppercase text-slate-300">
-                                    {sess.state} · {sess.stream_decision}
-                                  </span>
-                                </div>
-                              ))}
+                              {activeSessions.map((sess) => {
+                                const bitrateKbps =
+                                  sess.transcode_bitrate_kbps ?? sess.bandwidth_kbps ?? 0
+                                const pct = Math.max(0, Math.min(100, sess.progress_percent ?? 0))
+                                return (
+                                  <div key={sess.session_key} className="space-y-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate font-semibold text-amber-200">
+                                        {sess.effective_name} · {sess.media_title}
+                                      </span>
+                                      <span className="shrink-0 font-mono text-[10px] uppercase text-slate-300">
+                                        {sess.state} · {sess.stream_decision}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-300">
+                                      <span>
+                                        {sess.user_name ? `User: ${sess.user_name}` : sess.player_title}
+                                        {sess.video_resolution ? ` · ${sess.video_resolution}` : ''}
+                                      </span>
+                                      <span className="font-mono text-amber-300">
+                                        {bitrateKbps > 0
+                                          ? `${(bitrateKbps / 1000).toFixed(1)} Mbps · `
+                                          : ''}
+                                        {pct}%
+                                      </span>
+                                    </div>
+                                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950">
+                                      <div
+                                        className="h-full rounded-full bg-amber-400"
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </div>
                           )}
 

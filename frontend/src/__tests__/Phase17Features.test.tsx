@@ -38,7 +38,7 @@ function createTestQueryClient() {
 
 const MOCK_HEALTH: SystemHealthResponse = {
   overall_status: 'healthy',
-  version: '1.3.0-rc2',
+  version: '1.3.0-rc3',
   services: {
     sqlite: { service: 'sqlite', status: 'healthy', latency_ms: 1.1, message: 'OK' },
     opnsense: { service: 'opnsense', status: 'healthy', latency_ms: 12.0, message: 'OK' },
@@ -246,6 +246,7 @@ describe('Phase 17 UI Enhancements (FB-P17-001 through FB-P17-005)', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     localStorage.clear()
+    localStorage.setItem('gateway_devices_status_filter', 'all')
     vi.spyOn(apiClient, 'getCurrentUser').mockResolvedValue({
       username: 'admin',
       authenticated: true,

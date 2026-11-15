@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.opnsense import OPNsenseClient, OPNsenseClientError
 from app.config import Settings
+
+if TYPE_CHECKING:
+    from app.clients.elasticsearch import ElasticsearchServiceClient
 from app.models import (
     AuditLog,
     Device,
@@ -1024,6 +1027,44 @@ def apply_schedule_snooze_mutation(
     )
 
 
+def collect_quota_exceeded_youtube_targets(
+    groups: list[DeviceGroup],
+    group_member_ids: dict[int, list[int]],
+    group_today_youtube_minutes: dict[int, int],
+    tz_name: str = "America/Los_Angeles",
+) -> tuple[dict[int, ActiveScheduleInfo], set[int]]:
+    """Compute per-device YouTube blocks triggered by group daily YouTube quotas (`FB-P17-006`).
+
+    Returns `(quota_block_map, all_quota_managed_device_ids)` so exceeded groups trigger a
+    YouTube block AND daily rollover / cleared limits restore access automatically.
+    """
+    quota_block_map: dict[int, ActiveScheduleInfo] = {}
+    all_quota_managed_device_ids: set[int] = set()
+    for grp in groups:
+        limit_mins = getattr(grp, "daily_youtube_limit_minutes", None)
+        if limit_mins is None or limit_mins <= 0:
+            continue
+        members = group_member_ids.get(grp.id, [])
+        all_quota_managed_device_ids.update(members)
+        used_mins = max(0, int(group_today_youtube_minutes.get(grp.id, 0) or 0))
+        if used_mins >= limit_mins:
+            info = ActiveScheduleInfo(
+                schedule_id=0,
+                name=f"Daily YouTube Quota ({grp.name}: {used_mins}m/{limit_mins}m)",
+                target_type="group",
+                target_id=grp.id,
+                target_name=grp.name,
+                block_mode="youtube",
+                start_time="00:00",
+                end_time="23:59",
+                timezone=tz_name or "America/Los_Angeles",
+            )
+            for dev_id in members:
+                if dev_id not in quota_block_map:
+                    quota_block_map[dev_id] = info
+    return quota_block_map, all_quota_managed_device_ids
+
+
 def plan_youtube_schedule_actions(
     devices: list[Device],
     schedules: list[RecurringSchedule],
@@ -1033,9 +1074,21 @@ def plan_youtube_schedule_actions(
     current_yt_alias_ips: set[str],
     protected_ips: frozenset[str],
     extra_youtube_unblock_device_ids: set[int] | None = None,
+    *,
+    youtube_quota_map: dict[int, ActiveScheduleInfo] | None = None,
+    quota_managed_device_ids: set[int] | None = None,
 ) -> tuple[list[tuple[Device, ActiveScheduleInfo]], list[Device]]:
-    """Compute (devices_to_block_youtube, devices_to_unblock_youtube) for YouTube schedules."""
+    """Compute (devices_to_block_youtube, devices_to_unblock_youtube) for YouTube policies.
+
+    Precedence:
+    1. Protected device/IP -> never YouTube-blocked
+    2. Active Reward/Bonus Timer (`mode == 'bonus'`) -> overrides schedules & daily YT quotas
+    3. Active YouTube Schedule OR Group Daily YouTube Quota reached -> YouTube-blocked
+    4. Otherwise -> restore YouTube if device belongs to a managed schedule or quota group
+    """
     all_yt_target_ids: set[int] = set(extra_youtube_unblock_device_ids or set())
+    if quota_managed_device_ids:
+        all_yt_target_ids.update(quota_managed_device_ids)
     for sched in schedules:
         if normalize_schedule_block_mode(getattr(sched, "block_mode", "internet")) != "youtube":
             continue
@@ -1046,6 +1099,7 @@ def plan_youtube_schedule_actions(
 
     to_yt_block: list[tuple[Device, ActiveScheduleInfo]] = []
     to_yt_unblock: list[Device] = []
+    quota_map = youtube_quota_map or {}
 
     for dev in devices:
         dev_ip = dev.ipv4_address
@@ -1054,11 +1108,11 @@ def plan_youtube_schedule_actions(
         has_bonus = (
             active_ov is not None and active_ov.is_active and active_ov.mode == "bonus"
         )
-        yt_sched = youtube_schedule_map.get(dev.id)
+        yt_policy = youtube_schedule_map.get(dev.id) or quota_map.get(dev.id)
 
-        if yt_sched is not None and not is_prot and not has_bonus:
+        if yt_policy is not None and not is_prot and not has_bonus:
             if dev_ip and (not dev.is_youtube_blocked or dev_ip not in current_yt_alias_ips):
-                to_yt_block.append((dev, yt_sched))
+                to_yt_block.append((dev, yt_policy))
         elif dev.id in all_yt_target_ids:
             if (dev_ip and dev_ip in current_yt_alias_ips) or dev.is_youtube_blocked:
                 to_yt_unblock.append(dev)
@@ -1127,6 +1181,8 @@ async def reconcile_schedules_and_policies(
     now_utc: datetime | None = None,
     *,
     extra_youtube_unblock_device_ids: set[int] | None = None,
+    es_client: ElasticsearchServiceClient | None = None,
+    group_today_youtube_minutes: dict[int, int] | None = None,
 ) -> ScheduleReconciliationSummary:
     """Evaluate all devices against the 5-Tier Policy Precedence Engine & sync OPNsense."""
     summary = ScheduleReconciliationSummary()
@@ -1274,10 +1330,44 @@ async def reconcile_schedules_and_policies(
             logger.warning(err)
             summary.errors.append(err)
 
-    # 4. Enforce YouTube-only schedules (add/remove IPs on gateway_youtube_blocked_devices)
-    has_youtube_rules = bool(youtube_schedule_map or extra_youtube_unblock_device_ids) or any(
-        normalize_schedule_block_mode(getattr(s, "block_mode", "internet")) == "youtube"
-        for s in schedules
+    # 4. Enforce YouTube-only schedules and group daily YouTube quotas
+    all_groups = list((await db.execute(select(DeviceGroup))).scalars().all())
+    all_memberships = list(
+        (await db.execute(select(DeviceGroupMembership))).scalars().all()
+    )
+    has_quota_groups = any(
+        getattr(g, "daily_youtube_limit_minutes", None) is not None for g in all_groups
+    )
+    resolved_yt_minutes: dict[int, int] = dict(group_today_youtube_minutes or {})
+    if has_quota_groups and group_today_youtube_minutes is None:
+        from app.services.group_service import resolve_group_today_youtube_minutes
+
+        resolved_yt_minutes = await resolve_group_today_youtube_minutes(
+            settings,
+            all_groups,
+            all_memberships,
+            devices,
+            es_client=es_client,
+        )
+    youtube_quota_map, quota_managed_device_ids = collect_quota_exceeded_youtube_targets(
+        all_groups,
+        group_member_ids,
+        resolved_yt_minutes,
+        tz_name=settings.tz,
+    )
+
+    has_youtube_rules = (
+        bool(
+            youtube_schedule_map
+            or youtube_quota_map
+            or quota_managed_device_ids
+            or extra_youtube_unblock_device_ids
+        )
+        or any(
+            normalize_schedule_block_mode(getattr(s, "block_mode", "internet"))
+            == "youtube"
+            for s in schedules
+        )
     )
     if has_youtube_rules:
         try:
@@ -1300,6 +1390,8 @@ async def reconcile_schedules_and_policies(
                 current_yt_alias_ips,
                 protected_ips,
                 extra_youtube_unblock_device_ids=extra_youtube_unblock_device_ids,
+                youtube_quota_map=youtube_quota_map,
+                quota_managed_device_ids=quota_managed_device_ids,
             )
             for dev, yt_sched in to_yt_block:
                 dev_ip = dev.ipv4_address

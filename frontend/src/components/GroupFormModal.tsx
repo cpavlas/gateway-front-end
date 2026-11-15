@@ -78,6 +78,7 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
   const [description, setDescription] = useState('')
   const [colorBadge, setColorBadge] = useState<GroupColor>('indigo')
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([])
+  const [dailyYoutubeLimitMinutes, setDailyYoutubeLimitMinutes] = useState<number | null>(null)
   const [memberSearch, setMemberSearch] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -88,11 +89,13 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
       setDescription(editingGroup.description ?? '')
       setColorBadge((editingGroup.color_badge as GroupColor) || 'indigo')
       setSelectedDeviceIds(editingGroup.member_device_ids ?? [])
+      setDailyYoutubeLimitMinutes(editingGroup.daily_youtube_limit_minutes ?? null)
     } else {
       setName('')
       setDescription('')
       setColorBadge('indigo')
       setSelectedDeviceIds([])
+      setDailyYoutubeLimitMinutes(null)
     }
     setMemberSearch('')
     setErrorMessage(null)
@@ -122,6 +125,7 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
           description: description.trim(),
           color_badge: colorBadge,
           device_ids: selectedDeviceIds,
+          daily_youtube_limit_minutes: dailyYoutubeLimitMinutes,
         })
       }
       return await apiClient.createGroup({
@@ -129,6 +133,7 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
         description: description.trim(),
         color_badge: colorBadge,
         device_ids: selectedDeviceIds,
+        daily_youtube_limit_minutes: dailyYoutubeLimitMinutes,
       })
     },
     onSuccess: () => {
@@ -271,6 +276,84 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
                   <span>{c.label}</span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Daily YouTube Viewing Quota (FB-P17-006) */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <label
+                  htmlFor="group-daily-youtube-limit-select"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-300"
+                >
+                  Daily YouTube Viewing Time Quota
+                </label>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Automatically blocks YouTube for non-protected group members once today&apos;s
+                  combined watch time hits this cap (resets at midnight; Bonus Timers override).
+                </p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+              <select
+                id="group-daily-youtube-limit-select"
+                data-testid="group-daily-youtube-limit-select"
+                aria-label="Daily YouTube limit preset"
+                value={
+                  dailyYoutubeLimitMinutes === null
+                    ? 'none'
+                    : [30, 60, 90, 120, 180].includes(dailyYoutubeLimitMinutes)
+                      ? String(dailyYoutubeLimitMinutes)
+                      : 'custom'
+                }
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === 'none') {
+                    setDailyYoutubeLimitMinutes(null)
+                  } else if (val === 'custom') {
+                    setDailyYoutubeLimitMinutes((prev) => prev ?? 45)
+                  } else {
+                    setDailyYoutubeLimitMinutes(Number(val))
+                  }
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="none">None (Unlimited)</option>
+                <option value="30">30m / day</option>
+                <option value="60">1h / day (60m)</option>
+                <option value="90">1.5h / day (90m)</option>
+                <option value="120">2h / day (120m)</option>
+                <option value="180">3h / day (180m)</option>
+                <option value="custom">Custom minutes...</option>
+              </select>
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  id="group-daily-youtube-limit-input"
+                  type="number"
+                  min={1}
+                  max={1440}
+                  step={1}
+                  data-testid="group-daily-youtube-limit-input"
+                  aria-label="Daily YouTube limit in minutes"
+                  placeholder="Unlimited"
+                  value={dailyYoutubeLimitMinutes ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim()
+                    if (!raw) {
+                      setDailyYoutubeLimitMinutes(null)
+                      return
+                    }
+                    const parsed = Number.parseInt(raw, 10)
+                    if (!Number.isNaN(parsed)) {
+                      setDailyYoutubeLimitMinutes(Math.max(1, Math.min(1440, parsed)))
+                    }
+                  }}
+                  className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                />
+                <span className="text-xs text-slate-400">min / day</span>
+              </div>
             </div>
           </div>
 

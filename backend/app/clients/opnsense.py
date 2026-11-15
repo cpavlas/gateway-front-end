@@ -88,6 +88,21 @@ class OPNsenseClient:
         self._youtube_domains_alias = getattr(
             settings, "opnsense_youtube_domains_alias", "gateway_youtube_domains"
         )
+        self._custom_domains_alias = getattr(
+            settings,
+            "opnsense_custom_domains_alias",
+            "gateway_custom_blocked_domains",
+        )
+        self._custom_asns_alias = getattr(
+            settings,
+            "opnsense_custom_asns_alias",
+            "gateway_custom_blocked_asns",
+        )
+        self._custom_devices_alias = getattr(
+            settings,
+            "opnsense_custom_devices_alias",
+            "gateway_custom_blocked_devices",
+        )
         self._auth = (
             settings.opnsense_api_key.get_secret_value(),
             settings.opnsense_api_secret.get_secret_value(),
@@ -432,6 +447,163 @@ class OPNsenseClient:
             if exc.status_code in (400, 404):
                 return []
             raise
+
+    async def _upsert_alias_contents(
+        self,
+        client: httpx.AsyncClient,
+        alias_name: str,
+        alias_type: str,
+        items: list[str],
+        description: str,
+    ) -> list[str]:
+        """Create or replace an OPNsense Firewall Alias content list via MVC API (`FB-P18-001`)."""
+        clean_items = list(dict.fromkeys(str(i).strip() for i in items if str(i).strip()))
+        uuid_resp = await client.get(f"/api/firewall/alias/get_alias_uuid/{alias_name}")
+        uuid_val: str | None = None
+        if uuid_resp.status_code == 200:
+            payload = uuid_resp.json()
+            if isinstance(payload, dict) and payload.get("uuid"):
+                uuid_val = str(payload["uuid"])
+
+        if not uuid_val:
+            add_resp = await client.post(
+                "/api/firewall/alias/add_item",
+                json={
+                    "alias": {
+                        "enabled": "1",
+                        "name": alias_name,
+                        "type": alias_type,
+                        "content": "\n".join(clean_items),
+                        "description": description,
+                    }
+                },
+            )
+            if add_resp.status_code == 400 and alias_type == "asn":
+                add_resp = await client.post(
+                    "/api/firewall/alias/add_item",
+                    json={
+                        "alias": {
+                            "enabled": "1",
+                            "name": alias_name,
+                            "type": "network",
+                            "content": "\n".join(clean_items),
+                            "description": description,
+                        }
+                    },
+                )
+            self._raise_for_status(add_resp, f"alias/add_item/{alias_name}")
+            return clean_items
+
+        _u, alias_dict, _existing = await self._get_alias_uuid_and_item(client, alias_name)
+        upd_resp = await client.post(
+            f"/api/firewall/alias/set_item/{uuid_val}",
+            json={
+                "alias": {
+                    "enabled": str(alias_dict.get("enabled", "1")),
+                    "name": str(alias_dict.get("name", alias_name)),
+                    "type": _extract_selected_option(
+                        alias_dict.get("type"), default=alias_type
+                    ),
+                    "proto": _extract_selected_option(alias_dict.get("proto"), default=""),
+                    "interface": _extract_selected_option(
+                        alias_dict.get("interface"), default=""
+                    ),
+                    "counters": str(alias_dict.get("counters", "1")),
+                    "updatefreq": str(alias_dict.get("updatefreq", "")),
+                    "content": "\n".join(clean_items),
+                    "description": str(alias_dict.get("description", description)),
+                }
+            },
+        )
+        self._raise_for_status(upd_resp, f"alias/set_item/{uuid_val}")
+        return clean_items
+
+    async def ensure_custom_block_aliases_exist(self) -> dict[str, str]:
+        """Ensure OPNsense custom domain/ASN/device block aliases exist (`FB-P18-001`)."""
+        async with self._create_http_client() as client:
+            for alias_name, alias_type, desc in (
+                (
+                    self._custom_domains_alias,
+                    "host",
+                    "Custom blocked destination domains managed by Gateway Controller",
+                ),
+                (
+                    self._custom_asns_alias,
+                    "asn",
+                    "Custom blocked destination ASNs managed by Gateway Controller",
+                ),
+                (
+                    self._custom_devices_alias,
+                    "host",
+                    "Devices with custom domain/ASN rules managed by Gateway Controller",
+                ),
+            ):
+                uuid_resp = await client.get(
+                    f"/api/firewall/alias/get_alias_uuid/{alias_name}"
+                )
+                uuid_val: str | None = None
+                if uuid_resp.status_code == 200:
+                    payload = uuid_resp.json()
+                    if isinstance(payload, dict) and payload.get("uuid"):
+                        uuid_val = str(payload["uuid"])
+                if not uuid_val:
+                    await self._upsert_alias_contents(
+                        client, alias_name, alias_type, [], desc
+                    )
+            reconf_resp = await client.post("/api/firewall/alias/reconfigure", json={})
+            self._raise_for_status(reconf_resp, "alias/reconfigure")
+        return {
+            "domains_alias": self._custom_domains_alias,
+            "asns_alias": self._custom_asns_alias,
+            "devices_alias": self._custom_devices_alias,
+        }
+
+    async def sync_custom_block_aliases(
+        self,
+        *,
+        domains: list[str],
+        asns: list[str],
+        device_ips: list[str],
+    ) -> dict[str, Any]:
+        """Synchronize enabled custom blocked domains, ASNs, and device IPs to OPNsense."""
+        numeric_asns = [
+            re_val
+            for raw in asns
+            if (re_val := str(raw).strip().upper().lstrip("AS")) and re_val.isdigit()
+        ]
+        valid_ips = [validate_ipv4_address(ip) for ip in device_ips if ip and ip.strip()]
+        async with self._create_http_client() as client:
+            synced_domains = await self._upsert_alias_contents(
+                client,
+                self._custom_domains_alias,
+                "host",
+                domains,
+                "Custom blocked destination domains managed by Gateway Controller",
+            )
+            synced_asns = await self._upsert_alias_contents(
+                client,
+                self._custom_asns_alias,
+                "asn",
+                numeric_asns,
+                "Custom blocked destination ASNs managed by Gateway Controller",
+            )
+            synced_ips = await self._upsert_alias_contents(
+                client,
+                self._custom_devices_alias,
+                "host",
+                valid_ips,
+                "Devices with custom domain/ASN rules managed by Gateway Controller",
+            )
+            reconf_resp = await client.post("/api/firewall/alias/reconfigure", json={})
+            self._raise_for_status(reconf_resp, "alias/reconfigure")
+        return {
+            "domains_alias": self._custom_domains_alias,
+            "asns_alias": self._custom_asns_alias,
+            "devices_alias": self._custom_devices_alias,
+            "domains": synced_domains,
+            "asns": synced_asns,
+            "device_ips": synced_ips,
+        }
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response, endpoint_label: str) -> None:

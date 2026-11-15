@@ -172,11 +172,90 @@ _YOUTUBE_BACKGROUND_NOISE_DOMAINS: list[str] = [
 ]
 
 
+_APP_USAGE_CATALOG: tuple[tuple[str, str], ...] = (
+    ("youtube", "YouTube"),
+    ("plex", "Plex"),
+    ("netflix", "Netflix"),
+    ("disney_plus", "Disney+"),
+    ("twitch", "Twitch"),
+    ("tiktok", "TikTok"),
+    ("discord", "Discord"),
+    ("gaming", "Gaming"),
+)
+
+_EXTENDED_APP_DOMAINS: dict[str, list[str]] = {
+    "netflix": [
+        "netflix.com",
+        "nflxvideo.net",
+        "nflxso.net",
+        "nflxext.com",
+        "nflximg.net",
+    ],
+    "disney_plus": [
+        "disneyplus.com",
+        "bamgrid.com",
+        "dssott.com",
+        "disney-plus.net",
+        "disney.com",
+    ],
+    "twitch": [
+        "twitch.tv",
+        "ttvnw.net",
+        "jtvnw.net",
+        "live-video.net",
+    ],
+    "tiktok": [
+        "tiktok.com",
+        "tiktokv.com",
+        "tiktokcdn.com",
+        "byteoversea.com",
+        "musical.ly",
+    ],
+    "discord": [
+        "discord.com",
+        "discordapp.com",
+        "discord.gg",
+        "discord.media",
+        "discordapp.net",
+        "discord.gift",
+    ],
+    "gaming": [
+        "playstation.net",
+        "playstation.com",
+        "sonyentertainmentnetwork.com",
+        "xboxlive.com",
+        "xbox.com",
+        "nintendo.net",
+        "nintendo.com",
+        "steampowered.com",
+        "steamcommunity.com",
+        "steamserver.net",
+        "epicgames.com",
+    ],
+}
+
+
+def _extract_asn_number(org_bucket: dict[str, Any]) -> int | None:
+    """Extract numeric ASN (`destination.as.number`) from a `top_asn_orgs` sub-agg bucket."""
+    asn_buckets = ((org_bucket.get("asn") or {}).get("buckets")) or []
+    for ab in asn_buckets:
+        raw_key = ab.get("key")
+        if raw_key is None:
+            continue
+        try:
+            num = int(raw_key)
+            if num > 0:
+                return num
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _build_app_usage_agg(
     safe_tz: str,
     excluded_ips: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build Elasticsearch filters aggregation for YouTube and Plex 5-minute active windows."""
+    """Build Elasticsearch filters aggregation for YouTube, Plex, and streaming/gaming apps."""
     common_must_not: list[dict[str, Any]] = [
         {"term": {"event.action": "block"}},
     ]
@@ -194,57 +273,66 @@ def _build_app_usage_agg(
         {"terms": {"dns.question.name": _PLEX_SERVER_NOISE_DOMAINS}},
     ]
 
-    return {
-        "filters": {
-            "filters": {
-                "youtube": {
-                    "bool": {
-                        "must_not": youtube_must_not,
-                        "should": [
-                            {
-                                "terms": {
-                                    "dns.question.registered_domain": [
-                                        "youtube.com",
-                                        "youtu.be",
-                                        "googlevideo.com",
-                                        "ytimg.com",
-                                    ]
-                                }
-                            },
-                            {
-                                "terms": {
-                                    "dns.question.name": [
-                                        "youtubei.googleapis.com",
-                                        "www.youtube.com",
-                                        "m.youtube.com",
-                                    ]
-                                }
-                            },
-                        ],
-                        "minimum_should_match": 1,
-                    }
-                },
-                "plex": {
-                    "bool": {
-                        "must_not": plex_must_not,
-                        "should": [
-                            {"term": {"destination.port": 32400}},
-                            {
-                                "terms": {
-                                    "dns.question.registered_domain": [
-                                        "plex.tv",
-                                        "plex.direct",
-                                        "plex.bz",
-                                        "plexapp.com",
-                                    ]
-                                }
-                            },
-                        ],
-                        "minimum_should_match": 1,
-                    }
-                },
+    filters_map: dict[str, dict[str, Any]] = {
+        "youtube": {
+            "bool": {
+                "must_not": youtube_must_not,
+                "should": [
+                    {
+                        "terms": {
+                            "dns.question.registered_domain": [
+                                "youtube.com",
+                                "youtu.be",
+                                "googlevideo.com",
+                                "ytimg.com",
+                            ]
+                        }
+                    },
+                    {
+                        "terms": {
+                            "dns.question.name": [
+                                "youtubei.googleapis.com",
+                                "www.youtube.com",
+                                "m.youtube.com",
+                            ]
+                        }
+                    },
+                ],
+                "minimum_should_match": 1,
             }
         },
+        "plex": {
+            "bool": {
+                "must_not": plex_must_not,
+                "should": [
+                    {"term": {"destination.port": 32400}},
+                    {
+                        "terms": {
+                            "dns.question.registered_domain": [
+                                "plex.tv",
+                                "plex.direct",
+                                "plex.bz",
+                                "plexapp.com",
+                            ]
+                        }
+                    },
+                ],
+                "minimum_should_match": 1,
+            }
+        },
+    }
+    for app_key, reg_domains in _EXTENDED_APP_DOMAINS.items():
+        filters_map[app_key] = {
+            "bool": {
+                "must_not": common_must_not,
+                "filter": {
+                    "terms": {"dns.question.registered_domain": reg_domains},
+                },
+            }
+        }
+
+    return {
+        "filters": {"filters": filters_map},
         "aggs": {
             "active_slots": {
                 "date_histogram": {
@@ -298,10 +386,10 @@ def _build_app_usage_agg(
 
 
 def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract YouTube/Plex active usage (`active_minutes`), queries, bytes, and top 3 devices."""
+    """Extract multi-app 5-minute active usage (`youtube`, `plex`, `netflix`, etc.)."""
     buckets = ((aggs.get("app_usage") or {}).get("buckets")) or {}
     items: list[dict[str, Any]] = []
-    for app_key, display_name in (("youtube", "YouTube"), ("plex", "Plex")):
+    for app_key, display_name in _APP_USAGE_CATALOG:
         b = buckets.get(app_key) if isinstance(buckets, dict) else {}
         if not isinstance(b, dict):
             b = {}
@@ -493,6 +581,12 @@ def build_network_overview_query(
                         },
                         "aggs": {
                             "bytes": {"sum": {"field": "network.bytes"}},
+                            "asn": {
+                                "terms": {
+                                    "field": "destination.as.number",
+                                    "size": 1,
+                                }
+                            },
                         },
                     }
                 },
@@ -595,6 +689,7 @@ def normalize_network_overview_response(
     top_organizations = [
         {
             "organization": str(b.get("key")),
+            "asn": _extract_asn_number(b),
             "packet_count": int(b.get("doc_count") or 0),
             "bytes": int(float((b.get("bytes") or {}).get("value") or 0)),
         }
@@ -707,6 +802,12 @@ def build_device_analytics_query(
                         },
                         "aggs": {
                             "bytes": {"sum": {"field": "network.bytes"}},
+                            "asn": {
+                                "terms": {
+                                    "field": "destination.as.number",
+                                    "size": 1,
+                                }
+                            },
                         },
                     }
                 },
@@ -859,6 +960,7 @@ def normalize_device_analytics_response(
     top_organizations = [
         {
             "organization": str(b.get("key")),
+            "asn": _extract_asn_number(b),
             "packet_count": int(b.get("doc_count") or 0),
             "bytes": int(float((b.get("bytes") or {}).get("value") or 0)),
         }
@@ -1016,6 +1118,12 @@ def build_group_analytics_query(
                         },
                         "aggs": {
                             "bytes": {"sum": {"field": "network.bytes"}},
+                            "asn": {
+                                "terms": {
+                                    "field": "destination.as.number",
+                                    "size": 1,
+                                }
+                            },
                         },
                     }
                 },
@@ -1146,6 +1254,112 @@ def normalize_group_analytics_response(
         )
     ]
     return base
+
+
+def build_target_attribution_query(
+    target_type: str,
+    target_value: str,
+    window: str = "today",
+    tz_name: str = "UTC",
+    top_n: int = 20,
+) -> dict[str, Any]:
+    """Construct an ES aggregation query identifying LAN devices matching a domain or ASN."""
+    _, es_gte, _ = resolve_time_window(window)
+    safe_tz = (tz_name or "UTC").strip() or "UTC"
+    capped_top_n = max(1, min(int(top_n), 50))
+    t_type = (target_type or "").strip().lower()
+    clean_val = (target_value or "").strip()
+    if not clean_val:
+        raise ValueError("target_value cannot be empty.")
+
+    filters: list[dict[str, Any]] = [
+        _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
+        {"terms": {"source.ip": RFC1918_CIDRS}},
+    ]
+    if t_type == "domain":
+        filters.append({"term": {"event.provider": "unbound"}})
+        filters.append({"term": {"dns.question.name": clean_val.lower()}})
+    elif t_type == "registered_domain":
+        filters.append({"term": {"event.provider": "unbound"}})
+        filters.append({"term": {"dns.question.registered_domain": clean_val.lower()}})
+    elif t_type in ("asn", "organization"):
+        filters.append({"term": {"event.provider": "filterlog"}})
+        raw_num = clean_val.upper().removeprefix("AS")
+        if raw_num.isdigit():
+            filters.append({"term": {"destination.as.number": int(raw_num)}})
+        else:
+            filters.append({"term": {"destination.as.organization.name": clean_val}})
+    else:
+        raise ValueError(
+            f"Unsupported attribution target_type '{target_type}'. "
+            "Allowed: domain, registered_domain, asn, organization."
+        )
+
+    return {
+        "size": 0,
+        "track_total_hits": True,
+        "query": {"bool": {"filter": filters}},
+        "aggs": {
+            "total_bytes": {"sum": {"field": "network.bytes"}},
+            "by_client_ip": {
+                "terms": {"field": "source.ip", "size": capped_top_n},
+                "aggs": {
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
+                    "allowed_packets": {"filter": {"term": {"event.action": "pass"}}},
+                    "blocked_packets": {"filter": {"term": {"event.action": "block"}}},
+                    "last_seen": {"max": {"field": "@timestamp"}},
+                },
+            },
+        },
+    }
+
+
+def normalize_target_attribution_response(
+    raw: dict[str, Any],
+    *,
+    target_type: str,
+    target_value: str,
+    window: str,
+) -> dict[str, Any]:
+    """Normalize client attribution Elasticsearch aggregations into per-LAN-IP stats."""
+    aggs = raw.get("aggregations") or {}
+    hits_total_obj = (raw.get("hits") or {}).get("total")
+    if isinstance(hits_total_obj, dict):
+        total_events = int(hits_total_obj.get("value") or 0)
+    else:
+        total_events = int(hits_total_obj or 0)
+
+    total_bytes = int(float((aggs.get("total_bytes") or {}).get("value") or 0))
+    ip_buckets = (aggs.get("by_client_ip") or {}).get("buckets") or []
+    clients: list[dict[str, Any]] = []
+    sum_bucket_events = 0
+    for b in ip_buckets:
+        ip_str = str(b.get("key") or "").strip()
+        if not ip_str or not is_private_lan_ip(ip_str):
+            continue
+        ev_count = int(b.get("doc_count") or 0)
+        sum_bucket_events += ev_count
+        clients.append(
+            {
+                "ipv4_address": ip_str,
+                "event_count": ev_count,
+                "dns_queries": int((b.get("dns_queries") or {}).get("doc_count") or 0),
+                "bytes": int(float((b.get("bytes") or {}).get("value") or 0)),
+                "allowed_packets": int((b.get("allowed_packets") or {}).get("doc_count") or 0),
+                "blocked_packets": int((b.get("blocked_packets") or {}).get("doc_count") or 0),
+                "last_seen_at": (b.get("last_seen") or {}).get("value_as_string"),
+            }
+        )
+
+    return {
+        "target_type": target_type,
+        "target_value": target_value,
+        "window": window,
+        "total_events": max(total_events, sum_bucket_events),
+        "total_bytes": total_bytes,
+        "clients": clients,
+    }
 
 
 def build_firewall_overview_query(
@@ -2262,16 +2476,8 @@ class ElasticsearchServiceClient:
                     "aggs": {"lan_devices": lan_agg_opt} if lan_agg_opt else {},
                 }
                 app_agg_opt = app_agg
-                yt_f = (
-                    ((app_agg_opt or {}).get("filters") or {})
-                    .get("filters", {})
-                    .get("youtube")
-                )
-                pl_f = (
-                    ((app_agg_opt or {}).get("filters") or {})
-                    .get("filters", {})
-                    .get("plex")
-                )
+                filters_map = ((app_agg_opt or {}).get("filters") or {}).get("filters") or {}
+                app_should_clauses = [f for f in filters_map.values() if f]
                 q_app = {
                     "size": 0,
                     "track_total_hits": False,
@@ -2281,7 +2487,7 @@ class ElasticsearchServiceClient:
                                 range_q,
                                 {
                                     "bool": {
-                                        "should": [f for f in (yt_f, pl_f) if f],
+                                        "should": app_should_clauses,
                                         "minimum_should_match": 1,
                                     }
                                 },
@@ -2698,6 +2904,52 @@ class ElasticsearchServiceClient:
                 destination_ip=destination_ip,
                 destination_port=destination_port,
                 protocol=protocol,
+                window=win_key,
+            )
+        except (AuthenticationException, AuthorizationException) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch authentication/authorization failed: {exc.message}",
+                status_code=403,
+            ) from exc
+        except (TransportError, Exception) as exc:
+            raise ElasticsearchQueryError(
+                f"Elasticsearch query failed: {exc.__class__.__name__}: {exc}",
+                status_code=503,
+            ) from exc
+        finally:
+            await client.close()
+
+    async def fetch_target_attribution(
+        self,
+        *,
+        target_type: str,
+        target_value: str,
+        window: str = "today",
+        top_n: int = 20,
+    ) -> dict[str, Any]:
+        """Execute LAN client attribution drilldown query for a domain or ASN (`FB-P18-003`)."""
+        win_key, _, _ = resolve_time_window(window)
+        body = build_target_attribution_query(
+            target_type=target_type,
+            target_value=target_value,
+            window=win_key,
+            tz_name=self._tz,
+            top_n=top_n,
+        )
+        target_pattern = ",".join(self._index_patterns)
+        client = self.create_es_client()
+        try:
+            resp = await client.search(
+                index=target_pattern,
+                body=body,
+                ignore_unavailable=True,
+                allow_no_indices=True,
+                request_cache=True,
+            )
+            return normalize_target_attribution_response(
+                dict(resp),
+                target_type=target_type,
+                target_value=target_value,
                 window=win_key,
             )
         except (AuthenticationException, AuthorizationException) as exc:

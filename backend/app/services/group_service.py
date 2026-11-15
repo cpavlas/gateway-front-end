@@ -26,6 +26,7 @@ from app.models import (
     DeviceGroupMembership,
     normalize_group_color,
     utc_now,
+    validate_daily_youtube_limit_minutes,
 )
 from app.services.analytics_service import (
     AppUsageItem,
@@ -71,6 +72,7 @@ class GroupCreateRequest(BaseModel):
     color_badge: str = Field(default="indigo", max_length=32)
     icon: str = Field(default="users", max_length=32)
     device_ids: list[int] = Field(default_factory=list)
+    daily_youtube_limit_minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 class GroupUpdateRequest(BaseModel):
@@ -81,6 +83,7 @@ class GroupUpdateRequest(BaseModel):
     color_badge: str | None = Field(default=None, max_length=32)
     icon: str | None = Field(default=None, max_length=32)
     device_ids: list[int] | None = None
+    daily_youtube_limit_minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 class GroupMembersUpdateRequest(BaseModel):
@@ -109,6 +112,9 @@ class GroupResponse(BaseModel):
     members: list[DeviceResponse]
     active_override: ActiveOverrideInfo | None = None
     active_schedule: ActiveScheduleInfo | None = None
+    daily_youtube_limit_minutes: int | None = None
+    today_youtube_minutes: int = 0
+    is_youtube_quota_reached: bool = False
     created_at: str
     updated_at: str
 
@@ -234,11 +240,23 @@ def compute_group_youtube_status(members: list[DeviceResponse]) -> GroupStatusLi
     return "partially_blocked"
 
 
+def compute_group_youtube_quota_state(
+    limit_minutes: int | None,
+    today_minutes: int = 0,
+) -> tuple[int, bool]:
+    """Return `(today_youtube_minutes, is_youtube_quota_reached)` for a group."""
+    safe_today = max(0, int(today_minutes or 0))
+    if limit_minutes is None or limit_minutes <= 0:
+        return safe_today, False
+    return safe_today, safe_today >= int(limit_minutes)
+
+
 def build_group_response(
     group: DeviceGroup,
     members: list[DeviceResponse],
     active_override: ActiveOverrideInfo | None = None,
     active_schedule: ActiveScheduleInfo | None = None,
+    today_youtube_minutes: int = 0,
 ) -> GroupResponse:
     """Construct a sorted `GroupResponse` with computed status and KPI counts."""
     sorted_members = sorted(
@@ -250,6 +268,10 @@ def build_group_response(
         ),
     )
     blockable = [m for m in sorted_members if not m.is_protected and m.ipv4_address]
+    limit_mins = getattr(group, "daily_youtube_limit_minutes", None)
+    safe_today_yt, quota_reached = compute_group_youtube_quota_state(
+        limit_mins, today_youtube_minutes
+    )
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -268,6 +290,9 @@ def build_group_response(
         members=sorted_members,
         active_override=active_override,
         active_schedule=active_schedule,
+        daily_youtube_limit_minutes=limit_mins,
+        today_youtube_minutes=safe_today_yt,
+        is_youtube_quota_reached=quota_reached,
         created_at=group.created_at.isoformat(),
         updated_at=group.updated_at.isoformat(),
     )
@@ -283,6 +308,7 @@ def assemble_group_responses(
     overrides_by_group: dict[int, ActiveOverrideInfo] | None = None,
     schedules_by_device: dict[int, ActiveScheduleInfo] | None = None,
     schedules_by_group: dict[int, ActiveScheduleInfo] | None = None,
+    group_today_youtube_minutes: dict[int, int] | None = None,
 ) -> list[GroupResponse]:
     """Assemble all `GroupResponse` items sorted alphabetically by group name."""
     badges_by_device = build_device_group_badge_map(groups, memberships)
@@ -290,6 +316,7 @@ def assemble_group_responses(
     grp_overrides = overrides_by_group or {}
     dev_schedules = schedules_by_device or {}
     grp_schedules = schedules_by_group or {}
+    yt_today_map = group_today_youtube_minutes or {}
     device_resp_by_id: dict[int, DeviceResponse] = {
         d.id: build_device_response(
             d,
@@ -314,6 +341,7 @@ def assemble_group_responses(
             members_by_group.get(g.id, []),
             active_override=grp_overrides.get(g.id),
             active_schedule=grp_schedules.get(g.id),
+            today_youtube_minutes=yt_today_map.get(g.id, 0),
         )
         for g in sorted_groups
     ]
@@ -551,6 +579,77 @@ async def _sync_group_memberships(
         )
 
 
+async def resolve_group_today_youtube_minutes(
+    settings: Settings,
+    groups: list[DeviceGroup],
+    memberships: list[DeviceGroupMembership],
+    devices: list[Device],
+    *,
+    es_client: ElasticsearchServiceClient | None = None,
+) -> dict[int, int]:
+    """Resolve today's combined YouTube active minutes for quota-configured groups."""
+    quota_groups = [
+        g
+        for g in groups
+        if getattr(g, "daily_youtube_limit_minutes", None) is not None
+    ]
+    if not quota_groups:
+        return {}
+
+    dev_ip_by_id = {d.id: d.ipv4_address for d in devices if d.ipv4_address}
+    ips_by_group: dict[int, list[str]] = {g.id: [] for g in quota_groups}
+    for m in memberships:
+        if m.group_id in ips_by_group:
+            ip = dev_ip_by_id.get(m.device_id)
+            if ip and ip not in ips_by_group[m.group_id]:
+                ips_by_group[m.group_id].append(ip)
+
+    cache = get_analytics_cache()
+    result: dict[int, int] = {}
+    es_key = settings.elasticsearch_api_key.get_secret_value().strip()
+    active_es: ElasticsearchServiceClient | None = es_client
+    if (
+        active_es is None
+        and settings.app_env != "testing"
+        and es_key not in ("", "changeme")
+    ):
+        active_es = ElasticsearchServiceClient(settings)
+
+    for grp in quota_groups:
+        cached = cache.get(f"group_yt_today:{grp.id}")
+        if isinstance(cached, int):
+            result[grp.id] = max(0, cached)
+            continue
+
+        tracked_ips = sorted(ips_by_group.get(grp.id) or [])
+        if not tracked_ips or active_es is None:
+            result[grp.id] = 0
+            continue
+
+        try:
+            es_data = await active_es.fetch_group_analytics(
+                ipv4_addresses=tracked_ips,
+                window="today",
+                top_n=1,
+                recent_limit=1,
+            )
+            yt_entry = next(
+                (
+                    a
+                    for a in (es_data.get("application_usage") or [])
+                    if isinstance(a, dict) and a.get("app_key") == "youtube"
+                ),
+                None,
+            )
+            yt_mins = max(0, int((yt_entry or {}).get("active_minutes") or 0))
+            cache.set(f"group_yt_today:{grp.id}", yt_mins, ttl_seconds=60.0)
+            result[grp.id] = yt_mins
+        except Exception:
+            result[grp.id] = 0
+
+    return result
+
+
 async def list_groups(
     db: AsyncSession,
     settings: Settings,
@@ -565,6 +664,9 @@ async def list_groups(
     devices = list((await db.execute(select(Device))).scalars().all())
     overrides_by_device, overrides_by_group = await load_active_override_maps(db)
     schedules_by_device, schedules_by_group = await get_active_schedule_maps(db)
+    yt_today_map = await resolve_group_today_youtube_minutes(
+        settings, groups, memberships, devices
+    )
     return GroupListResponse(
         groups=assemble_group_responses(
             groups,
@@ -576,6 +678,7 @@ async def list_groups(
             overrides_by_group=overrides_by_group,
             schedules_by_device=schedules_by_device,
             schedules_by_group=schedules_by_group,
+            group_today_youtube_minutes=yt_today_map,
         )
     )
 
@@ -597,6 +700,9 @@ async def get_group_by_id(
     devices = list((await db.execute(select(Device))).scalars().all())
     overrides_by_device, overrides_by_group = await load_active_override_maps(db)
     schedules_by_device, schedules_by_group = await get_active_schedule_maps(db)
+    yt_today_map = await resolve_group_today_youtube_minutes(
+        settings, [grp], memberships, devices
+    )
     assembled = assemble_group_responses(
         all_groups,
         memberships,
@@ -607,6 +713,7 @@ async def get_group_by_id(
         overrides_by_group=overrides_by_group,
         schedules_by_device=schedules_by_device,
         schedules_by_group=schedules_by_group,
+        group_today_youtube_minutes=yt_today_map,
     )
     for item in assembled:
         if item.id == grp.id:
@@ -628,6 +735,16 @@ async def create_group(
         payload.color_badge,
         payload.icon,
     )
+    try:
+        yt_limit = validate_daily_youtube_limit_minutes(
+            payload.daily_youtube_limit_minutes
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
     dup = (
         await db.execute(
             select(DeviceGroup).where(func.lower(DeviceGroup.name) == cleaned_name.lower())
@@ -645,6 +762,7 @@ async def create_group(
         description=payload.description.strip(),
         color_badge=cleaned_color,
         icon=cleaned_icon,
+        daily_youtube_limit_minutes=yt_limit,
         created_at=now,
         updated_at=now,
     )
@@ -709,6 +827,16 @@ async def update_group(
     grp.icon = cleaned_icon
     if payload.description is not None:
         grp.description = payload.description.strip()
+    if "daily_youtube_limit_minutes" in payload.model_fields_set:
+        try:
+            grp.daily_youtube_limit_minutes = validate_daily_youtube_limit_minutes(
+                payload.daily_youtube_limit_minutes
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
     grp.updated_at = utc_now()
 
     if payload.device_ids is not None:
@@ -1224,6 +1352,23 @@ async def get_group_analytics(
         es_data=enriched_es_data,
         window=win_key,
     )
+    if win_key == "today":
+        yt_app = next(
+            (a for a in response.application_usage if a.app_key == "youtube"),
+            None,
+        )
+        yt_mins = max(0, int(yt_app.active_minutes if yt_app else 0))
+        cache.set(f"group_yt_today:{grp_resp.id}", yt_mins, ttl_seconds=60.0)
+        safe_today, reached = compute_group_youtube_quota_state(
+            response.group.daily_youtube_limit_minutes, yt_mins
+        )
+        updated_grp = response.group.model_copy(
+            update={
+                "today_youtube_minutes": safe_today,
+                "is_youtube_quota_reached": reached,
+            }
+        )
+        response = response.model_copy(update={"group": updated_grp})
     cache.set(cache_key, response)
     return response
 

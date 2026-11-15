@@ -291,6 +291,8 @@ def aggregate_plex_usage_for_window(
                 stream_decision=str(sess.get("stream_decision") or "direct play"),
                 bandwidth_kbps=int(sess.get("bandwidth_kbps") or 0),
                 progress_percent=float(sess.get("progress_percent") or 0.0),
+                video_resolution=str(sess.get("video_resolution") or ""),
+                transcode_bitrate_kbps=int(sess.get("transcode_bitrate_kbps") or 0),
             )
         )
 

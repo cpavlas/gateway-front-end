@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
@@ -118,6 +118,11 @@ const MOCK_HEALTHY_REPORT: SystemHealthResponse = {
 }
 
 describe('Phase 2 Devices & Internet Access Control Dashboard', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('gateway_devices_status_filter', 'all')
+  })
+
   it('renders KPI summary cards, device list, client-side search, and status filter pills', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input.toString()

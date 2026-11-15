@@ -629,6 +629,41 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Release Sign-Off (`v1.3.0-rc2`):**
   - All 4 verification sections (`Section A` through `Section D`) in `docs/development/Validation/PHASE17-Verify.md` passed user live validation (`[pass]`), with `BUG-P17-001` and `BUG-P17-002` resolved prior to release tag `v1.3.0-rc2`.
 
+---
+
+## Phase 18 Exit Analysis & Unplanned-Information Retrospective (`v1.3.0-rc3` — 2026-11-14)
+
+### 1. Phase 18 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P18-001` / `FB-P4-007`..`009`, `FB-P18-002`, `FB-P18-003`, `FB-P17-006`..`FB-P17-008`):**
+  1. **`FB-P18-001` (`FB-P4-007`..`009`) — Per-Device & Global Domain / ASN Organization Blocking (`models/__init__.py`, `alembic/versions/0009_phase18_domain_asn_blocks_and_group_quotas.py`, `clients/opnsense.py`, `clients/elasticsearch.py`, `analytics_service.py`, `api/analytics.py`, `api/system.py`, `audit_and_backup_service.py`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`):**
+     - Enriched `Top Destination Organizations (ASN)` payloads with numeric `asn` (`destination.as.number`), persisted `blocked_targets` rules in SQLite with Config Backup & Restore JSON support and `/api/v1/system/health` `custom_blocked_targets_count`, synced OPNsense Host/BGP ASN aliases (`add`/`toggle`/`delete`), added inline **Block** actions across `DeviceAnalyticsDrawer` and `AnalyticsPage`, and built the **Blocked Domains & ASN Organizations** management panel.
+  2. **`FB-P18-002` — Expanded 8-App Telemetry & Enhanced Plex `Now Playing` Cards (`clients/elasticsearch.py`, `analytics_service.py`, `plex_service.py`, `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`):**
+     - Extended 5-minute active-usage classification to **8** application categories (`youtube`, `plex`, `netflix`, `disney_plus`, `twitch`, `tiktok`, `discord`, `gaming`) with per-device breakdowns, and enhanced Plex `Now Playing` cards with user, progress bar/`%`, resolution, and live transcode bitrate.
+  3. **`FB-P18-003` — Sortable/Searchable `Top Active LAN Devices` & Domain/ASN Client Attribution (`analytics_service.py`, `api/analytics.py`, `AnalyticsPage.tsx`):**
+     - Added client-side search filter and clickable column sorting (`Device`, `IPv4 & Vendor`, `DNS Queries`, `Firewall Bytes`, `Total Events`) to `Top Active LAN Devices (RFC1918)` plus clickable **Client Attribution** drilldown modal (`GET /api/v1/analytics/attribution`) for domains, registered domains, ASNs, and organizations.
+  4. **`FB-P17-006` — Device Group Daily YouTube Viewing Time Quota & Strict Reward/Bonus Precedence (`models/__init__.py`, `group_service.py`, `schedule_service.py`, `api/groups.py`, `audit_and_backup_service.py`, `GroupFormModal.tsx`, `GroupAnalyticsDrawer.tsx`, `DevicesPage.tsx`):**
+     - Added `device_groups.daily_youtube_limit_minutes` (`1–1440`), group quota evaluation in reconciliation enforcing YouTube blocks once today's combined group minutes hit the limit while guaranteeing strict precedence for active Reward / Bonus timers and Protected devices, plus quota badges and drawer progress banners.
+  5. **`FB-P17-007` & `FB-P17-008` — Mobile-Compact `Devices` Table & Remembered `Online` Default Filter (`DevicesPage.tsx`):**
+     - Applied `hidden sm:table-cell` to secondary `Devices` table columns (`IPv4 & MAC`, `Vendor & Interface`, `Guardrail`) on `< 640px` viewports and defaulted `statusFilter` to `'online'` backed by `localStorage` (`gateway_devices_status_filter`).
+- **Final Automated Quality Metrics (`v1.3.0-rc3`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `149 / 149` passed (`1` warning) in `41.39s` (`85%` coverage across `6,883` statements / `33` source files), `0` ruff errors, `0` mypy issues.
+  - **Frontend (`vitest`, `tsc && vite build`):** `37 / 37` passed across `10` test files in `22.27s` (`90.99%` statement/line coverage; `AnalyticsPage.tsx` `90.89%`, `DevicesPage.tsx` `92.61%`, `DeviceAnalyticsDrawer.tsx` `92.72%`, `GroupAnalyticsDrawer.tsx` `87.95%`, `GroupFormModal.tsx` `90.53%`), `0` TypeScript/bundle errors (`3.45s` local / `3.70s` container Vite build).
+  - **Live Container Validation:** Rebuilt `gateway-front-end:latest`, confirmed `healthy` container on `0.0.0.0:8080->8000/tcp`, and verified all four upstreams (`SQLite`, `OPNsense`, `Elasticsearch 9.4.3`, `Plex Media Server`), SQLite schema columns, all `8` app telemetry keys, live Plex stream metadata, and domain/ASN client attribution queries.
+
+### 2. Unplanned Information Audit, Bug Retrospective & Feed-Forward (`v1.3.0-rc3`)
+- **Finding 1 — React Hook Ordering & Drawer Conditional Returns (`BUG-P18-001`):**
+  - Placing `useQuery` / `useMutation` after `if (deviceId === null) return null` in `DeviceAnalyticsDrawer.tsx` triggered a hook-count mismatch whenever the drawer transitioned open; hoisting all hooks above early returns with `enabled: isOpen && deviceId !== null` eliminated the crash cleanly.
+- **Finding 2 — Python 3.12 `sys.monitoring` Async SQLAlchemy Coverage & HTML5 `stepMismatch` (`BUG-P18-002`, `BUG-P18-003`):**
+  - Extracting pure synchronous validation/transformation helpers (`prepare_blocked_target_upsert`, `apply_blocked_target_toggle`, `prepare_blocked_target_delete_audit`, `validate_attribution_params`, `assemble_target_attribution_response`) kept Python 3.12 `sysmon` coverage at `>= 85%` across async SQLAlchemy handlers. Separately, HTML5 `<input type="number" min={1} step={5}>` anchors valid values to `min + k*step` (`1, 6, 11, ...`), rejecting preset multiples of `5` until changed to `step={1}`.
+- **Finding 3 — Group Quota Removal Reconciliation & Cross-Tab Auto-Refresh Consistency (`BUG-P18-004`, `BUG-P18-005`):**
+  - Live validation (`PHASE18-Verify.md`) surfaced two functional edge cases waterfalled to Phase 19:
+    1. Clearing/removing `daily_youtube_limit_minutes` on a currently quota-blocked group left members' `is_youtube_blocked = True` until manually toggled (`BUG-P18-004` -> `FB-P18-004`).
+    2. `useAutoRefresh` polling did not force OPNsense device sync on `Devices`, bypassed neither backend `AnalyticsCache` (`refresh: true`) on `Analytics`/`Firewall` nor `FirewallPage`'s sticky initial `windowSnapshots[windowKey]`, leaving `Updated:` / data stale on timer ticks (`BUG-P18-005` -> `FB-P18-007`).
+- **Waterfalled User Feedback & Next Phase Handoff (`PHASE_19_TRACKING.md`):**
+  - **`FB-P18-004` through `FB-P18-012` (`SCHEDULED — Phase 19 / v1.3.0`):** Group quota removal auto-unblock, click-to-expand Application Usage cards (`Plex` full show titles + per-device breakdown), mobile-compact `Analytics` Top Active LAN Devices table, consistent Auto-Refresh timers across tabs, configurable System App Telemetry catalog (defaulting to `YouTube` & `Plex`) + combined `Facebook & Threads` tracking, centered modal popup for `Change My Password`, cleaner top 4 System Service Cards (removing redundant subtitle/status lines), sticky desktop page header, and average multi-node ping latency in `Test All Connections`.
+- **Release Sign-Off (`v1.3.0-rc3`):**
+  - Sections A, C, D, E, and F in `docs/development/Validation/PHASE18-Verify.md` passed user live validation (`[pass]`), with Section B (`[partial]`) and cross-tab observations captured cleanly as `BUG-P18-004`..`005` and `FB-P18-004`..`012` for **Phase 19 (`v1.3.0` Final Release)**.
+
 
 
 
