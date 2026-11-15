@@ -48,8 +48,19 @@ async def run_scheduled_override_reconciliation() -> None:
         await load_runtime_settings_from_db(session, base_settings)
         effective_settings = apply_runtime_overrides(base_settings)
         opnsense = OPNsenseClient(effective_settings)
+        es_key = effective_settings.elasticsearch_api_key.get_secret_value().strip()
+        es_client = (
+            ElasticsearchServiceClient(effective_settings)
+            if effective_settings.app_env != "testing" and es_key not in ("", "changeme")
+            else None
+        )
         await reconcile_expired_overrides(session, opnsense, effective_settings)
-        await reconcile_schedules_and_policies(session, opnsense, effective_settings)
+        await reconcile_schedules_and_policies(
+            session,
+            opnsense,
+            effective_settings,
+            es_client=es_client,
+        )
 
 
 async def run_plex_session_poller() -> int:

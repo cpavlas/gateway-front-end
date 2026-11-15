@@ -64,6 +64,15 @@ type DeviceSortField = 'name' | 'ipv4' | 'online' | 'vendor' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 const GROUPS_COLLAPSED_STORAGE_KEY = 'gateway_devices_groups_collapsed'
+const DEVICES_STATUS_FILTER_STORAGE_KEY = 'gateway_devices_status_filter'
+const VALID_DEVICE_STATUS_FILTERS: readonly DeviceStatusFilter[] = [
+  'all',
+  'online',
+  'blocked',
+  'protected',
+  'unassigned',
+  'archived',
+]
 
 function parseIpv4Sortable(ip: string | null): number {
   if (!ip) return Number.MAX_SAFE_INTEGER
@@ -80,7 +89,17 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
 }) => {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<DeviceStatusFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<DeviceStatusFilter>(() => {
+    try {
+      const saved = window.localStorage.getItem(DEVICES_STATUS_FILTER_STORAGE_KEY)
+      if (saved && VALID_DEVICE_STATUS_FILTERS.includes(saved as DeviceStatusFilter)) {
+        return saved as DeviceStatusFilter
+      }
+      return 'online'
+    } catch {
+      return 'online'
+    }
+  })
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [sortField, setSortField] = useState<DeviceSortField>('name')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
@@ -415,6 +434,15 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     },
   })
 
+  const handleStatusFilterChange = (nextFilter: DeviceStatusFilter) => {
+    setStatusFilter(nextFilter)
+    try {
+      window.localStorage.setItem(DEVICES_STATUS_FILTER_STORAGE_KEY, nextFilter)
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
   const toggleGroupsCollapsed = () => {
     setIsGroupsCollapsed((prev) => {
       const next = !prev
@@ -703,11 +731,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                     <div
                       key={grp.id}
                       data-testid={`group-card-${grp.id}`}
-                      className={`flex flex-col justify-between rounded-xl border p-3.5 transition ${
-                        isFilterSelected
-                          ? 'border-indigo-500 bg-indigo-950/20'
-                          : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'
-                      }`}
+                      className={`flex flex-col justify-between rounded-xl border p-3.5 transition ${isFilterSelected
+                        ? 'border-indigo-500 bg-indigo-950/20'
+                        : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'
+                        }`}
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">
@@ -722,15 +749,14 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               </span>
                               <span
                                 data-testid={`group-status-${grp.id}`}
-                                className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                                  grp.access_status === 'blocked'
-                                    ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                                    : grp.access_status === 'partially_blocked'
-                                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                                      : grp.access_status === 'allowed'
-                                        ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                                        : 'border-slate-700 bg-slate-800 text-slate-400'
-                                }`}
+                                className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${grp.access_status === 'blocked'
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                  : grp.access_status === 'partially_blocked'
+                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : grp.access_status === 'allowed'
+                                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                      : 'border-slate-700 bg-slate-800 text-slate-400'
+                                  }`}
                               >
                                 {grp.access_status === 'blocked'
                                   ? 'Blocked'
@@ -781,6 +807,27 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             <strong className="text-rose-300">{grp.blocked_devices}</strong> blocked
                           </span>
                         </div>
+                        {grp.daily_youtube_limit_minutes != null &&
+                          grp.daily_youtube_limit_minutes > 0 && (
+                            <div
+                              data-testid={`group-youtube-quota-badge-${grp.id}`}
+                              className={`mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium ${grp.is_youtube_quota_reached
+                                ? 'border-rose-500/40 bg-rose-500/15 text-rose-200'
+                                : 'border-indigo-500/35 bg-indigo-500/10 text-indigo-200'
+                                }`}
+                            >
+                              <YouTubeLogoIcon className="h-3 w-3 shrink-0" />
+                              <span className="font-mono">
+                                YT Today: {grp.today_youtube_minutes ?? 0}m /{' '}
+                                {grp.daily_youtube_limit_minutes}m
+                              </span>
+                              {grp.is_youtube_quota_reached && (
+                                <span className="rounded bg-rose-500/25 px-1 text-[10px] font-bold uppercase text-rose-100">
+                                  Quota Reached
+                                </span>
+                              )}
+                            </div>
+                          )}
                       </div>
 
                       <div className="mt-3 flex flex-nowrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
@@ -798,11 +845,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             onClick={() =>
                               setSelectedGroupId((prev) => (prev === grp.id ? null : grp.id))
                             }
-                            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer ${
-                              isFilterSelected
-                                ? 'border-indigo-400 bg-indigo-500/25 text-indigo-100 shadow-xs'
-                                : 'border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                            }`}
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer ${isFilterSelected
+                              ? 'border-indigo-400 bg-indigo-500/25 text-indigo-100 shadow-xs'
+                              : 'border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
+                              }`}
                           >
                             <Filter className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                           </button>
@@ -841,11 +887,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                   action: grp.youtube_status === 'blocked' ? 'unblock' : 'block',
                                 })
                               }
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-60 ${
-                                grp.youtube_status === 'blocked'
-                                  ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
-                                  : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
-                              }`}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-60 ${grp.youtube_status === 'blocked'
+                                ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
+                                : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
+                                }`}
                             >
                               <YouTubeLogoIcon
                                 className="h-3.5 w-3.5"
@@ -911,11 +956,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
         {(bannerMessage || isError) && (
           <div
             role="alert"
-            className={`flex items-start justify-between gap-3 rounded-xl border p-4 text-sm ${
-              bannerMessage?.type === 'warning'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-                : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
-            }`}
+            className={`flex items-start justify-between gap-3 rounded-xl border p-4 text-sm ${bannerMessage?.type === 'warning'
+              ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+              : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+              }`}
           >
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
@@ -993,12 +1037,11 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                 key={tab.key}
                 type="button"
                 data-testid={`filter-pill-${tab.key}`}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  statusFilter === tab.key
-                    ? 'bg-indigo-600 text-white'
-                    : 'border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-800'
-                }`}
+                onClick={() => handleStatusFilterChange(tab.key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${statusFilter === tab.key
+                  ? 'bg-indigo-600 text-white'
+                  : 'border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-800'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -1056,7 +1099,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       </button>
                     </div>
                   </th>
-                  <th scope="col" className="px-4 py-3.5">
+                  <th scope="col" className="hidden sm:table-cell px-4 py-3.5">
                     <button
                       type="button"
                       data-testid="sort-col-ipv4"
@@ -1075,7 +1118,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       )}
                     </button>
                   </th>
-                  <th scope="col" className="px-4 py-3.5">
+                  <th scope="col" className="hidden sm:table-cell px-4 py-3.5">
                     <button
                       type="button"
                       data-testid="sort-col-vendor"
@@ -1094,7 +1137,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       )}
                     </button>
                   </th>
-                  <th scope="col" className="px-4 py-3.5">
+                  <th scope="col" className="hidden sm:table-cell px-4 py-3.5">
                     <button
                       type="button"
                       data-testid="sort-col-status"
@@ -1135,11 +1178,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                         <div className="flex items-start gap-3">
                           <span
                             title={dev.is_online ? 'Online in ARP table' : 'Offline'}
-                            className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${
-                              dev.is_online
-                                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
-                                : 'bg-slate-600'
-                            }`}
+                            className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${dev.is_online
+                              ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
+                              : 'bg-slate-600'
+                              }`}
                           />
                           <div className="min-w-0 flex-1">
                             {isEditing ? (
@@ -1251,8 +1293,8 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                               onChange={() => {
                                                 const nextIds = isMember
                                                   ? devGroups
-                                                      .filter((g) => g.id !== grp.id)
-                                                      .map((g) => g.id)
+                                                    .filter((g) => g.id !== grp.id)
+                                                    .map((g) => g.id)
                                                   : [...devGroups.map((g) => g.id), grp.id]
                                                 quickGroupsMutation.mutate({
                                                   deviceId: dev.id,
@@ -1295,7 +1337,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       </td>
 
                       {/* Column 2: IPv4 & MAC */}
-                      <td className="px-4 py-3.5 align-middle font-mono text-xs">
+                      <td className="hidden sm:table-cell px-4 py-3.5 align-middle font-mono text-xs">
                         <div className="font-semibold text-slate-200">
                           {dev.ipv4_address ?? 'No IPv4'}
                         </div>
@@ -1303,7 +1345,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       </td>
 
                       {/* Column 3: Vendor & Interface */}
-                      <td className="px-4 py-3.5 align-middle text-xs">
+                      <td className="hidden sm:table-cell px-4 py-3.5 align-middle text-xs">
                         <div className="text-slate-200 truncate max-w-[180px]">
                           {dev.vendor ?? 'Unknown Vendor'}
                         </div>
@@ -1315,7 +1357,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                       </td>
 
                       {/* Column 4: Protection Guardrail */}
-                      <td className="px-4 py-3.5 align-middle">
+                      <td className="hidden sm:table-cell px-4 py-3.5 align-middle">
                         <button
                           type="button"
                           data-testid={`protect-toggle-${dev.id}`}
@@ -1330,11 +1372,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                               is_protected: !dev.is_protected,
                             })
                           }
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                            dev.is_protected
-                              ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-                              : 'border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-slate-200'
-                          } ${immutableProt ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'}`}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${dev.is_protected
+                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                            : 'border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                            } ${immutableProt ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           {immutableProt ? (
                             <Lock className="h-3 w-3" aria-hidden="true" />
@@ -1380,11 +1421,10 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                   action: dev.is_youtube_blocked ? 'unblock' : 'block',
                                 })
                               }
-                              className={`inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border p-2 transition cursor-pointer disabled:opacity-50 ${
-                                dev.is_youtube_blocked
-                                  ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
-                                  : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
-                              }`}
+                              className={`inline-flex h-9 w-9 min-h-9 min-w-9 items-center justify-center rounded-lg border p-2 transition cursor-pointer disabled:opacity-50 ${dev.is_youtube_blocked
+                                ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
+                                : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
+                                }`}
                             >
                               <YouTubeLogoIcon className="h-4 w-4" testId={`yt-icon-${dev.id}`} />
                             </button>

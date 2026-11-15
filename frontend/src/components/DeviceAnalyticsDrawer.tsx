@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
+  Ban,
   Building2,
   Clock,
   Globe,
@@ -21,6 +22,8 @@ import {
   formatBlockedPercentage,
   formatBytes,
   formatClock24h,
+  type AppUsageItem,
+  type BlockedTargetCreatePayload,
   type TimeWindow,
   type TimerStartPayload,
 } from '../api/client'
@@ -161,6 +164,26 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
     },
   })
 
+  const { data: blockedTargetsData } = useQuery({
+    queryKey: ['blockedTargets'],
+    queryFn: () => apiClient.getBlockedTargets(),
+    enabled: deviceId !== null,
+  })
+
+  const blockTargetMutation = useMutation({
+    mutationFn: (payload: BlockedTargetCreatePayload) => apiClient.createBlockedTarget(payload),
+    onSuccess: (res) => {
+      setActionBanner(
+        res.warning ?? `Blocked ${res.item.target_value} (${res.item.scope_type}).`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['blockedTargets'] })
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+    },
+    onError: (err: unknown) => {
+      setActionBanner(err instanceof Error ? err.message : 'Failed to block domain/ASN target.')
+    },
+  })
+
   if (deviceId === null) {
     return null
   }
@@ -172,10 +195,29 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
   const topDomains = analytics?.top_domains ?? []
   const topOrgs = analytics?.top_organizations ?? []
   const recentQueries = analytics?.recent_queries ?? []
-  const appUsage = analytics?.application_usage ?? [
-    { app_key: 'youtube' as const, display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
-    { app_key: 'plex' as const, display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+  const appUsage: AppUsageItem[] = analytics?.application_usage ?? [
+    { app_key: 'youtube', display_name: 'YouTube', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'plex', display_name: 'Plex', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'netflix', display_name: 'Netflix', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'disney_plus', display_name: 'Disney+', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'twitch', display_name: 'Twitch', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'tiktok', display_name: 'TikTok', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'discord', display_name: 'Discord', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
+    { app_key: 'gaming', display_name: 'Gaming', active_minutes: 0, event_count: 0, dns_queries: 0, bytes: 0, last_active_at: null },
   ]
+  const activeBlockedForDevice = (blockedTargetsData?.items ?? []).filter(
+    (b) => b.is_enabled && (b.scope_type === 'global' || b.device_id === device?.id),
+  )
+  const blockedDomainSet = new Set(
+    activeBlockedForDevice
+      .filter((b) => b.target_type === 'domain')
+      .map((b) => b.target_value.toLowerCase()),
+  )
+  const blockedAsnSet = new Set(
+    activeBlockedForDevice
+      .filter((b) => b.target_type === 'asn')
+      .map((b) => b.target_value.toUpperCase()),
+  )
 
   const maxDomainCount = Math.max(1, ...topDomains.map((d) => d.query_count))
   const lastUpdatedClock = formatClock24h(analytics?.generated_at || dataUpdatedAt)
@@ -479,7 +521,24 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {appUsage.map((app) => {
                     const isYoutube = app.app_key === 'youtube'
+                    const isPlex = app.app_key === 'plex'
                     const activeSessions = app.active_sessions ?? []
+                    const iconColor =
+                      isYoutube
+                        ? 'text-rose-400'
+                        : isPlex
+                          ? 'text-amber-400'
+                          : app.app_key === 'netflix'
+                            ? 'text-red-400'
+                            : app.app_key === 'disney_plus'
+                              ? 'text-cyan-400'
+                              : app.app_key === 'twitch'
+                                ? 'text-violet-400'
+                                : app.app_key === 'tiktok'
+                                  ? 'text-pink-400'
+                                  : app.app_key === 'discord'
+                                    ? 'text-indigo-400'
+                                    : 'text-emerald-400'
                     return (
                       <div
                         key={app.app_key}
@@ -489,7 +548,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <Tv
-                              className={`h-4 w-4 ${isYoutube ? 'text-rose-400' : 'text-amber-400'}`}
+                              className={`h-4 w-4 ${iconColor}`}
                               aria-hidden="true"
                             />
                             <div>
@@ -513,24 +572,46 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                           </div>
                         </div>
 
-                        {!isYoutube && activeSessions.length > 0 && (
+                        {isPlex && activeSessions.length > 0 && (
                           <div
                             data-testid="drawer-plex-now-playing"
-                            className="mt-2.5 rounded-md border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] space-y-1"
+                            className="mt-2.5 rounded-md border border-amber-500/30 bg-amber-950/20 p-2 text-[11px] space-y-2"
                           >
-                            {activeSessions.map((sess) => (
-                              <div
-                                key={sess.session_key}
-                                className="flex items-center justify-between gap-2"
-                              >
-                                <span className="truncate font-semibold text-amber-200">
-                                  Now Playing: {sess.media_title}
-                                </span>
-                                <span className="shrink-0 font-mono text-[10px] uppercase text-slate-300">
-                                  {sess.state} · {sess.stream_decision}
-                                </span>
-                              </div>
-                            ))}
+                            {activeSessions.map((sess) => {
+                              const bitrateKbps =
+                                sess.transcode_bitrate_kbps ?? sess.bandwidth_kbps ?? 0
+                              const pct = Math.max(0, Math.min(100, sess.progress_percent ?? 0))
+                              return (
+                                <div key={sess.session_key} className="space-y-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="truncate font-semibold text-amber-200">
+                                      Now Playing: {sess.media_title}
+                                    </span>
+                                    <span className="shrink-0 font-mono text-[10px] uppercase text-slate-300">
+                                      {sess.state} · {sess.stream_decision}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-300">
+                                    <span>
+                                      {sess.user_name ? `User: ${sess.user_name}` : sess.player_title}
+                                      {sess.video_resolution ? ` · ${sess.video_resolution}` : ''}
+                                    </span>
+                                    <span className="font-mono text-amber-300">
+                                      {bitrateKbps > 0
+                                        ? `${(bitrateKbps / 1000).toFixed(1)} Mbps · `
+                                        : ''}
+                                      {pct}%
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950">
+                                    <div
+                                      className="h-full rounded-full bg-amber-400"
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
 
@@ -642,9 +723,42 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                               <span className="font-mono text-slate-200 truncate">
                                 {item.domain}
                               </span>
-                              <span className="font-mono text-slate-400 shrink-0">
-                                {item.query_count.toLocaleString()}
-                              </span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="font-mono text-slate-400">
+                                  {item.query_count.toLocaleString()}
+                                </span>
+                                {device && !device.is_protected && (
+                                  <button
+                                    type="button"
+                                    data-testid={`device-drawer-block-domain-${item.domain}`}
+                                    disabled={
+                                      blockTargetMutation.isPending ||
+                                      blockedDomainSet.has(item.domain.toLowerCase())
+                                    }
+                                    onClick={() =>
+                                      blockTargetMutation.mutate({
+                                        target_type: 'domain',
+                                        target_value: item.domain,
+                                        scope_type: 'device',
+                                        device_id: device.id,
+                                        reason: `Blocked from ${device.effective_name} telemetry`,
+                                      })
+                                    }
+                                    className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer disabled:opacity-60 ${
+                                      blockedDomainSet.has(item.domain.toLowerCase())
+                                        ? 'border-rose-500/40 bg-rose-500/15 text-rose-200'
+                                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-rose-500/50 hover:text-rose-200'
+                                    }`}
+                                  >
+                                    <Ban className="h-2.5 w-2.5" aria-hidden="true" />
+                                    <span>
+                                      {blockedDomainSet.has(item.domain.toLowerCase())
+                                        ? 'Blocked'
+                                        : 'Block'}
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="h-1.5 w-full rounded-full bg-slate-900">
                               <div
@@ -674,20 +788,56 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                     </p>
                   ) : (
                     <ul data-testid="drawer-top-orgs" className="space-y-2.5 text-xs">
-                      {topOrgs.map((org) => (
-                        <li
-                          key={org.organization}
-                          className="flex items-center justify-between border-b border-slate-800/60 pb-2 last:border-none"
-                        >
-                          <span className="text-slate-200 truncate">{org.organization}</span>
-                          <div className="text-right font-mono text-slate-400 shrink-0">
-                            <span className="text-slate-200">{formatBytes(org.bytes)}</span>
-                            <span className="ml-2 text-[11px]">
-                              ({org.packet_count.toLocaleString()} pkts)
-                            </span>
-                          </div>
-                        </li>
-                      ))}
+                      {topOrgs.map((org) => {
+                        const asnTag = org.asn != null ? `AS${org.asn}` : null
+                        const isBlocked = asnTag !== null && blockedAsnSet.has(asnTag)
+                        return (
+                          <li
+                            key={org.organization}
+                            className="flex items-center justify-between gap-2 border-b border-slate-800/60 pb-2 last:border-none"
+                          >
+                            <div className="min-w-0 truncate">
+                              <span className="text-slate-200">{org.organization}</span>
+                              {asnTag && (
+                                <span className="ml-1.5 font-mono text-[10px] text-indigo-300">
+                                  ({asnTag})
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 font-mono text-slate-400 shrink-0">
+                              <span className="text-slate-200">{formatBytes(org.bytes)}</span>
+                              <span className="text-[11px]">
+                                ({org.packet_count.toLocaleString()} pkts)
+                              </span>
+                              {device && !device.is_protected && asnTag && (
+                                <button
+                                  type="button"
+                                  data-testid={`device-drawer-block-asn-${asnTag}`}
+                                  disabled={blockTargetMutation.isPending || isBlocked}
+                                  onClick={() =>
+                                    blockTargetMutation.mutate({
+                                      target_type: 'asn',
+                                      target_value: asnTag,
+                                      scope_type: 'device',
+                                      device_id: device.id,
+                                      organization_name: org.organization,
+                                      reason: `Blocked ${org.organization} from ${device.effective_name}`,
+                                    })
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-sans text-[10px] font-semibold cursor-pointer disabled:opacity-60 ${
+                                    isBlocked
+                                      ? 'border-rose-500/40 bg-rose-500/15 text-rose-200'
+                                      : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-rose-500/50 hover:text-rose-200'
+                                  }`}
+                                >
+                                  <Ban className="h-2.5 w-2.5" aria-hidden="true" />
+                                  <span>{isBlocked ? 'Blocked' : 'Block ASN'}</span>
+                                </button>
+                              )}
+                            </div>
+                          </li>
+                        )
+                      })}
                     </ul>
                   )}
                 </div>

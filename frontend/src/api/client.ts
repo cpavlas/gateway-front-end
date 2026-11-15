@@ -360,6 +360,9 @@ export interface GroupItem {
   access_status: GroupAccessStatus
   youtube_status?: GroupAccessStatus
   youtube_blocked_devices?: number
+  daily_youtube_limit_minutes?: number | null
+  today_youtube_minutes?: number
+  is_youtube_quota_reached?: boolean
   total_devices: number
   online_devices: number
   blocked_devices: number
@@ -383,6 +386,7 @@ export interface GroupCreatePayload {
   color_badge?: string
   icon?: string
   device_ids?: number[]
+  daily_youtube_limit_minutes?: number | null
 }
 
 export interface GroupUpdatePayload {
@@ -391,6 +395,7 @@ export interface GroupUpdatePayload {
   color_badge?: string
   icon?: string
   device_ids?: number[]
+  daily_youtube_limit_minutes?: number | null
 }
 
 export interface GroupBulkActionResponse {
@@ -427,12 +432,24 @@ export interface PlexActiveSessionItem {
   media_title: string
   media_type: string
   stream_decision: string
+  video_resolution?: string
   bandwidth_kbps: number
+  transcode_bitrate_kbps?: number | null
   progress_percent: number
 }
 
+export type AppUsageKey =
+  | 'youtube'
+  | 'plex'
+  | 'netflix'
+  | 'disney_plus'
+  | 'twitch'
+  | 'tiktok'
+  | 'discord'
+  | 'gaming'
+
 export interface AppUsageItem {
-  app_key: 'youtube' | 'plex'
+  app_key: AppUsageKey
   display_name: string
   active_minutes: number
   event_count: number
@@ -483,6 +500,7 @@ export interface ConfigBackupPayload {
     description?: string
     color_badge?: string
     icon?: string
+    daily_youtube_limit_minutes?: number | null
     member_macs?: string[]
   }>
   schedules: Array<{
@@ -497,12 +515,22 @@ export interface ConfigBackupPayload {
     timezone?: string
     is_enabled?: boolean
   }>
+  blocked_targets?: Array<{
+    target_type: 'domain' | 'asn'
+    target_value: string
+    scope_type: 'global' | 'device'
+    device_mac?: string | null
+    organization_name?: string
+    reason?: string
+    is_enabled?: boolean
+  }>
 }
 
 export interface ConfigRestoreSummary {
   devices_updated: number
   groups_upserted: number
   schedules_upserted: number
+  blocked_targets_upserted?: number
   restored_at: string
 }
 
@@ -522,8 +550,85 @@ export interface TopDomainItem {
 
 export interface TopOrganizationItem {
   organization: string
+  asn?: number | null
   packet_count: number
   bytes: number
+}
+
+export type BlockTargetType = 'domain' | 'asn'
+export type AttributionTargetType = 'domain' | 'registered_domain' | 'asn' | 'organization'
+export type BlockScopeType = 'global' | 'device'
+
+export interface BlockedTargetItem {
+  id: number
+  target_type: BlockTargetType
+  target_value: string
+  scope_type: BlockScopeType
+  device_id: number | null
+  device_name: string | null
+  device_ip: string | null
+  organization_name: string
+  reason: string
+  is_enabled: boolean
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BlockedTargetsListResponse {
+  total_count: number
+  enabled_count: number
+  items: BlockedTargetItem[]
+}
+
+export interface BlockedTargetCreatePayload {
+  target_type: BlockTargetType
+  target_value: string
+  scope_type?: BlockScopeType
+  device_id?: number | null
+  organization_name?: string
+  reason?: string
+}
+
+export interface BlockedTargetMutationResponse {
+  item: BlockedTargetItem
+  opnsense_synced: boolean
+  warning?: string | null
+}
+
+export interface BlockedTargetDeleteResponse {
+  deleted_id: number
+  opnsense_synced: boolean
+  warning?: string | null
+}
+
+export interface TargetAttributionClientItem {
+  device_id: number | null
+  ipv4_address: string
+  effective_name: string
+  mac_address: string | null
+  vendor: string | null
+  is_online: boolean
+  is_blocked: boolean
+  is_protected: boolean
+  event_count: number
+  dns_queries: number
+  bytes: number
+  allowed_packets: number
+  blocked_packets: number
+  last_seen_at: string | null
+}
+
+export interface TargetAttributionResponse {
+  target_type: BlockTargetType
+  target_value: string
+  window: TimeWindow
+  generated_at: string
+  es_reachable: boolean
+  warning: string | null
+  total_events: number
+  total_bytes: number
+  clients: TargetAttributionClientItem[]
 }
 
 export interface TopDeviceTrafficItem {
@@ -1346,6 +1451,50 @@ export const apiClient = {
     }
     return requestJson<NetworkOverviewResponse>(
       `/api/v1/analytics/overview?${query.toString()}`,
+      { method: 'GET' },
+    )
+  },
+
+  getBlockedTargets(): Promise<BlockedTargetsListResponse> {
+    return requestJson<BlockedTargetsListResponse>('/api/v1/analytics/blocked-targets', {
+      method: 'GET',
+    })
+  },
+
+  createBlockedTarget(
+    payload: BlockedTargetCreatePayload,
+  ): Promise<BlockedTargetMutationResponse> {
+    return requestJson<BlockedTargetMutationResponse>('/api/v1/analytics/blocked-targets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  toggleBlockedTarget(targetId: number): Promise<BlockedTargetMutationResponse> {
+    return requestJson<BlockedTargetMutationResponse>(
+      `/api/v1/analytics/blocked-targets/${targetId}/toggle`,
+      { method: 'PATCH' },
+    )
+  },
+
+  deleteBlockedTarget(targetId: number): Promise<BlockedTargetDeleteResponse> {
+    return requestJson<BlockedTargetDeleteResponse>(
+      `/api/v1/analytics/blocked-targets/${targetId}`,
+      { method: 'DELETE' },
+    )
+  },
+
+  getTargetAttribution(
+    targetType: AttributionTargetType,
+    targetValue: string,
+    window: TimeWindow = 'today',
+  ): Promise<TargetAttributionResponse> {
+    const query = new URLSearchParams()
+    query.set('target_type', targetType)
+    query.set('target_value', targetValue)
+    query.set('window', window)
+    return requestJson<TargetAttributionResponse>(
+      `/api/v1/analytics/attribution?${query.toString()}`,
       { method: 'GET' },
     )
   },

@@ -701,32 +701,86 @@
 #### `FB-P17-006` — Device Group Daily YouTube Viewing Time Quota with Reward / Bonus Precedence
 - **User Feedback (`PHASE17-Verify.md`):** Allow configuring a daily YouTube viewing time limit (e.g., `1h / day`) when creating/editing a Device Group (`daily_youtube_limit_minutes`) so no more than that quota of active YouTube watch time can be used per day, automatically blocking YouTube for the group once exceeded while ensuring **Reward / Bonus Timers always take strict precedence** over daily limits and schedules.
 - **Complexity:** `3 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P17-007` — `Devices` Tab Mobile-Compact Layout (Friendly Name + Action Buttons Only)
 - **User Feedback (`PHASE17-Verify.md`):** On mobile screen widths (where the bottom navigation bar is displayed), render only the **Device / Friendly Name** and the **Action Buttons** in the `Devices` inventory table (hiding secondary columns such as IPv4/MAC, Vendor, Lease, Groups, and Last Seen on `< sm` viewports) so rows stay compact and actionable without horizontal scrolling.
 - **Complexity:** `1.5 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P17-008` — `Devices` Tab Default to `Online` Filter & Remember User Selection
 - **User Feedback (`PHASE17-Verify.md`):** Default the `Devices` inventory filter pill to **`Online`** on first load (`gateway_devices_status_filter` in `localStorage`) and persist the user's selected filter across subsequent visits/reloads.
 - **Complexity:** `1 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P18-001` — Per-Device & Global Domain and ASN Organization Blocking (`FB-P4-007`..`009`) + Backup/Restore Support
 - **User Feedback (`v1.3` Q&A):** Implement per-device Domain & ASN Organization blocking (`FB-P4-007`, `FB-P4-008`, `FB-P4-009`) in the Device Analytics Drawer backed by OPNsense per-device/global Host & BGP ASN aliases + automation filter rules (plus global Unbound/alias toggles from the `Analytics` tab), and include custom Domain/ASN rules & archived device flags in Configuration Backup & Restore JSON exports.
 - **Complexity:** `4 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P18-002` — Expanded Application Usage Telemetry (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) & Enhanced Plex `Now Playing`
 - **User Feedback (`v1.3` Q&A):** Track additional apps (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) with expandable Top Devices + bandwidth breakdowns, and enhance live Plex `Now Playing` stream cards with username, playback progress bar / percentage, and transcode bitrate details.
 - **Complexity:** `3 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
 
 #### `FB-P18-003` — `Analytics` Tab Sortable/Searchable LAN Table & Clickable Domain/ASN Client Attribution Drilldowns
 - **User Feedback (`v1.3` Q&A):** Add column sorting (`DNS Queries`, `Firewall Bytes`, `Total Events`, `Device Name`) + search filter input to `Top Active LAN Devices`, and make domains & ASN organizations clickable to inspect which LAN devices queried/contacted them (with direct action links).
 - **Complexity:** `2.5 / 5`
-- **Status:** `SCHEDULED (Phase 18 — v1.3.0-rc3)`
+- **Status:** `COMPLETED (Phase 18 — v1.3.0-rc3)`
+
+#### `FB-P18-004` (`BUG-P18-004`) — Auto-Unblock Group YouTube Access When Daily YouTube Quota Is Removed or Raised
+- **User Feedback (`PHASE18-Verify.md` Section B):** When a Device Group has an active daily YouTube limit that was breached (causing YouTube to be blocked) and the user subsequently deletes/clears the daily limit (or raises it above today's usage), YouTube should automatically be unblocked rather than staying blocked.
+- **Technical Evaluation & Planned Scope:** Update `update_group()` in `backend/app/services/group_service.py` so whenever `daily_youtube_limit_minutes` is cleared (`None`) or increased above `today_youtube_minutes`, non-protected group members not covered by an active `pause` override or active `youtube`-mode schedule have `is_youtube_blocked` released and OPNsense `gateway_youtube_blocked_devices` synchronized immediately.
+- **Complexity:** `1.5 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-005` — Click-to-Expand Application Usage Telemetry Card Modal / Detail View
+- **User Feedback (`PHASE18-Verify.md` Section C):** Clicking any box inside **Application Usage Stats** should open an expanded card/modal showing complete untruncated application details (e.g., full Plex `Now Playing` show/episode title, user, player/platform, resolution, transcode decision, bitrate, progress bar, and full per-device usage breakdown).
+- **Technical Evaluation & Planned Scope:** Add interactive click expansion / `<AppUsageDetailModal />` across `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, and `GroupAnalyticsDrawer.tsx` rendering the complete application telemetry metrics, untruncated `Now Playing` stream cards, and all active devices/minutes/DNS/bandwidth for the clicked app.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-006` — `Analytics` Tab Mobile-Compact `Top Active LAN Devices` Table
+- **User Feedback (`PHASE18-Verify.md`):** In the mobile view (`< sm` viewport), update the `Top Active LAN Devices` table on `AnalyticsPage.tsx` to display only **Device**, **Total Events**, and **Inspect** so all columns fit cleanly on screen.
+- **Technical Evaluation & Planned Scope:** Apply `hidden sm:table-cell` to the `IPv4 & Vendor`, `DNS Queries`, and `Firewall Bytes` `<th>` and `<td>` cells inside `overview-top-devices-table` in `AnalyticsPage.tsx`.
+- **Complexity:** `1 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-007` (`BUG-P18-005`) — Consistent Auto-Refresh Timer Execution & `Updated: HH:MM:SS` Across All Tabs
+- **User Feedback (`PHASE18-Verify.md`):** Auto-refresh timer behavior is inconsistent across tabs (`Devices` sync timer never updates live state/timestamp, `Analytics` fires a flash without refreshing cached data or `Updated:` clock, `Firewall` updates the `Updated:` timestamp without updating panel snapshots).
+- **Technical Evaluation & Planned Scope:** Ensure `DevicesPage.tsx` runs `apiClient.syncDevices()` on auto-refresh ticks (updating live inventory & `Synced: HH:MM:SS`), and update `AnalyticsPage.tsx` and `FirewallPage.tsx` so scheduled background refetches pass `refresh: true` to bypass short-TTL backend cache, update `windowSnapshots[windowKey]`, and refresh `Updated: HH:MM:SS`.
+- **Complexity:** `2 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-008` — Configurable App Telemetry Catalog in `System` Settings (Default `YouTube` & `Plex`, Opt-In Others) + Combined `Facebook & Threads`
+- **User Feedback (`PHASE18-Verify.md`):** Add a settings area in **System** to configure which items are displayed for Application Telemetry (defaulting to **YouTube** and **Plex** enabled with all other apps opt-in), and add combined tracking for **Facebook and Threads** as a single grouped item.
+- **Technical Evaluation & Planned Scope:** Add `facebook_threads` (`Facebook & Threads`: `facebook.com`, `fbcdn.net`, `instagram.com`, `threads.net`, `threads.com`, Meta ASN `AS32934` correlation) as a single grouped application category (`9` total), persist `enabled_telemetry_apps` (defaulting to `["youtube", "plex"]`) via `runtime_settings_service.py` / `api/system.py`, and add an **Application Telemetry Visibility** configuration section in `StatusPage.tsx` respected by `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, and `GroupAnalyticsDrawer.tsx`.
+- **Complexity:** `2.5 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-009` — Centered Screen Modal Popup for User `Change My Password`
+- **User Feedback (`PHASE18-Verify.md`):** In the User Panel (Header User Menu dropdown), replace the inline downward-chevron accordion for changing password with a trigger that opens a centered screen modal popup to perform the password change.
+- **Technical Evaluation & Planned Scope:** Move the self-service `Change My Password` form in `AppLayout.tsx` into a centered modal dialog (`ChangePasswordModal`) opened from the User Menu button and closing cleanly on backdrop click/Escape/`Cancel`.
+- **Complexity:** `1.5 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-010` — `System` Tab Top 4 Service Health Cards — Remove Redundant Subtitle & Status Message Text
+- **User Feedback (`PHASE18-Verify.md`):** On the **System** tab, remove the redundant subtitle (`OPNsense REST API...`, etc.) and status message paragraph (`OPNsense API connected...`, etc.) underneath the 4 top vertical Service Health Card titles because that data is already visible in the Technical Details section.
+- **Technical Evaluation & Planned Scope:** Update `ServiceCard` in `StatusPage.tsx` to omit the redundant subtitle line and descriptive status paragraph underneath each card title while retaining the card title, status badge, primary KPI/shard/storage highlights, and collapsible Technical Details.
+- **Complexity:** `1 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-011` — Sticky Top Page Header in Desktop / Full-Page Mode
+- **User Feedback (`PHASE18-Verify.md`):** When in full-page/desktop mode (not mobile), keep the top page header always visible at the top of the viewport so users do not need to scroll back up to switch tabs (matching mobile's persistent bottom nav).
+- **Technical Evaluation & Planned Scope:** Update `<header>` in `AppLayout.tsx` from `relative z-30` to `sticky top-0 z-40` so navigation tabs, health badge, and user controls remain pinned while scrolling.
+- **Complexity:** `1 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+
+#### `FB-P18-012` — `System` Tab `Test All Connections` Popup — Show Average Ping Latency for Multi-Node Services
+- **User Feedback (`PHASE18-Verify.md`):** In the `Test All Connections` popup modal on **System**, display the average ping time in `OK (time)` when multiple nodes are configured for a service (e.g., average across 3 Elasticsearch nodes), while single-node services (e.g., OPNsense) continue showing their individual ping time.
+- **Technical Evaluation & Planned Scope:** Compute the rounded arithmetic mean across `nodeRows` (`nodeRows.length > 1`) in `StatusPage.tsx` (and/or `runtime_settings_service.py`) for the service summary badge (`OK (avg XX.X ms)` / average latency) while retaining per-node latency rows underneath.
+- **Complexity:** `1 / 5`
+- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
 
 #### `FB-P19-001` — `Firewall` Tab Compact `Noisy LAN` Controls (`Inspect` Trigger) & Open WAN Port Service Descriptions
 - **User Feedback (`v1.3` Q&A):** Convert `Noisy LAN Devices` Block/Unblock controls to compact icon buttons and add the Magnifying Glass `Inspect` button to open `DeviceAnalyticsDrawer` directly from the `Firewall` tab; display friendly OPNsense D-NAT rule descriptions (`Plex Media Server`, `WireGuard VPN`) and `Last Seen` timestamps in `Active Inbound WAN Exposure (Open Ports)`.

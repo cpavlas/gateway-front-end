@@ -11,6 +11,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _HEX_MAC_RE = re.compile(r"^[0-9a-f]{12}$")
 _TIME_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+_ASN_VALUE_RE = re.compile(r"^(?:as)?(\d{1,10})$", re.IGNORECASE)
+_DOMAIN_VALUE_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+)
 _PLACEHOLDER_HOSTNAMES = frozenset({"", "*", "?", "(none)", "none", "unknown"})
 VALID_GROUP_COLORS = frozenset(
     {"indigo", "emerald", "amber", "rose", "cyan", "violet", "slate"}
@@ -19,6 +23,8 @@ VALID_OVERRIDE_MODES = frozenset({"pause", "bonus"})
 VALID_OVERRIDE_TARGETS = frozenset({"device", "group"})
 VALID_USER_ROLES = frozenset({"admin", "operator"})
 VALID_USER_THEMES = frozenset({"default", "crimson", "ocean", "emerald", "amber"})
+VALID_BLOCK_TARGET_TYPES = frozenset({"domain", "asn"})
+VALID_BLOCK_SCOPE_TYPES = frozenset({"global", "device"})
 VALID_AUDIT_LABELS = frozenset(
     {
         "AUTH_EVENT",
@@ -270,6 +276,9 @@ class DeviceGroup(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     color_badge: Mapped[str] = mapped_column(String(32), nullable=False, default="indigo")
     icon: Mapped[str] = mapped_column(String(32), nullable=False, default="users")
+    daily_youtube_limit_minutes: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
@@ -448,4 +457,109 @@ class PlexSessionLog(Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False, index=True
+    )
+
+
+def normalize_block_target_type(raw_type: str | None) -> str:
+    """Validate and normalize a custom block target type ('domain' or 'asn')."""
+    if not isinstance(raw_type, str):
+        raise ValueError("Block target_type must be 'domain' or 'asn'.")
+    cleaned = raw_type.strip().lower()
+    if cleaned not in VALID_BLOCK_TARGET_TYPES:
+        raise ValueError(
+            f"Unsupported block target_type '{raw_type}'. Allowed: ['asn', 'domain']"
+        )
+    return cleaned
+
+
+def normalize_block_scope_type(raw_scope: str | None) -> str:
+    """Validate and normalize a custom block scope ('global' or 'device')."""
+    if raw_scope is None or not str(raw_scope).strip():
+        return "global"
+    cleaned = str(raw_scope).strip().lower()
+    if cleaned not in VALID_BLOCK_SCOPE_TYPES:
+        raise ValueError(
+            f"Unsupported block scope_type '{raw_scope}'. Allowed: ['device', 'global']"
+        )
+    return cleaned
+
+
+def normalize_block_target_value(target_type: str, raw_value: str | None) -> str:
+    """Validate and canonicalize a custom blocked domain or ASN number (`FB-P18-001`)."""
+    t_type = normalize_block_target_type(target_type)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise ValueError("Block target_value cannot be empty.")
+    cleaned = raw_value.strip()
+    if t_type == "domain":
+        domain = cleaned.lower().rstrip(".")
+        if domain.startswith("*."):
+            domain = domain[2:]
+        if len(domain) > 253 or not _DOMAIN_VALUE_RE.match(domain):
+            raise ValueError(
+                f"Invalid domain '{raw_value}'. Expected a valid hostname or root domain."
+            )
+        return domain
+
+    match = _ASN_VALUE_RE.match(cleaned)
+    if not match:
+        raise ValueError(
+            f"Invalid ASN '{raw_value}'. Expected numeric ASN like '15169' or 'AS15169'."
+        )
+    asn_num = int(match.group(1))
+    if asn_num < 1 or asn_num > 4294967295:
+        raise ValueError(f"ASN number out of valid 32-bit range: {asn_num}")
+    return f"AS{asn_num}"
+
+
+def validate_daily_youtube_limit_minutes(value: int | None) -> int | None:
+    """Validate optional daily group YouTube watch time limit in minutes (1..1440)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("daily_youtube_limit_minutes must be an integer or null.")
+    if value < 1 or value > 1440:
+        raise ValueError(
+            "daily_youtube_limit_minutes must be between 1 and 1440 minutes (24 hours)."
+        )
+    return value
+
+
+class BlockedTarget(Base):
+    """Persistent custom domain (FQDN/root) or ASN organization block rule (`FB-P18-001`)."""
+
+    __tablename__ = "blocked_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_type",
+            "target_value",
+            "scope_type",
+            "device_id",
+            name="uq_blocked_targets_scope_target",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    target_value: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="global", index=True
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    organization_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, default=""
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )

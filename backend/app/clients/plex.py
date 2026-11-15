@@ -39,6 +39,23 @@ class PlexActiveSessionItem(BaseModel):
     stream_decision: str = "direct play"
     bandwidth_kbps: int = 0
     progress_percent: float = 0.0
+    video_resolution: str = ""
+    transcode_bitrate_kbps: int = 0
+
+
+def format_plex_video_resolution(raw_resolution: Any) -> str:
+    """Normalize a Plex Media videoResolution token (e.g. '1080' -> '1080p', '4k' -> '4K')."""
+    text = str(raw_resolution or "").strip()
+    if not text:
+        return ""
+    low = text.lower()
+    if low in ("4k", "uhd"):
+        return "4K"
+    if low == "sd":
+        return "SD"
+    if low.isdigit():
+        return f"{low}p"
+    return text
 
 
 def clean_plex_client_ip(raw_ip: str | None) -> str:
@@ -132,6 +149,34 @@ def normalize_plex_sessions_payload(raw_json: dict[str, Any]) -> list[dict[str, 
         except (TypeError, ValueError):
             bandwidth_kbps = 0
 
+        raw_media = item.get("Media")
+        primary_media: dict[str, Any] = {}
+        if isinstance(raw_media, dict):
+            primary_media = raw_media
+        elif isinstance(raw_media, list) and raw_media and isinstance(raw_media[0], dict):
+            primary_media = raw_media[0]
+        video_resolution = format_plex_video_resolution(
+            primary_media.get("videoResolution")
+            or (transcode.get("videoResolution") if transcode is not None else "")
+        )
+
+        transcode_bitrate_kbps = 0
+        raw_transcode_bitrate = (
+            transcode.get("bitrate")
+            if transcode is not None and transcode.get("bitrate") is not None
+            else (
+                primary_media.get("bitrate")
+                if stream_decision == "transcode"
+                else 0
+            )
+        )
+        try:
+            transcode_bitrate_kbps = max(0, int(float(raw_transcode_bitrate or 0)))
+        except (TypeError, ValueError):
+            transcode_bitrate_kbps = 0
+        if transcode_bitrate_kbps == 0 and stream_decision == "transcode":
+            transcode_bitrate_kbps = bandwidth_kbps
+
         try:
             view_offset = float(item.get("viewOffset") or 0.0)
             duration_ms = float(item.get("duration") or 0.0)
@@ -157,6 +202,8 @@ def normalize_plex_sessions_payload(raw_json: dict[str, Any]) -> list[dict[str, 
                 "stream_decision": stream_decision,
                 "bandwidth_kbps": bandwidth_kbps,
                 "progress_percent": progress_pct,
+                "video_resolution": video_resolution,
+                "transcode_bitrate_kbps": transcode_bitrate_kbps,
             }
         )
     return sessions

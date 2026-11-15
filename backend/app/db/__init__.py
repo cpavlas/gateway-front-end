@@ -169,6 +169,16 @@ async def init_db(settings: Settings | None = None) -> None:
                 )
             )
 
+        res_groups = await conn.execute(text("PRAGMA table_info(device_groups)"))
+        existing_group_cols = {str(row[1]) for row in res_groups.fetchall()}
+        if existing_group_cols and "daily_youtube_limit_minutes" not in existing_group_cols:
+            await conn.execute(
+                text(
+                    "ALTER TABLE device_groups ADD COLUMN daily_youtube_limit_minutes "
+                    "INTEGER NULL"
+                )
+            )
+
         res_audit = await conn.execute(text("PRAGMA table_info(audit_logs)"))
         existing_audit_cols = {str(row[1]) for row in res_audit.fetchall()}
         if existing_audit_cols and "audit_label" not in existing_audit_cols:

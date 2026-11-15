@@ -656,7 +656,7 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - Add a visual **7-Day / 24-Hour Weekly Schedule Timeline** bar at the top of `SchedulesPage.tsx` visualizing active blackout/YouTube windows across the week.
      - Convert Schedule Card actions (`Edit`, `Clone`, `Enable/Disable`, `Delete`, and active **Snooze / Skip Next Window**) to consistent compact controls and add `AutoRefreshSelector` to the `Schedules` header.
 
-### Phase 18 (`v1.3.0-rc3` — PLANNED): Per-Device & Global Domain/ASN Blocking, Multi-App Telemetry, Enhanced Plex `Now Playing`, `Analytics` Drilldowns & Phase 17 Waterfalled Devices/Quota UX (`FB-P4-007`..`009`, `FB-P18-001`..`FB-P18-003`, `FB-P17-006`..`FB-P17-008`)
+### Phase 18 (`v1.3.0-rc3` — COMPLETE): Per-Device & Global Domain/ASN Blocking, Multi-App Telemetry, Enhanced Plex `Now Playing`, `Analytics` Drilldowns & Phase 17 Waterfalled Devices/Quota UX (`FB-P4-007`..`009`, `FB-P18-001`..`FB-P18-003`, `FB-P17-006`..`FB-P17-008`)
 - **Deliverables:**
   1. **Per-Device & Global Domain / ASN Organization Blocking (`FB-P18-001` — Completing `FB-P4-007`, `FB-P4-008`, `FB-P4-009`):**
      - Enrich `Top Destination Organizations (ASN)` payloads with numeric `asn` (`destination.as.number`).
@@ -673,7 +673,7 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - **`FB-P17-007`:** Render only **Device / Friendly Name** and **Action Buttons** on `< sm` mobile viewports in `DevicesPage.tsx` (hiding secondary columns with `hidden sm:table-cell`) for zero horizontal scrolling alongside the mobile bottom navigation bar.
      - **`FB-P17-008`:** Default `DevicesPage.tsx` status filter to **`Online`** on first load and persist the user's selected filter pill in `localStorage` (`gateway_devices_status_filter`).
 
-### Phase 19 (`v1.3.0` Final Release — PLANNED): `Firewall` Tab Security Drilldowns, External WAN IP Blocking, Clickable GeoIP Maps & Interactive Packet Log Explorer (`FB-P16-007`, `FB-P19-001`..`FB-P19-003`)
+### Phase 19 (`v1.3.0` Final Release — PLANNED): `Firewall` Tab Security Drilldowns, External WAN IP Blocking, Clickable GeoIP Maps, Interactive Packet Log Explorer & Phase 18 Waterfalled UX/Telemetry Refinements (`FB-P16-007`, `FB-P19-001`..`FB-P19-003`, `FB-P18-004`..`FB-P18-012`)
 - **Deliverables:**
   1. **`Firewall` Tab Security Panel Polish & Open Port Metadata (`FB-P19-001`):**
      - In **Noisy LAN Devices**, convert Block/Unblock controls to compact icon buttons and add a Magnifying Glass (`<Search />`) **Inspect** button to open `DeviceAnalyticsDrawer` directly from `FirewallPage`.
@@ -684,6 +684,16 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - Inside `FirewallOpenPortSessionsDrawer.tsx`, add a Country summary breakdown bar and a **`Block External IP at WAN`** button backed by an OPNsense WAN blocklist alias (`gateway_wan_blocked_ips`).
   3. **Interactive Packet Log Explorer Filtering, Row Limits & Export (`FB-P19-003`):**
      - Make `Source IP`, `Destination IP`, `Port`, `Protocol`, and `Interface` cells inside **Searchable Firewall Packet Log Explorer** clickable to apply filter chips instantaneously, and add configurable row limit selectors (`50` / `100` / `250`) plus **Export CSV / JSON**.
+  4. **Waterfalled from Phase 18 — Group Quota Removal Unblock, Expandable App Cards, Configurable App Telemetry (`+ Facebook & Threads`), Auto-Refresh Sync Fix & Global UI Polish (`FB-P18-004`..`FB-P18-012`, `BUG-P18-004`..`005`):**
+     - **`FB-P18-004` (`BUG-P18-004`):** Automatically unblock member devices' YouTube access in `update_group()` when `daily_youtube_limit_minutes` is deleted/cleared (`None`) or raised above today's usage (respecting active `pause` timers and active `youtube`-mode schedules).
+     - **`FB-P18-005`:** Make **Application Usage Stats** boxes clickable across `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer` to open an expanded detail view showing full untruncated Plex `Now Playing` titles and complete per-device breakdowns.
+     - **`FB-P18-006`:** Hide `IPv4 & Vendor`, `DNS Queries`, and `Firewall Bytes` columns on `< sm` mobile viewports (`hidden sm:table-cell`) in `AnalyticsPage` **Top Active LAN Devices**, leaving **Device**, **Total Events**, and **Inspect**.
+     - **`FB-P18-007` (`BUG-P18-005`):** Make auto-refresh timer ticks (`useAutoRefresh`) trigger live OPNsense sync on `DevicesPage` (`Synced: HH:MM:SS`) and perform cache-bypassing refetches (`refresh: true`) updating `windowSnapshots[windowKey]` and `Updated: HH:MM:SS` on `AnalyticsPage` and `FirewallPage`.
+     - **`FB-P18-008`:** Add `facebook_threads` (`Facebook & Threads` combined group: `facebook.com`, `fbcdn.net`, `instagram.com`, `threads.net`, `threads.com`, Meta ASN) and add an **Application Telemetry Visibility** configuration section in `System` defaulting to `YouTube` and `Plex` enabled with the remaining apps opt-in.
+     - **`FB-P18-009`:** Replace the inline chevron accordion `Change My Password` form inside the Header User Menu (`AppLayout.tsx`) with a centered screen modal popup (`ChangePasswordModal`).
+     - **`FB-P18-010`:** Clean up the top 4 vertical `ServiceCard` boxes on `StatusPage.tsx` by removing the redundant subtitle line and status paragraph text underneath each card title.
+     - **`FB-P18-011`:** Make the top `<header>` in `AppLayout.tsx` sticky (`sticky top-0 z-40`) in desktop / full-page mode so navigation tabs stay visible without scrolling back to the top.
+     - **`FB-P18-012`:** Compute and display the average node ping time in `OK (XX.X ms)` inside the `Test All Connections` modal when a service has multiple configured nodes (e.g., 3 Elasticsearch nodes).
 
 
 

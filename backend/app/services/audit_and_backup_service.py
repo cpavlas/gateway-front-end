@@ -12,15 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AuditLog,
+    BlockedTarget,
     Device,
     DeviceGroup,
     DeviceGroupMembership,
     format_days_of_week,
     infer_audit_label,
+    normalize_block_scope_type,
+    normalize_block_target_type,
+    normalize_block_target_value,
     normalize_group_color,
     normalize_mac_address,
     parse_days_of_week,
     utc_now,
+    validate_daily_youtube_limit_minutes,
     validate_time_hhmm,
 )
 from app.models import (
@@ -77,7 +82,20 @@ class ConfigBackupGroupItem(BaseModel):
     description: str = ""
     color_badge: str = "indigo"
     icon: str = "users"
+    daily_youtube_limit_minutes: int | None = Field(default=None, ge=1, le=1440)
     member_macs: list[str] = Field(default_factory=list)
+
+
+class ConfigBackupBlockedTargetItem(BaseModel):
+    """Exported custom domain or ASN block rule (`FB-P18-001`)."""
+
+    target_type: Literal["domain", "asn"]
+    target_value: str
+    scope_type: Literal["global", "device"] = "global"
+    device_mac: str | None = None
+    organization_name: str = ""
+    reason: str = ""
+    is_enabled: bool = True
 
 
 class ConfigBackupScheduleItem(BaseModel):
@@ -104,6 +122,7 @@ class ConfigBackupPayload(BaseModel):
     devices: list[ConfigBackupDeviceItem] = Field(default_factory=list)
     groups: list[ConfigBackupGroupItem] = Field(default_factory=list)
     schedules: list[ConfigBackupScheduleItem] = Field(default_factory=list)
+    blocked_targets: list[ConfigBackupBlockedTargetItem] = Field(default_factory=list)
 
 
 class ConfigRestoreSummary(BaseModel):
@@ -112,6 +131,7 @@ class ConfigRestoreSummary(BaseModel):
     devices_updated: int
     groups_upserted: int
     schedules_upserted: int
+    blocked_targets_upserted: int = 0
     restored_at: str
 
 
@@ -196,6 +216,7 @@ def assemble_backup_payload(
     groups: list[DeviceGroup],
     memberships: list[DeviceGroupMembership],
     schedules: list[Schedule],
+    blocked_targets: list[BlockedTarget] | None = None,
 ) -> ConfigBackupPayload:
     """Assemble a secret-free `ConfigBackupPayload` from SQLite ORM rows."""
     dev_by_id: dict[int, Device] = {d.id: d for d in devices}
@@ -226,6 +247,7 @@ def assemble_backup_payload(
             description=g.description or "",
             color_badge=g.color_badge,
             icon=g.icon,
+            daily_youtube_limit_minutes=getattr(g, "daily_youtube_limit_minutes", None),
             member_macs=sorted(set(macs_by_group.get(g.id, []))),
         )
         for g in sorted(groups, key=lambda item: item.name.lower())
@@ -258,12 +280,35 @@ def assemble_backup_payload(
             )
         )
 
+    backup_blocks: list[ConfigBackupBlockedTargetItem] = []
+    for bt in sorted(
+        blocked_targets or [],
+        key=lambda item: (item.target_type, item.target_value, item.scope_type),
+    ):
+        bt_dev = dev_by_id.get(bt.device_id) if bt.device_id is not None else None
+        b_type: Literal["domain", "asn"] = "asn" if bt.target_type == "asn" else "domain"
+        b_scope: Literal["global", "device"] = (
+            "device" if bt.scope_type == "device" else "global"
+        )
+        backup_blocks.append(
+            ConfigBackupBlockedTargetItem(
+                target_type=b_type,
+                target_value=bt.target_value,
+                scope_type=b_scope,
+                device_mac=bt_dev.mac_address if bt_dev else None,
+                organization_name=bt.organization_name or "",
+                reason=bt.reason or "",
+                is_enabled=bool(bt.is_enabled),
+            )
+        )
+
     return ConfigBackupPayload(
         schema_version="1.0",
         exported_at=utc_now().isoformat(),
         devices=backup_devices,
         groups=backup_groups,
         schedules=backup_schedules,
+        blocked_targets=backup_blocks,
     )
 
 
@@ -319,6 +364,9 @@ def prepare_restored_groups(
         clean_name = g_item.name.strip()
         clean_color = normalize_group_color(g_item.color_badge)
         clean_icon = (g_item.icon or "users").strip().lower() or "users"
+        clean_yt_limit = validate_daily_youtube_limit_minutes(
+            getattr(g_item, "daily_youtube_limit_minutes", None)
+        )
         grp = grp_by_name.get(clean_name.lower())
         if grp is None:
             grp = DeviceGroup(
@@ -326,6 +374,7 @@ def prepare_restored_groups(
                 description=g_item.description or "",
                 color_badge=clean_color,
                 icon=clean_icon,
+                daily_youtube_limit_minutes=clean_yt_limit,
                 created_at=now,
                 updated_at=now,
             )
@@ -336,9 +385,61 @@ def prepare_restored_groups(
             grp.description = g_item.description or ""
             grp.color_badge = clean_color
             grp.icon = clean_icon
+            grp.daily_youtube_limit_minutes = clean_yt_limit
             grp.updated_at = now
         upserted_count += 1
     return grp_by_name, new_groups, upserted_count
+
+
+def prepare_restored_blocked_targets(
+    existing_blocks: list[BlockedTarget],
+    backup_blocks: list[ConfigBackupBlockedTargetItem],
+    dev_by_mac: dict[str, Device],
+    now: datetime,
+) -> tuple[list[BlockedTarget], int]:
+    """Synchronously reconcile `ConfigBackupBlockedTargetItem` rows against SQLite rows."""
+    by_key: dict[tuple[str, str, str, int | None], BlockedTarget] = {
+        (b.target_type, b.target_value, b.scope_type, b.device_id): b
+        for b in existing_blocks
+    }
+    new_blocks: list[BlockedTarget] = []
+    upserted_count = 0
+    for item in backup_blocks:
+        t_type = normalize_block_target_type(item.target_type)
+        t_val = normalize_block_target_value(t_type, item.target_value)
+        s_type = normalize_block_scope_type(item.scope_type)
+        target_dev_id: int | None = None
+        if s_type == "device":
+            if not item.device_mac:
+                continue
+            dev = dev_by_mac.get(normalize_mac_address(item.device_mac))
+            if dev is None:
+                continue
+            target_dev_id = dev.id
+
+        key = (t_type, t_val, s_type, target_dev_id)
+        existing = by_key.get(key)
+        if existing is None:
+            row = BlockedTarget(
+                target_type=t_type,
+                target_value=t_val,
+                scope_type=s_type,
+                device_id=target_dev_id,
+                organization_name=item.organization_name or "",
+                reason=item.reason or "",
+                is_enabled=bool(item.is_enabled),
+                created_at=now,
+                updated_at=now,
+            )
+            by_key[key] = row
+            new_blocks.append(row)
+        else:
+            existing.organization_name = item.organization_name or ""
+            existing.reason = item.reason or ""
+            existing.is_enabled = bool(item.is_enabled)
+            existing.updated_at = now
+        upserted_count += 1
+    return new_blocks, upserted_count
 
 
 def prepare_restored_schedules(
@@ -493,12 +594,19 @@ async def list_audit_logs(
 
 
 async def export_configuration_backup(db: AsyncSession) -> ConfigBackupPayload:
-    """Export all device metadata, groups, and schedules into a portable JSON snapshot."""
+    """Export device metadata, groups, schedules, and custom blocks into JSON."""
     devices = list((await db.execute(select(Device))).scalars().all())
     groups = list((await db.execute(select(DeviceGroup))).scalars().all())
     memberships = list((await db.execute(select(DeviceGroupMembership))).scalars().all())
     schedules = list((await db.execute(select(Schedule))).scalars().all())
-    return assemble_backup_payload(devices, groups, memberships, schedules)
+    blocked_targets = list((await db.execute(select(BlockedTarget))).scalars().all())
+    return assemble_backup_payload(
+        devices,
+        groups,
+        memberships,
+        schedules,
+        blocked_targets=blocked_targets,
+    )
 
 
 async def restore_configuration_backup(
@@ -507,7 +615,7 @@ async def restore_configuration_backup(
     *,
     actor: str,
 ) -> ConfigRestoreSummary:
-    """Idempotently restore device customizations, groups, and schedules from a backup snapshot."""
+    """Idempotently restore devices, groups, schedules, and custom blocks from backup."""
     now = utc_now()
     existing_devices = list((await db.execute(select(Device))).scalars().all())
     dev_by_mac, new_devices, devices_updated = prepare_restored_devices(
@@ -550,6 +658,13 @@ async def restore_configuration_backup(
     for s in new_schedules:
         db.add(s)
 
+    existing_blocks = list((await db.execute(select(BlockedTarget))).scalars().all())
+    new_blocks, blocks_upserted = prepare_restored_blocked_targets(
+        existing_blocks, payload.blocked_targets, dev_by_mac, now
+    )
+    for bt in new_blocks:
+        db.add(bt)
+
     db.add(
         AuditLog(
             actor=actor,
@@ -558,7 +673,7 @@ async def restore_configuration_backup(
             status="success",
             details=(
                 f"Restored {devices_updated} devices, {groups_upserted} groups, "
-                f"and {schedules_upserted} schedules."
+                f"{schedules_upserted} schedules, and {blocks_upserted} custom block rules."
             ),
         )
     )
@@ -567,6 +682,7 @@ async def restore_configuration_backup(
         devices_updated=devices_updated,
         groups_upserted=groups_upserted,
         schedules_upserted=schedules_upserted,
+        blocked_targets_upserted=blocks_upserted,
         restored_at=now.isoformat(),
     )
 
