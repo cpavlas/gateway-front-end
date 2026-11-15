@@ -4,11 +4,15 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Database,
   Download,
   FileText,
   HardDrive,
+  KeyRound,
   Laptop,
   Lock,
   Plus,
@@ -21,26 +25,31 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  Tv,
   Upload,
   UserPlus,
   Users,
   Wifi,
+  X,
   XCircle,
 } from 'lucide-react'
 import {
   apiClient,
   formatClock24h,
+  type AllConnectivityTestResponse,
   type ConfigBackupPayload,
   type ConfigRestoreSummary,
   type ConnectivityTestResponse,
   type DeviceListResponse,
   type HealthLevel,
   type IntegrationSettingsUpdatePayload,
+  type NodeConnectivityResult,
   type ServiceHealthStatus,
   type UserRole,
 } from '../api/client'
 import { AppLayout, type AppTab } from '../components/AppLayout'
 import { AutoRefreshSelector, useAutoRefresh } from '../components/AutoRefreshSelector'
+import { YouTubeLogoIcon } from '../components/YouTubeLogoIcon'
 import { useAuth } from '../context/AuthContext'
 
 interface StatusPageProps {
@@ -54,6 +63,43 @@ const CARD_BADGE_STYLES: Record<HealthLevel, string> = {
   unhealthy: 'border-rose-500/40 bg-rose-500/10 text-rose-300',
 }
 
+function normalizeNodeUrlKey(rawUrl: string): string {
+  return rawUrl.trim().replace(/\/+$/, '')
+}
+
+function splitUrlList(rawUrls: string | null | undefined): string[] {
+  const parts = (rawUrls ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return parts.length > 0 ? parts : ['']
+}
+
+function StatusDotIndicator({
+  nodeResult,
+  testId,
+}: {
+  nodeResult?: NodeConnectivityResult
+  testId: string
+}) {
+  const statusClass = !nodeResult
+    ? 'bg-slate-600'
+    : nodeResult.reachable
+      ? 'bg-emerald-400 shadow-sm shadow-emerald-400/60'
+      : 'bg-rose-500 shadow-sm shadow-rose-500/60'
+  const label = !nodeResult
+    ? 'Not tested yet'
+    : `${nodeResult.reachable ? 'Reachable' : 'Failed'} (${nodeResult.latency_ms} ms): ${nodeResult.message}`
+  return (
+    <span
+      data-testid={testId}
+      title={label}
+      aria-label={label}
+      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${statusClass}`}
+    />
+  )
+}
+
 function StatusIcon({ status }: { status: HealthLevel }) {
   if (status === 'healthy') {
     return <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" />
@@ -62,6 +108,50 @@ function StatusIcon({ status }: { status: HealthLevel }) {
     return <AlertTriangle className="h-4 w-4 text-amber-400" aria-hidden="true" />
   }
   return <XCircle className="h-4 w-4 text-rose-400" aria-hidden="true" />
+}
+
+const DETAIL_KEY_LABELS: Record<string, string> = {
+  arp_entry_count: 'ARP Entries',
+  dnsmasq_lease_count: 'DHCP Leases',
+  blocked_ip_count: 'Blocked Alias IPs',
+  es_version: 'ES Version',
+  index_doc_count: 'Indexed Docs',
+  cluster_status: 'Cluster Status',
+  assigned_shards: 'Assigned Shards',
+  unassigned_shards: 'Unassigned Shards',
+  relocating_shards: 'Relocating Shards',
+  configured_nodes: 'Configured Nodes',
+  configured_node_count: 'Configured Node Count',
+  cluster_nodes: 'Cluster Data Nodes',
+  storage_size_formatted: 'Storage Size',
+  total_records: 'Total Records',
+  audit_logs_count: 'Audit Events',
+  db_path: 'Database Path',
+  configured: 'Configured',
+  url: 'Endpoint URL',
+  active_sessions: 'Active Streams',
+  server_name: 'Server Name',
+  version: 'Version',
+}
+
+function formatDetailLabel(key: string): string {
+  if (DETAIL_KEY_LABELS[key]) {
+    return DETAIL_KEY_LABELS[key]
+  }
+  return key
+    .split('_')
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : ''))
+    .join(' ')
+}
+
+function formatDetailValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join(', ')
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No'
+  }
+  return String(value)
 }
 
 interface ServiceCardProps {
@@ -79,6 +169,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   health,
   testId,
 }) => {
+  const [showDetails, setShowDetails] = useState(true)
   const status: HealthLevel = health?.status ?? 'unhealthy'
   const details = health?.details ?? {}
   const isSqlite = testId === 'service-card-sqlite'
@@ -227,16 +318,40 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         )}
 
         {Object.keys(details).length > 0 && (
-          <dl className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800/80 bg-slate-950/60 p-3 text-xs">
-            {Object.entries(details).map(([key, value]) => (
-              <div key={key} className="truncate">
-                <dt className="text-[11px] text-slate-400 font-mono">{key}</dt>
-                <dd className="font-semibold text-slate-200 truncate">
-                  {String(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              data-testid={`toggle-details-${testId}`}
+              aria-expanded={showDetails}
+              onClick={() => setShowDetails((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-md border border-slate-800 bg-slate-950/50 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:bg-slate-800/60 cursor-pointer"
+            >
+              <span>Technical Details ({Object.keys(details).length})</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                  showDetails ? 'rotate-180' : ''
+                }`}
+                aria-hidden="true"
+              />
+            </button>
+            {showDetails && (
+              <dl className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800/80 bg-slate-950/60 p-3 text-xs">
+                {Object.entries(details).map(([key, value]) => (
+                  <div key={key} className="truncate">
+                    <dt className="text-[11px] text-slate-400" title={key}>
+                      {formatDetailLabel(key)}
+                    </dt>
+                    <dd
+                      className="font-semibold text-slate-200 truncate"
+                      title={formatDetailValue(value)}
+                    >
+                      {formatDetailValue(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
         )}
       </div>
 
@@ -258,10 +373,13 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const { user } = useAuth()
   const isAdmin = user?.role !== 'operator'
 
-  const [auditEnabled, setAuditEnabled] = useState(false)
+  const [auditEnabled, setAuditEnabled] = useState(true)
   const [auditActionFilter, setAuditActionFilter] = useState('')
   const [auditLabelFilter, setAuditLabelFilter] = useState('')
   const [auditSearch, setAuditSearch] = useState('')
+  const [auditLimit, setAuditLimit] = useState<number>(50)
+  const [auditOffset, setAuditOffset] = useState<number>(0)
+  const [auditPruneMessage, setAuditPruneMessage] = useState<string | null>(null)
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
   const [restoreSummary, setRestoreSummary] = useState<ConfigRestoreSummary | null>(null)
@@ -273,22 +391,62 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const [opnSecret, setOpnSecret] = useState('')
   const [opnVerifySsl, setOpnVerifySsl] = useState(false)
   const [opnProtectedIps, setOpnProtectedIps] = useState('')
-  const [esUrl, setEsUrl] = useState('')
+  const [esUrls, setEsUrls] = useState<string[]>([''])
   const [esKey, setEsKey] = useState('')
   const [esVerifySsl, setEsVerifySsl] = useState(false)
+  const [esCaCertPath, setEsCaCertPath] = useState('')
   const [esIndexPatterns, setEsIndexPatterns] = useState('')
-  const [plexUrl, setPlexUrl] = useState('')
+  const [plexUrls, setPlexUrls] = useState<string[]>([''])
   const [plexToken, setPlexToken] = useState('')
   const [plexVerifySsl, setPlexVerifySsl] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [diagnosticResult, setDiagnosticResult] = useState<ConnectivityTestResponse | null>(null)
+  const [allDiagnosticResult, setAllDiagnosticResult] =
+    useState<AllConnectivityTestResponse | null>(null)
+  const [urlTestStatusMap, setUrlTestStatusMap] = useState<Record<string, NodeConnectivityResult>>(
+    {},
+  )
+
+  const recordNodeStatuses = (
+    res: ConnectivityTestResponse,
+    fallbackUrls: string[],
+  ) => {
+    const nodeResults = res.details?.node_results
+    setUrlTestStatusMap((prev) => {
+      const next = { ...prev }
+      if (Array.isArray(nodeResults) && nodeResults.length > 0) {
+        for (const nr of nodeResults) {
+          const key = normalizeNodeUrlKey(nr.url)
+          if (key) {
+            next[key] = nr
+          }
+        }
+      } else {
+        for (const u of fallbackUrls) {
+          const key = normalizeNodeUrlKey(u)
+          if (key) {
+            next[key] = {
+              url: key,
+              reachable: res.reachable,
+              status: res.status,
+              latency_ms: res.latency_ms,
+              message: res.message,
+            }
+          }
+        }
+      }
+      return next
+    })
+  }
 
   // Phase 9 (FB-P9-003): Multi-User Management
   const [usersExpanded, setUsersExpanded] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newUserRole, setNewUserRole] = useState<UserRole>('operator')
+  const [resettingUserId, setResettingUserId] = useState<number | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
   const [userMgmtMessage, setUserMgmtMessage] = useState<string | null>(null)
   const [userMgmtError, setUserMgmtError] = useState<string | null>(null)
   const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
@@ -310,7 +468,6 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const {
     data: integrationSettings,
     isFetching: isFetchingSettings,
-    refetch: refetchSettings,
   } = useQuery({
     queryKey: ['integrationSettings'],
     queryFn: async () => {
@@ -320,11 +477,12 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       setOpnSecret(data.opnsense_api_secret_masked)
       setOpnVerifySsl(data.opnsense_verify_ssl)
       setOpnProtectedIps(data.opnsense_protected_ips)
-      setEsUrl(data.elasticsearch_url)
+      setEsUrls(splitUrlList(data.elasticsearch_url))
       setEsKey(data.elasticsearch_api_key_masked)
       setEsVerifySsl(data.elasticsearch_verify_ssl)
+      setEsCaCertPath(data.elasticsearch_ca_cert_path ?? '')
       setEsIndexPatterns(data.elasticsearch_index_patterns)
-      setPlexUrl(data.plex_base_url ?? '')
+      setPlexUrls(splitUrlList(data.plex_base_url))
       setPlexToken(data.plex_api_token_masked ?? '')
       setPlexVerifySsl(Boolean(data.plex_verify_ssl))
       return data
@@ -348,16 +506,30 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     isFetching: isFetchingAudit,
     refetch: refetchAudit,
   } = useQuery({
-    queryKey: ['auditLogs', auditActionFilter, auditLabelFilter, auditSearch],
+    queryKey: [
+      'auditLogs',
+      auditActionFilter,
+      auditLabelFilter,
+      auditSearch,
+      auditOffset,
+      auditLimit,
+    ],
     queryFn: () =>
       apiClient.getAuditLogs({
         action: auditActionFilter || undefined,
         audit_label: auditLabelFilter || undefined,
         search: auditSearch.trim() || undefined,
-        limit: 50,
+        offset: auditOffset,
+        limit: auditLimit,
       }),
     enabled: auditEnabled,
   })
+
+  const joinUrlList = (urls: string[]): string =>
+    urls
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(', ')
 
   const buildSettingsPayload = (): IntegrationSettingsUpdatePayload => ({
     opnsense_base_url: opnUrl.trim() || undefined,
@@ -365,11 +537,12 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     opnsense_api_secret: opnSecret.trim() || undefined,
     opnsense_verify_ssl: opnVerifySsl,
     opnsense_protected_ips: opnProtectedIps.trim() || undefined,
-    elasticsearch_url: esUrl.trim() || undefined,
+    elasticsearch_url: joinUrlList(esUrls) || undefined,
     elasticsearch_api_key: esKey.trim() || undefined,
     elasticsearch_verify_ssl: esVerifySsl,
+    elasticsearch_ca_cert_path: esCaCertPath.trim(),
     elasticsearch_index_patterns: esIndexPatterns.trim() || undefined,
-    plex_base_url: plexUrl.trim(),
+    plex_base_url: joinUrlList(plexUrls),
     plex_api_token: plexToken.trim() || undefined,
     plex_verify_ssl: plexVerifySsl,
   })
@@ -394,16 +567,19 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     onSuccess: (resetView) => {
       setSettingsError(null)
       setDiagnosticResult(null)
+      setAllDiagnosticResult(null)
+      setUrlTestStatusMap({})
       setOpnUrl(resetView.opnsense_base_url)
       setOpnKey(resetView.opnsense_api_key_masked)
       setOpnSecret(resetView.opnsense_api_secret_masked)
       setOpnVerifySsl(resetView.opnsense_verify_ssl)
       setOpnProtectedIps(resetView.opnsense_protected_ips)
-      setEsUrl(resetView.elasticsearch_url)
+      setEsUrls(splitUrlList(resetView.elasticsearch_url))
       setEsKey(resetView.elasticsearch_api_key_masked)
       setEsVerifySsl(resetView.elasticsearch_verify_ssl)
+      setEsCaCertPath(resetView.elasticsearch_ca_cert_path ?? '')
       setEsIndexPatterns(resetView.elasticsearch_index_patterns)
-      setPlexUrl(resetView.plex_base_url ?? '')
+      setPlexUrls(splitUrlList(resetView.plex_base_url))
       setPlexToken(resetView.plex_api_token_masked ?? '')
       setPlexVerifySsl(Boolean(resetView.plex_verify_ssl))
       setSettingsMessage('Reset integration settings to .env defaults.')
@@ -419,6 +595,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     mutationFn: () => apiClient.testOpnsenseConnectivity(buildSettingsPayload()),
     onSuccess: (res) => {
       setDiagnosticResult(res)
+      recordNodeStatuses(res, [opnUrl])
     },
     onError: (err) => {
       setSettingsError(err instanceof Error ? err.message : 'OPNsense connectivity test failed.')
@@ -429,6 +606,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     mutationFn: () => apiClient.testElasticsearchConnectivity(buildSettingsPayload()),
     onSuccess: (res) => {
       setDiagnosticResult(res)
+      recordNodeStatuses(res, esUrls)
     },
     onError: (err) => {
       setSettingsError(err instanceof Error ? err.message : 'Elasticsearch connectivity test failed.')
@@ -439,9 +617,30 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     mutationFn: () => apiClient.testPlexConnectivity(buildSettingsPayload()),
     onSuccess: (res) => {
       setDiagnosticResult(res)
+      recordNodeStatuses(res, plexUrls)
     },
     onError: (err) => {
       setSettingsError(err instanceof Error ? err.message : 'Plex connectivity test failed.')
+    },
+  })
+
+  const testAllMutation = useMutation({
+    mutationFn: () => apiClient.testAllConnectivity(buildSettingsPayload()),
+    onSuccess: (res) => {
+      setSettingsError(null)
+      setAllDiagnosticResult(res)
+      if (res.results.opnsense) {
+        recordNodeStatuses(res.results.opnsense, [opnUrl])
+      }
+      if (res.results.elasticsearch) {
+        recordNodeStatuses(res.results.elasticsearch, esUrls)
+      }
+      if (res.results.plex) {
+        recordNodeStatuses(res.results.plex, plexUrls)
+      }
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : 'Unified connectivity check failed.')
     },
   })
 
@@ -477,6 +676,51 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     },
     onError: (err) => {
       setUserMgmtError(err instanceof Error ? err.message : 'Failed to update user status.')
+    },
+  })
+
+  const toggleUserRoleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: number; role: UserRole }) =>
+      apiClient.updateUser(userId, { role }),
+    onSuccess: (updated) => {
+      setUserMgmtError(null)
+      setUserMgmtMessage(`Updated role for '${updated.username}' to '${updated.role}'.`)
+      void queryClient.invalidateQueries({ queryKey: ['usersList'] })
+    },
+    onError: (err) => {
+      setUserMgmtError(err instanceof Error ? err.message : 'Failed to update user role.')
+    },
+  })
+
+  const resetUserPasswordMutation = useMutation({
+    mutationFn: ({ userId, password }: { userId: number; password: string }) =>
+      apiClient.updateUser(userId, { password }),
+    onSuccess: (updated) => {
+      setUserMgmtError(null)
+      setUserMgmtMessage(`Reset password for '${updated.username}'.`)
+      setResettingUserId(null)
+      setResetPasswordValue('')
+    },
+    onError: (err) => {
+      setUserMgmtError(err instanceof Error ? err.message : 'Failed to reset user password.')
+    },
+  })
+
+  const pruneAuditMutation = useMutation({
+    mutationFn: () =>
+      apiClient.pruneAuditLogs({ retention_days: 7, audit_label: 'PERFORMANCE_ANALYSIS' }),
+    onSuccess: (res) => {
+      setAuditPruneMessage(
+        `Pruned ${res.deleted_count} PERFORMANCE_ANALYSIS audit record(s) older than ${res.retention_days} days.`,
+      )
+      setAuditOffset(0)
+      void queryClient.invalidateQueries({ queryKey: ['auditLogs'] })
+      void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
+    },
+    onError: (err) => {
+      setAuditPruneMessage(
+        err instanceof Error ? err.message : 'Failed to prune old performance logs.',
+      )
     },
   })
 
@@ -590,10 +834,50 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const activeTimerCount = (deviceList?.devices ?? []).filter(
     (d) => d.active_override && d.active_override.is_active,
   ).length
+  const youtubeBlockedDevices = (deviceList?.devices ?? []).filter((d) =>
+    Boolean(d.is_youtube_blocked),
+  ).length
 
   const auditLogs = auditResponse?.items ?? []
+  const totalAuditCount = auditResponse?.total_count ?? auditLogs.length
   const lastHealthClock = formatClock24h(healthUpdatedAt)
   const lastAuditClock = formatClock24h(auditUpdatedAt)
+
+  const handleExportAuditCsv = () => {
+    const headers = ['id', 'created_at', 'audit_label', 'action', 'actor', 'target', 'status', 'details']
+    const escapeCell = (raw: string | undefined | null) =>
+      `"${String(raw ?? '').replaceAll('"', '""')}"`
+    const rows = [
+      headers.join(','),
+      ...auditLogs.map((log) =>
+        [
+          log.id,
+          escapeCell(log.created_at),
+          escapeCell(log.audit_label ?? 'SYSTEM'),
+          escapeCell(log.action),
+          escapeCell(log.actor),
+          escapeCell(log.target),
+          escapeCell(log.status),
+          escapeCell(log.details),
+        ].join(','),
+      ),
+    ]
+    try {
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `gateway-audit-logs-${new Date().toISOString().slice(0, 10)}.csv`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      }
+    } catch {
+      // Ignore download helper errors in headless test environments
+    }
+  }
 
   return (
     <AppLayout
@@ -661,10 +945,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             data-testid="health-loading"
             className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400"
           >
-            Checking OPNsense, Elasticsearch, and SQLite connectivity...
+            Checking OPNsense, Elasticsearch, SQLite, and Plex connectivity...
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
             <ServiceCard
               testId="service-card-opnsense"
               title="OPNsense Firewall"
@@ -687,6 +971,14 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               subtitle="data/gateway.db"
               icon={<HardDrive className="h-5 w-5" aria-hidden="true" />}
               health={healthReport?.services?.sqlite}
+            />
+
+            <ServiceCard
+              testId="service-card-plex"
+              title="Plex Media Server"
+              subtitle="Optional Watch & Session API"
+              icon={<Tv className="h-5 w-5" aria-hidden="true" />}
+              health={healthReport?.services?.plex}
             />
           </div>
         )}
@@ -721,7 +1013,7 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             )}
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>Discovered Devices</span>
@@ -749,6 +1041,19 @@ export const StatusPage: React.FC<StatusPageProps> = ({
               </div>
               <p className="mt-1 text-lg font-bold text-rose-300">
                 {blockedDevices}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>YouTube Blocked</span>
+                <YouTubeLogoIcon className="h-3.5 w-3.5" />
+              </div>
+              <p
+                data-testid="status-youtube-blocked-devices"
+                className="mt-1 text-lg font-bold text-rose-300"
+              >
+                {youtubeBlockedDevices}
               </p>
             </div>
 
@@ -881,29 +1186,44 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                data-testid="toggle-integration-settings-btn"
-                aria-label={settingsExpanded ? 'Refresh Settings' : 'Configure Connections'}
-                title={settingsExpanded ? 'Refresh Settings' : 'Configure Connections'}
-                onClick={() => {
-                  if (!settingsExpanded) {
-                    setSettingsExpanded(true)
-                  } else {
-                    void refetchSettings()
-                  }
-                }}
-                disabled={isFetchingSettings}
-                className={`inline-flex items-center justify-center gap-1.5 self-start rounded-lg border border-slate-700 bg-slate-800 ${
-                  settingsExpanded ? 'h-8 w-8' : 'px-3.5 py-2'
-                } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${isFetchingSettings ? 'animate-spin' : ''}`}
-                  aria-hidden="true"
-                />
-                {!settingsExpanded && <span>Configure Connections</span>}
-              </button>
+              <div className="flex items-center gap-2 self-start">
+                {settingsExpanded && (
+                  <button
+                    type="button"
+                    data-testid="test-all-connectivity-btn"
+                    onClick={() => testAllMutation.mutate()}
+                    disabled={testAllMutation.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-60 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${testAllMutation.isPending ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      {testAllMutation.isPending ? 'Testing All...' : 'Test All Connections'}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  data-testid="toggle-integration-settings-btn"
+                  aria-expanded={settingsExpanded}
+                  aria-label={settingsExpanded ? 'Collapse Connection Settings' : 'Configure Connections'}
+                  title={settingsExpanded ? 'Collapse Connection Settings' : 'Configure Connections'}
+                  onClick={() => setSettingsExpanded((prev) => !prev)}
+                  disabled={isFetchingSettings}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${
+                      settingsExpanded ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span>{settingsExpanded ? 'Hide Connections' : 'Configure Connections'}</span>
+                </button>
+              </div>
             </div>
 
             {settingsExpanded && (
@@ -988,14 +1308,20 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                       <label className="block text-[11px] text-slate-400 mb-1">
                         OPNsense Base URL
                       </label>
-                      <input
-                        type="text"
-                        data-testid="input-opnsense-url"
-                        value={opnUrl}
-                        onChange={(e) => setOpnUrl(e.target.value)}
-                        placeholder="https://192.168.1.1"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      />
+                      <div className="flex items-center gap-2">
+                        <StatusDotIndicator
+                          testId="opnsense-url-status-dot"
+                          nodeResult={urlTestStatusMap[normalizeNodeUrlKey(opnUrl)]}
+                        />
+                        <input
+                          type="text"
+                          data-testid="input-opnsense-url"
+                          value={opnUrl}
+                          onChange={(e) => setOpnUrl(e.target.value)}
+                          placeholder="https://192.168.1.1"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -1062,18 +1388,68 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                       </button>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
-                        Elasticsearch URL
-                      </label>
-                      <input
-                        type="text"
-                        data-testid="input-elasticsearch-url"
-                        value={esUrl}
-                        onChange={(e) => setEsUrl(e.target.value)}
-                        placeholder="https://192.168.1.10:9200"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-[11px] text-slate-400">
+                          Elasticsearch Node URLs (HA Failover)
+                        </label>
+                        <button
+                          type="button"
+                          data-testid="add-es-url-btn"
+                          onClick={() => setEsUrls((prev) => [...prev, ''])}
+                          className="inline-flex items-center gap-1 rounded border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-200 hover:bg-indigo-500/25 cursor-pointer"
+                        >
+                          <Plus className="h-3 w-3" aria-hidden="true" />
+                          <span>Add URL</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {esUrls.map((urlVal, idx) => {
+                          const nodeStatus = urlTestStatusMap[normalizeNodeUrlKey(urlVal)]
+                          return (
+                            <div key={`es-url-row-${idx}`} className="flex items-center gap-2">
+                              <StatusDotIndicator
+                                testId={`es-url-status-dot-${idx}`}
+                                nodeResult={nodeStatus}
+                              />
+                              <input
+                                type="text"
+                                data-testid={
+                                  idx === 0 ? 'input-elasticsearch-url' : `input-elasticsearch-url-${idx}`
+                                }
+                                value={urlVal}
+                                onChange={(e) =>
+                                  setEsUrls((prev) =>
+                                    prev.map((item, i) => (i === idx ? e.target.value : item)),
+                                  )
+                                }
+                                placeholder="https://192.168.1.10:9200"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                data-testid={`remove-es-url-btn-${idx}`}
+                                aria-label={`Remove Elasticsearch URL ${idx + 1}`}
+                                title="Remove URL"
+                                onClick={() =>
+                                  setEsUrls((prev) =>
+                                    prev.length > 1
+                                      ? prev.filter((_, i) => i !== idx)
+                                      : [''],
+                                  )
+                                }
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-400 hover:border-rose-500/50 hover:text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Add multiple Elasticsearch node URLs for automatic failover; status dots show per-node test results.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -1105,6 +1481,20 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Elasticsearch CA Cert Path (Optional PEM Bundle)
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="settings-es-ca-cert-input"
+                        value={esCaCertPath}
+                        onChange={(e) => setEsCaCertPath(e.target.value)}
+                        placeholder="/app/certs/es-ca.pem"
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
                     <div className="flex items-center justify-between gap-3 pt-1">
                       <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                         <input
@@ -1124,10 +1514,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                          Plex Media Server (Optional — Tautulli-Style Watch Telemetry)
+                          Plex Media Server
                         </h3>
                         <p className="text-[11px] text-slate-400">
-                          Enables exact active watch minutes &amp; live Now Playing stream detection for same-VLAN Smart TVs (e.g. LGwebOSTV) that bypass OPNsense
+                          Enables exact active watch minutes &amp; live Now Playing stream detection for same-VLAN Smart TVs that bypass OPNsense
                         </p>
                       </div>
                       <button
@@ -1145,19 +1535,66 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">
-                          Plex Base URL
-                        </label>
-                        <input
-                          type="text"
-                          data-testid="input-plex-url"
-                          value={plexUrl}
-                          onChange={(e) => setPlexUrl(e.target.value)}
-                          placeholder="http://192.168.1.100:32400"
-                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                        />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="block text-[11px] text-slate-400">
+                            Plex Server URLs
+                          </label>
+                          <button
+                            type="button"
+                            data-testid="add-plex-url-btn"
+                            onClick={() => setPlexUrls((prev) => [...prev, ''])}
+                            className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/25 cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" aria-hidden="true" />
+                            <span>Add URL</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {plexUrls.map((urlVal, idx) => {
+                            const nodeStatus = urlTestStatusMap[normalizeNodeUrlKey(urlVal)]
+                            return (
+                              <div key={`plex-url-row-${idx}`} className="flex items-center gap-2">
+                                <StatusDotIndicator
+                                  testId={`plex-url-status-dot-${idx}`}
+                                  nodeResult={nodeStatus}
+                                />
+                                <input
+                                  type="text"
+                                  data-testid={
+                                    idx === 0 ? 'input-plex-url' : `input-plex-url-${idx}`
+                                  }
+                                  value={urlVal}
+                                  onChange={(e) =>
+                                    setPlexUrls((prev) =>
+                                      prev.map((item, i) => (i === idx ? e.target.value : item)),
+                                    )
+                                  }
+                                  placeholder="http://192.168.1.100:32400"
+                                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  data-testid={`remove-plex-url-btn-${idx}`}
+                                  aria-label={`Remove Plex URL ${idx + 1}`}
+                                  title="Remove URL"
+                                  onClick={() =>
+                                    setPlexUrls((prev) =>
+                                      prev.length > 1
+                                        ? prev.filter((_, i) => i !== idx)
+                                        : [''],
+                                    )
+                                  }
+                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-400 hover:border-rose-500/50 hover:text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-400 mb-1">
@@ -1384,8 +1821,26 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                               )}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 uppercase text-indigo-300 font-semibold">
-                            {u.role}
+                          <td className="py-2.5 px-3">
+                            <button
+                              type="button"
+                              data-testid={`toggle-role-user-${u.username}`}
+                              disabled={u.is_protected_admin || toggleUserRoleMutation.isPending}
+                              title={
+                                u.is_protected_admin
+                                  ? 'Protected default admin role cannot be demoted'
+                                  : `Switch role to ${u.role === 'admin' ? 'operator' : 'admin'}`
+                              }
+                              onClick={() =>
+                                toggleUserRoleMutation.mutate({
+                                  userId: u.id,
+                                  role: u.role === 'admin' ? 'operator' : 'admin',
+                                })
+                              }
+                              className="rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {u.role}
+                            </button>
                           </td>
                           <td className="py-2.5 px-3">
                             <span
@@ -1399,7 +1854,59 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <div className="inline-flex items-center gap-2">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                              {resettingUserId === u.id ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <input
+                                    type="password"
+                                    data-testid={`reset-password-input-${u.username}`}
+                                    value={resetPasswordValue}
+                                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                                    placeholder="New password"
+                                    className="w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 focus:border-indigo-500 focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    data-testid={`reset-password-submit-${u.username}`}
+                                    disabled={
+                                      resetUserPasswordMutation.isPending ||
+                                      resetPasswordValue.length < 8
+                                    }
+                                    onClick={() =>
+                                      resetUserPasswordMutation.mutate({
+                                        userId: u.id,
+                                        password: resetPasswordValue,
+                                      })
+                                    }
+                                    className="rounded border border-indigo-500/40 bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 cursor-pointer"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setResettingUserId(null)
+                                      setResetPasswordValue('')
+                                    }}
+                                    className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-700 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  data-testid={`reset-password-user-${u.username}`}
+                                  onClick={() => {
+                                    setResettingUserId(u.id)
+                                    setResetPasswordValue('')
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/20 cursor-pointer"
+                                >
+                                  <KeyRound className="h-3 w-3" aria-hidden="true" />
+                                  <span>Reset Password</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 data-testid={`toggle-user-active-${u.username}`}
@@ -1458,29 +1965,61 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             </div>
 
             <div className="flex flex-col items-start sm:items-end gap-1 self-start">
-              <button
-                type="button"
-                data-testid="load-audit-logs-btn"
-                aria-label={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
-                title={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
-                onClick={() => {
-                  if (!auditEnabled) {
-                    setAuditEnabled(true)
-                  } else {
-                    void refetchAudit()
-                  }
-                }}
-                disabled={isFetchingAudit}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 ${
-                  auditEnabled ? 'h-8 w-8' : 'px-3.5 py-2'
-                } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
-                  aria-hidden="true"
-                />
-                {!auditEnabled && <span>Load Audit Logs</span>}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {auditEnabled && (
+                  <button
+                    type="button"
+                    data-testid="audit-export-csv-btn"
+                    disabled={auditLogs.length === 0}
+                    onClick={handleExportAuditCsv}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Export CSV</span>
+                  </button>
+                )}
+
+                {auditEnabled && isAdmin && (
+                  <button
+                    type="button"
+                    data-testid="audit-prune-perf-btn"
+                    onClick={() => pruneAuditMutation.mutate()}
+                    disabled={pruneAuditMutation.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>
+                      {pruneAuditMutation.isPending
+                        ? 'Pruning...'
+                        : 'Prune Old Performance Logs'}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  data-testid="load-audit-logs-btn"
+                  aria-label={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
+                  title={auditEnabled ? 'Refresh Audit Logs' : 'Load Audit Logs'}
+                  onClick={() => {
+                    if (!auditEnabled) {
+                      setAuditEnabled(true)
+                    } else {
+                      void refetchAudit()
+                    }
+                  }}
+                  disabled={isFetchingAudit}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 ${
+                    auditEnabled ? 'h-8 w-8' : 'px-3.5 py-2'
+                  } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                  {!auditEnabled && <span>Load Audit Logs</span>}
+                </button>
+              </div>
               {auditEnabled && lastAuditClock && (
                 <span
                   data-testid="audit-last-updated"
@@ -1494,6 +2033,15 @@ export const StatusPage: React.FC<StatusPageProps> = ({
 
           {auditEnabled && (
             <div className="mt-4 space-y-3">
+              {auditPruneMessage && (
+                <div
+                  data-testid="audit-prune-status"
+                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs text-emerald-200"
+                >
+                  {auditPruneMessage}
+                </div>
+              )}
+
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
                 <div className="relative flex-1">
                   <Search
@@ -1504,7 +2052,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     type="text"
                     data-testid="audit-search-input"
                     value={auditSearch}
-                    onChange={(e) => setAuditSearch(e.target.value)}
+                    onChange={(e) => {
+                      setAuditSearch(e.target.value)
+                      setAuditOffset(0)
+                    }}
                     placeholder="Search audit events by action, actor, or details..."
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
                   />
@@ -1514,7 +2065,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   aria-label="Filter audit logs by label"
                   data-testid="audit-label-filter"
                   value={auditLabelFilter}
-                  onChange={(e) => setAuditLabelFilter(e.target.value)}
+                  onChange={(e) => {
+                    setAuditLabelFilter(e.target.value)
+                    setAuditOffset(0)
+                  }}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">All Audit Labels</option>
@@ -1537,7 +2091,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   aria-label="Filter audit logs by action"
                   data-testid="audit-action-filter"
                   value={auditActionFilter}
-                  onChange={(e) => setAuditActionFilter(e.target.value)}
+                  onChange={(e) => {
+                    setAuditActionFilter(e.target.value)
+                    setAuditOffset(0)
+                  }}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">All Actions</option>
@@ -1548,6 +2105,21 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   <option value="group.youtube_block">group.youtube_block</option>
                   <option value="group.youtube_unblock">group.youtube_unblock</option>
                   <option value="system.restore">system.restore</option>
+                </select>
+
+                <select
+                  aria-label="Audit log page size"
+                  data-testid="audit-limit-select"
+                  value={auditLimit}
+                  onChange={(e) => {
+                    setAuditLimit(Number(e.target.value))
+                    setAuditOffset(0)
+                  }}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                  <option value={250}>250 / page</option>
                 </select>
               </div>
 
@@ -1618,10 +2190,193 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   </table>
                 </div>
               )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-400">
+                <span data-testid="audit-pagination-summary" className="font-mono">
+                  {totalAuditCount === 0
+                    ? 'Showing 0 of 0 events'
+                    : `Showing ${auditOffset + 1}-${Math.min(
+                        auditOffset + auditLogs.length,
+                        totalAuditCount,
+                      )} of ${totalAuditCount} events`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="audit-prev-page-btn"
+                    disabled={auditOffset === 0 || isFetchingAudit}
+                    onClick={() => setAuditOffset((prev) => Math.max(0, prev - auditLimit))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Prev</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="audit-next-page-btn"
+                    disabled={auditOffset + auditLimit >= totalAuditCount || isFetchingAudit}
+                    onClick={() => setAuditOffset((prev) => prev + auditLimit)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>
       </div>
+
+      {/* Test All Connections Popup Modal */}
+      {allDiagnosticResult && (
+        <div
+          data-testid="test-all-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="test-all-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setAllDiagnosticResult(null)
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+        >
+          <div
+            data-testid="all-connectivity-diagnostic-result"
+            className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+              <div>
+                <h3
+                  id="test-all-modal-title"
+                  className="text-sm font-bold uppercase tracking-wide text-slate-100"
+                >
+                  Unified Connectivity Summary:{' '}
+                  <span
+                    className={
+                      allDiagnosticResult.overall_reachable
+                        ? 'text-emerald-300'
+                        : 'text-amber-300'
+                    }
+                  >
+                    {allDiagnosticResult.overall_reachable
+                      ? 'ALL SERVICES REACHABLE'
+                      : 'PARTIAL OR FAILED PROBE'}
+                  </span>
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Live probe results across all configured upstream server URLs
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="close-test-all-modal-x-btn"
+                aria-label="Close connectivity results modal"
+                onClick={() => setAllDiagnosticResult(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100 cursor-pointer"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 space-y-3">
+              {Object.entries(allDiagnosticResult.results).map(([svcName, res]) => {
+                const fallbackUrls =
+                  svcName === 'opnsense'
+                    ? [opnUrl]
+                    : svcName === 'elasticsearch'
+                      ? esUrls
+                      : plexUrls
+                const nodeRows: NodeConnectivityResult[] =
+                  Array.isArray(res.details?.node_results) &&
+                  res.details.node_results.length > 0
+                    ? res.details.node_results
+                    : fallbackUrls
+                        .map((u) => u.trim())
+                        .filter(Boolean)
+                        .map((u) => ({
+                          url: u,
+                          reachable: res.reachable,
+                          status: res.status,
+                          latency_ms: res.latency_ms,
+                          message: res.message,
+                        }))
+
+                return (
+                  <div
+                    key={svcName}
+                    data-testid={`test-all-service-${svcName}`}
+                    className={`rounded-lg border p-3.5 text-xs space-y-2 ${
+                      res.reachable
+                        ? 'border-emerald-500/30 bg-emerald-500/5'
+                        : 'border-rose-500/30 bg-rose-500/5'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-semibold uppercase">
+                      <span className="text-slate-100">{svcName}</span>
+                      <span className={res.reachable ? 'text-emerald-300' : 'text-rose-300'}>
+                        {res.reachable ? 'OK' : 'FAIL'} ({res.latency_ms} ms)
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">{res.message}</p>
+
+                    {nodeRows.length > 0 && (
+                      <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                        {nodeRows.map((node, idx) => (
+                          <div
+                            key={`${svcName}-node-${idx}-${node.url}`}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-800 bg-slate-950/80 px-2.5 py-1.5"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <StatusDotIndicator
+                                testId={`modal-${svcName}-node-dot-${idx}`}
+                                nodeResult={node}
+                              />
+                              <span className="font-mono text-[11px] text-slate-200 truncate">
+                                {node.url}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[11px] font-mono font-semibold ${
+                                node.reachable ? 'text-emerald-300' : 'text-rose-300'
+                              }`}
+                            >
+                              {node.reachable ? 'REACHABLE' : 'FAILED'} · {node.latency_ms} ms
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {res.error_diagnostic && (
+                      <p className="font-mono text-[11px] text-rose-300">
+                        Diagnostic: {res.error_diagnostic}
+                      </p>
+                    )}
+                    {res.troubleshooting_hint && (
+                      <p className="text-[11px] text-amber-200">
+                        Hint: {res.troubleshooting_hint}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="flex items-center justify-end border-t border-slate-800 px-5 py-3 bg-slate-950/50">
+              <button
+                type="button"
+                data-testid="close-test-all-modal-btn"
+                onClick={() => setAllDiagnosticResult(null)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-4 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-700 cursor-pointer"
+              >
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   )
 }

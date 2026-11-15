@@ -7,7 +7,7 @@ export type OverrideMode = 'pause' | 'bonus'
 export type OverrideTargetType = 'device' | 'group'
 
 export type UserRole = 'admin' | 'operator'
-export type ThemePreference = 'default' | 'crimson' | 'ocean'
+export type ThemePreference = 'default' | 'crimson' | 'ocean' | 'emerald' | 'amber'
 
 export interface AuthUserResponse {
   username: string
@@ -104,6 +104,14 @@ export interface IntegrationSettingsUpdatePayload {
   plex_timeout_seconds?: number
 }
 
+export interface NodeConnectivityResult {
+  url: string
+  reachable: boolean
+  status: HealthLevel
+  latency_ms: number
+  message: string
+}
+
 export interface ConnectivityTestResponse {
   service: 'opnsense' | 'elasticsearch' | 'plex'
   reachable: boolean
@@ -112,7 +120,25 @@ export interface ConnectivityTestResponse {
   message: string
   error_diagnostic?: string | null
   troubleshooting_hint?: string | null
-  details?: Record<string, unknown>
+  details?: Record<string, unknown> & {
+    node_results?: NodeConnectivityResult[]
+  }
+}
+
+export interface AllConnectivityTestResponse {
+  overall_reachable: boolean
+  results: Record<string, ConnectivityTestResponse>
+}
+
+export interface SelfPasswordChangePayload {
+  current_password: string
+  new_password: string
+  confirm_password?: string
+}
+
+export interface SelfPasswordChangeResponse {
+  status: string
+  message: string
 }
 
 export interface LoginPayload {
@@ -135,7 +161,8 @@ export interface SystemHealthResponse {
     sqlite: ServiceHealthStatus
     opnsense: ServiceHealthStatus
     elasticsearch: ServiceHealthStatus
-    [key: string]: ServiceHealthStatus
+    plex?: ServiceHealthStatus
+    [key: string]: ServiceHealthStatus | undefined
   }
 }
 
@@ -402,7 +429,15 @@ export interface AuditLogItem {
 
 export interface AuditLogListResponse {
   total_count: number
+  offset?: number
+  limit?: number
   items: AuditLogItem[]
+}
+
+export interface AuditLogPruneResponse {
+  deleted_count: number
+  retention_days: number
+  audit_label?: string | null
 }
 
 export interface ConfigBackupPayload {
@@ -863,6 +898,15 @@ export const apiClient = {
     })
   },
 
+  changeOwnPassword(
+    payload: SelfPasswordChangePayload,
+  ): Promise<SelfPasswordChangeResponse> {
+    return requestJson<SelfPasswordChangeResponse>('/api/v1/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   getSystemHealth(): Promise<SystemHealthResponse> {
     return requestJson<SystemHealthResponse>('/api/v1/system/health', {
       method: 'GET',
@@ -1079,6 +1123,7 @@ export const apiClient = {
     action?: string
     audit_label?: string
     search?: string
+    offset?: number
     limit?: number
   }): Promise<AuditLogListResponse> {
     const query = new URLSearchParams()
@@ -1091,6 +1136,9 @@ export const apiClient = {
     if (params?.search && params.search.trim()) {
       query.set('search', params.search.trim())
     }
+    if (params?.offset !== undefined && params.offset > 0) {
+      query.set('offset', String(params.offset))
+    }
     if (params?.limit) {
       query.set('limit', String(params.limit))
     }
@@ -1098,6 +1146,26 @@ export const apiClient = {
     return requestJson<AuditLogListResponse>(`/api/v1/audit-logs${qs ? `?${qs}` : ''}`, {
       method: 'GET',
     })
+  },
+
+  pruneAuditLogs(params?: {
+    retention_days?: number
+    audit_label?: string
+  }): Promise<AuditLogPruneResponse> {
+    const query = new URLSearchParams()
+    if (params?.retention_days !== undefined) {
+      query.set('retention_days', String(params.retention_days))
+    }
+    if (params?.audit_label) {
+      query.set('audit_label', params.audit_label)
+    }
+    const qs = query.toString()
+    return requestJson<AuditLogPruneResponse>(
+      `/api/v1/system/audit-logs/prune${qs ? `?${qs}` : ''}`,
+      {
+        method: 'POST',
+      },
+    )
   },
 
   getUsers(): Promise<UserListResponse> {
@@ -1177,6 +1245,18 @@ export const apiClient = {
   ): Promise<ConnectivityTestResponse> {
     return requestJson<ConnectivityTestResponse>(
       '/api/v1/system/settings/test-plex',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
+  },
+
+  testAllConnectivity(
+    payload?: IntegrationSettingsUpdatePayload,
+  ): Promise<AllConnectivityTestResponse> {
+    return requestJson<AllConnectivityTestResponse>(
+      '/api/v1/system/settings/test-all',
       {
         method: 'POST',
         body: JSON.stringify(payload ?? {}),

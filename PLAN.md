@@ -611,4 +611,75 @@ Following the completion of `v1.1.0`, the `v1.2` release cycle is organized into
   2. **`Today` (`today`) Time Window Selector as First & Default Selection (`FB-P15-001`):**
      - Add `Today` (`today`, from `00:00:00` local timezone to now with `1h` timeline buckets and background cache pre-warming) as the first and default selection across `AnalyticsPage`, `FirewallPage`, `DeviceAnalyticsDrawer`, `GroupAnalyticsDrawer`, and `FirewallOpenPortSessionsDrawer`.
 
+---
+
+## 11. `v1.3` Release Roadmap (`Phases 16 – 19` -> `v1.3.0`)
+
+Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab UI/UX Q&A review paired with the Elasticsearch 9.4.3 (`logsdb`) Batch 5 optimization audit ([`docs/development/Optimizations-suggestions.md`](docs/development/Optimizations-suggestions.md)), the `v1.3` release cycle is structured into **4 sequential phases (`Phase 16` through `Phase 19`)**, each governed by the mandatory 5-Step Lifecycle and 3 Mandatory User Review Gates in `AGENTS.md`:
+
+### Phase 16 (`v1.3.0-rc1` — COMPLETE): Elasticsearch 9.4.3 (`logsdb`) Batch 5 Read Optimizations (`Q1`–`Q4`), Multi-Node HA, `System` Tab Overhaul & Global Header/Theme/Quick-Search Upgrades (`FB-P16-001`..`FB-P16-005`)
+- **Deliverables:**
+  1. **Batch 5 Elasticsearch 9.4.3 (`logsdb`) Read Optimizations (`FB-P16-001` — `Q1`–`Q4`):**
+     - **`Q1` (`build_open_wan_port_sessions_query` & `normalize_open_wan_port_sessions_response`):** Add `_extract_hit_fields()` to seamlessly decode `docvalue_fields`, disable `_source` reconstruction (`"_source": False`), enforce `"collect_mode": "breadth_first"` on `external_ips.terms`, and add deterministic `[{"@timestamp": {"order": "desc"}}]` sort (`2–11 ms` vs `1.3s–17.2s`).
+     - **`Q3` (`fetch_network_overview`):** Move `{"terms": {"source.ip": RFC1918_CIDRS}}` directly into `q_lan.query.bool.filter` and preserve `RFC1918_CIDRS` filtering on `q_app.aggs.lan_devices` / `by_device.filter` so external WAN scanner IPs never enter high-cardinality `top_ips` ordinal collection (`~1.1s–3.4s` saved).
+     - **`Q2` (`run_telemetry_cache_prewarm` & `fetch_firewall_overview`):** Decouple the `now-30d/h` open WAN port discovery aggregation (`q_wan`) into a dedicated `"firewall:wan_ports_30d"` cache (`1800s` TTL), extend `"today"`/`"7d"`/`"30d"` cache TTLs (`180s` / `900s` / `1800s`), and tune background pre-warmer cadence from `60s` to `180s`.
+     - **`Q4` (`_round_es_gte`, `_msearch` `request_cache`, & `track_total_hits`):** Round `7d`/`30d` queries to `/h` and `1h`/`24h` queries to `/m` (`BUG-P16-003` ES single-unit rounding requirement) across all dashboard query builders (`network`, `device`, `group`, `firewall`, `open_port_sessions`), explicitly pass `"request_cache": True` on `size: 0` `_msearch` sub-requests, and add `"track_total_hits": False` to `build_device_recent_domains_query()` and `build_group_recent_domains_query()`.
+  2. **Multi-Node HA Failover, Dynamic Multi-URL Inputs & Live Connectivity Suite (`FB-P16-002`, `BUG-P16-005`):**
+     - Support multi-node `ELASTICSEARCH_URL` and `PLEX_BASE_URL` lists via dynamic multi-row UI inputs (`+ Add URL` / `Remove` + per-URL green/red node status dots) plus optional `ELASTICSEARCH_CA_CERT_PATH` across `config.py`, `elasticsearch.py`, `plex.py`, `runtime_settings_service.py`, and `StatusPage.tsx`, reporting per-node status inside the Elasticsearch health card and presenting **Test All Connections** (`POST /api/v1/system/settings/test-all`) in a popup modal.
+  3. **`System` Tab Service Card, Plex Health Card & Enforcement Summary Polish (`FB-P16-003`):**
+     - Add a **4th Service Health Card for `Plex Media Server`** (`status`, version/identity, active streams, latency) alongside OPNsense, Elasticsearch, and SQLite.
+     - Format raw Service Card `details` with clean human-readable labels and a collapsible **Technical Details** toggle.
+     - Add **YouTube Blocked** and **Custom Domain/ASN Blocks** KPI counters to the **Gateway Enforcement & Inventory Synchronization Summary** panel.
+  4. **User Password/Role Management & Audit History Upgrades (`FB-P16-004`):**
+     - Allow Admins to reset passwords or change roles (`Admin` <-> `Operator`) for existing non-default accounts in `User Accounts & Access Management`, plus a self-service **Change My Password** dialog in the top Header User Menu.
+     - Auto-load **Audit & Event History** on opening the `System` tab (collapsible with remembered state), add pagination (`offset` + `50` / `100` / `250` page sizes), **Export CSV**, and a **Prune / Clear Old Performance Logs** maintenance action (`POST /api/v1/system/audit-logs/prune`).
+  5. **Global Header, Navigation, Theming & YouTube Alias Reconciliation (`FB-P16-005`, `BUG-P16-004`):**
+     - Make clicking the `HEALTHY` / `DEGRADED` / `DOWN` status pill in the top header navigate directly to the `System` tab.
+     - Add 2 additional dark-room color themes (`Emerald & Forest` and `Amber & Carbon`) to the User Menu (`5` total themes persisted per user).
+     - Add a global `Ctrl+K` / `Cmd+K` **Quick-Search & Jump Modal** across tabs and devices (documented in `README.md`), add a responsive **Mobile Bottom Navigation Bar** on small viewports, expand `YOUTUBE_BLOCK_DOMAINS` to all `13` domains with automatic alias updates, and reconcile `gateway_youtube_blocked_devices` state during `POST /api/v1/devices/sync`.
+
+### Phase 17 (`v1.3.0-rc2` — PLANNED): `Devices` Tab Overhaul, Drawer Control Consistency & `Schedules` Tab Upgrades (`FB-P17-001`..`FB-P17-005`)
+- **Deliverables:**
+  1. **Collapsible Group Section & Compact Icon Group Controls (`FB-P17-001`):**
+     - Add a collapsible/compact toggle (persisted in `localStorage`) for **Device Groups & Profiles**, convert Group Card controls (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon-only mobile-friendly buttons, and support inline quick group assignment.
+  2. **Unified `Actions` Column, Column Sorting, Inline `+ Group` & Offline Device Archiving (`FB-P17-002`):**
+     - Merge `Telemetry` and `Internet Access` into a single right-aligned **Actions** column (`Analytics`, `YouTube`, `Timer`, `Internet Access`) aligned cleanly on desktop and mobile.
+     - Make Device Inventory column headers clickable to sort ascending/descending (`Name`, `IPv4`, `Online`, `Vendor`, `Blocked`).
+     - Add an inline **`+ Group`** popover on each device row and inside inline row editing to assign/remove group memberships in 1 click without opening the full Group modal.
+     - Add **Archive / Restore / Delete Offline Device** (`is_archived` SQLite column, Alembic migration) plus an **Archived** filter pill (`All` excludes archived by default).
+  3. **Analytics Drawer Header Compact Controls & Timer (`FB-P17-003`):**
+     - Align `DeviceAnalyticsDrawer.tsx` and `GroupAnalyticsDrawer.tsx` header controls to compact icon toggles plus an inline `TimerPopoverMenu` directly inside the drawer header.
+  4. **Expanded Schedule Rule Capabilities (`FB-P17-004`):**
+     - Support `block_mode` (`"internet"` vs. `"youtube"`) on `ScheduleRule` so recurring bedtime/study rules can block **YouTube Only** while keeping general internet and Plex allowed.
+     - Allow changing a Schedule's target (`Group` or `Device`) in `ScheduleFormModal.tsx` when editing, and add a **Duplicate / Clone Schedule** action on Schedule cards.
+  5. **Weekly Visual Coverage Timeline & Schedule Card UX (`FB-P17-005`):**
+     - Add a visual **7-Day / 24-Hour Weekly Schedule Timeline** bar at the top of `SchedulesPage.tsx` visualizing active blackout/YouTube windows across the week.
+     - Convert Schedule Card actions (`Edit`, `Clone`, `Enable/Disable`, `Delete`, and active **Snooze / Skip Next Window**) to consistent compact controls and add `AutoRefreshSelector` to the `Schedules` header.
+
+### Phase 18 (`v1.3.0-rc3` — PLANNED): Per-Device & Global Domain/ASN Blocking, Multi-App Telemetry, Enhanced Plex `Now Playing` & `Analytics` Drilldowns (`FB-P4-007`..`009`, `FB-P18-001`..`FB-P18-003`)
+- **Deliverables:**
+  1. **Per-Device & Global Domain / ASN Organization Blocking (`FB-P18-001` — Completing `FB-P4-007`, `FB-P4-008`, `FB-P4-009`):**
+     - Enrich `Top Destination Organizations (ASN)` payloads with numeric `asn` (`destination.as.number`).
+     - Persist custom Domain and ASN block rules in SQLite (with Backup/Restore JSON export support) and enforce them in OPNsense via per-device/global Host (FQDN) & BGP ASN aliases + automation filter rules (or Unbound DNS overrides for global domain blocks).
+     - Add inline **Block** buttons in `Top Visited Domains` and `Top Destination Organizations (ASN)` (in both `DeviceAnalyticsDrawer` and `AnalyticsPage` for specific devices or global) and a **Blocked Domains & ASN Organizations** panel with one-click **Unblock / Remove** controls.
+  2. **Expanded Application Usage Telemetry & Enhanced Plex `Now Playing` (`FB-P18-002`):**
+     - Extend 5-minute active-usage tracking beyond YouTube & Plex to track **Netflix**, **Disney+**, **Twitch**, **TikTok**, **Discord**, and **Gaming** (`Sony/PSN`, `Xbox Live`, `Nintendo`, `Steam`/`Valve`, `Epic`) with expandable per-device duration + bandwidth breakdowns.
+     - Enhance live Plex **Now Playing** cards in `AnalyticsPage`, `DeviceAnalyticsDrawer`, and `GroupAnalyticsDrawer` with Plex username, playback progress bar / `%`, resolution, and stream bitrate.
+  3. **`Analytics` Tab Sortable LAN Devices Table & Domain/ASN Client Attribution (`FB-P18-003`):**
+     - Add column sorting (`Device`, `DNS Queries`, `Firewall Bytes`, `Total Events`) and a live search filter input to **Top Active LAN Devices**.
+     - Make items in **Top Queried Domains (FQDN)**, **Top Registered Root Domains**, and **Top Destination Organizations (ASN)** clickable to open a client-attribution breakdown showing which LAN devices queried that domain or contacted that ASN (with direct jump to inspect or block).
+
+### Phase 19 (`v1.3.0` Final Release — PLANNED): `Firewall` Tab Security Drilldowns, External WAN IP Blocking, Clickable GeoIP Maps & Interactive Packet Log Explorer (`FB-P16-007`, `FB-P19-001`..`FB-P19-003`)
+- **Deliverables:**
+  1. **`Firewall` Tab Security Panel Polish & Open Port Metadata (`FB-P19-001`):**
+     - In **Noisy LAN Devices**, convert Block/Unblock controls to compact icon buttons and add a Magnifying Glass (`<Search />`) **Inspect** button to open `DeviceAnalyticsDrawer` directly from `FirewallPage`.
+     - In **Active Inbound WAN Exposure (Open Ports)**, display friendly NAT rule descriptions (`Plex Media Server`, `WireGuard VPN`, etc.) mapped from OPNsense D-NAT rules alongside the `Last Seen` timestamp.
+  2. **External WAN Scanner GeoIP Badges, Clickable Google Maps Links (`FB-P16-007`) & 1-Click `Block External IP at WAN` (`FB-P19-002`):**
+     - Display GeoIP Country/City badges on **Top Blocked External WAN Scanners** and make each scanner IP clickable to filter the Packet Log Explorer below.
+     - Make rendered GeoIP locations across external connection drawers and scanner views clickable to open Google Maps centered with a marker pin in a new tab (`FB-P16-007`).
+     - Inside `FirewallOpenPortSessionsDrawer.tsx`, add a Country summary breakdown bar and a **`Block External IP at WAN`** button backed by an OPNsense WAN blocklist alias (`gateway_wan_blocked_ips`).
+  3. **Interactive Packet Log Explorer Filtering, Row Limits & Export (`FB-P19-003`):**
+     - Make `Source IP`, `Destination IP`, `Port`, `Protocol`, and `Interface` cells inside **Searchable Firewall Packet Log Explorer** clickable to apply filter chips instantaneously, and add configurable row limit selectors (`50` / `100` / `250`) plus **Export CSV / JSON**.
+
+
 

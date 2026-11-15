@@ -559,6 +559,42 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Release Sign-Off (`v1.2.1`):**
   - Both verification sections (`Section A` and `Section B`) in `docs/development/Validation/PHASE15_1-Verify.md` passed user live validation (`[PASS]`).
 
+---
+
+## Phase 16 Exit Analysis & Unplanned-Information Retrospective (`v1.3.0-rc1` — 2026-11-14)
+
+### 1. Phase 16 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P16-001`..`FB-P16-005` + Round 2 Fixes `BUG-P16-003`..`BUG-P16-005`):**
+  1. **`FB-P16-001` — Batch 5 Elasticsearch 9.4.3 (`logsdb`) Read Optimizations (`Q1`–`Q4` in `backend/app/clients/elasticsearch.py`, `main.py`, `analytics_service.py`, `firewall_service.py`):**
+     - Implemented `_extract_hit_fields()` and applied `Q1` (`"_source": False`, `docvalue_fields`, `"collect_mode": "breadth_first"`, deterministic `@timestamp desc` sort) on `build_open_wan_port_sessions_query()`.
+     - Applied `Q3` by preserving `{"terms": {"source.ip": RFC1918_CIDRS}}` inside `q_lan` and `q_app`'s `lan_devices` / `by_device` filters to eliminate WAN scanner ordinal bloat.
+     - Applied `Q2` & `Q4` by decoupling `q_wan` (`now-30d/h`) into dedicated cache `"firewall:wan_ports_30d"` (`1800s` TTL), tuning background pre-warming to `180s` (`today`: `180s`, `7d`: `900s`, `30d`: `1800s`), updating `_round_es_gte()` (`/h` for `7d`/`30d`, `/m` for `1h`/`24h`), enabling `request_cache: True` on `size: 0` `_msearch` headers, and adding `track_total_hits: False` on recent-domain queries.
+  2. **`FB-P16-002` — Multi-Node Elasticsearch & Plex HA Support, `CA Cert Path`, Dynamic Multi-URL Rows & `Test All Connections` (`config.py`, `elasticsearch.py`, `plex.py`, `runtime_settings_service.py`, `StatusPage.tsx`):**
+     - Added comma-separated multi-URL parsing + validation for Elasticsearch and Plex (`ELASTICSEARCH_CA_CERT_PATH` support included), dynamic multi-row URL inputs (`+ Add URL` / `Remove` + per-URL green/red connectivity indicator dots powered by `details.node_results`), per-node ES cluster health reporting, and a parallel **Test All Connections** diagnostic (`POST /api/v1/system/settings/test-all`) displayed inside a popup modal.
+  3. **`FB-P16-003` — `System` Tab 4th `Plex Media Server` Card, Clean Details & Enforcement KPIs (`api/system.py`, `StatusPage.tsx`):**
+     - Included `plex` in `GET /api/v1/system/health`, added the 4th `Plex Media Server` Health Card, replaced raw snake_case `details` dumps with clean human-readable labels + collapsible `Technical Details`, and added **YouTube Blocked** + **Custom Domain/ASN Blocks** counters to Enforcement Summary.
+  4. **`FB-P16-004` — User Password/Role Management, Self-Service Password Change & Auto-Loaded Audit Pagination / CSV / Pruning (`auth/__init__.py`, `api/auth.py`, `user_service.py`, `api/users.py`, `audit_and_backup_service.py`, `api/system.py`, `StatusPage.tsx`, `AppLayout.tsx`):**
+     - Added `PATCH /api/v1/users/{id}` password reset & role change (`admin` <-> `operator` with built-in `admin` protection), `POST /api/v1/auth/change-password` in the Header User Menu, auto-loaded collapsible **Audit & Event History** with pagination (`50`/`100`/`250`), CSV export, and `POST /api/v1/system/audit-logs/prune`.
+  5. **`FB-P16-005` — Header Health Pill Navigation, 2 New Themes (`Emerald` / `Amber`), `Ctrl+K` Quick Search & Mobile Bottom Nav (`AppLayout.tsx`, `GlobalQuickSearchModal.tsx`, `index.css`, `README.md`):**
+     - Linked the top header `HEALTHY` / `DEGRADED` / `DOWN` pill directly to the `System` tab, added `Emerald & Forest` and `Amber & Carbon` themes (`5` persisted themes), implemented `<GlobalQuickSearchModal />` (`Ctrl+K` / `Cmd+K`, with header pill removed in Round 2 for crisp header proportions and documented in `README.md`), and added the sticky mobile bottom navigation bar.
+- **Final Automated Quality Metrics (`v1.3.0-rc1`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `135 / 135` passed in `17.79s` (`85%` coverage across `5,974` statements / `33` source files), `0` ruff/SAST errors, `0` mypy type issues.
+  - **Frontend (`vitest`, `tsc && vite build`):** `32 / 32` passed across `8` test files (`91.1%` statement/line coverage), `0` TypeScript/bundle errors (`1.67s` Vite build).
+
+### 2. Unplanned Information Audit, Bug Retrospective & Feed-Forward (`v1.3.0-rc1`)
+- **Finding 1 — Elasticsearch Single-Unit Date Math Rounding (`BUG-P16-003`):**
+  - Elasticsearch 9.4.3's `DateMathParser` strictly requires single-unit rounding suffixes (`/m`, `/h`, `/d`) without numeric multipliers; passing `now-24h/5m` caused a `400 parse_exception`. Updated `_round_es_gte()` to emit `now-24h/m` and `now-7d/h` / `now-30d/h`, verified live against ES `9.4.3` across `analytics?window=24h` (`1,019,758` events) and `firewall?window=24h` (`544,128` packets).
+- **Finding 2 — OPNsense YouTube Rule Forensics & Sync Reconciliation (`BUG-P16-004`):**
+  - Live `filterlog` inspection showed OPNsense LAN rule `f3e0be6e-8d08-4f11-99af-bd7b4eb18071` had `Destination / Invert` checked (`0` hits to `gateway_youtube_domains`, `600,822` blocks on `:53` / general HTTPS). Expanded `YOUTUBE_BLOCK_DOMAINS` to all `13` documented domains with automatic `set_item` + `reconfigure` syncing in `ensure_youtube_aliases_exist()` and added `gateway_youtube_blocked_devices` state reconciliation inside `sync_devices_from_opnsense()`.
+- **Finding 3 — SQLite Mixed Naive/Aware `SystemSetting.updated_at` Timestamps (`BUG-P16-005`):**
+  - Calling `max(rows, key=lambda r: r.updated_at)` in `sync_runtime_cache_and_build_view()` threw `TypeError: can't compare offset-naive and offset-aware datetimes` when unchanged SQLite rows coexisted with freshly modified rows in the same session. Resolved via `_normalize_utc_datetime()` normalization and explicit `row.updated_at = datetime.now(UTC)` assignment on updates; verified live (`200 OK` on repeated `PUT /api/v1/system/settings` calls).
+- **Waterfalled User Feedback & Next Phase Handoff (`PHASE_17_TRACKING.md`):**
+  - **`FB-P16-006` (`EVALUATING — Post-v1.3 Core Stabilization / Phase 19+`):** Holistic mobile responsive UX redesign (slide-out Asus-router-style hamburger menu, zero horizontal scroll, and core mobile quick-action focus).
+  - **`FB-P16-007` (`SCHEDULED — Phase 19 / v1.3.0`):** Make GeoIP locations clickable across external connection & scanner drawers/tables to open Google Maps centered with a location marker in a new tab.
+  - **Phase 17 (`v1.3.0-rc2`):** Ready for Gate 1 review (`FB-P17-001`..`FB-P17-005`: `Devices` tab & `Schedules` timeline overhaul).
+- **Release Sign-Off (`v1.3.0-rc1`):**
+  - All 4 verification sections (`Section A` through `Section D`) in `docs/development/Validation/PHASE16-Verify.md` passed user live validation (`[pass]`), with `BUG-P16-005` resolved and `FB-P16-007` logged prior to release tag `v1.3.0-rc1`.
+
 
 
 

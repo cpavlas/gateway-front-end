@@ -130,13 +130,24 @@ class Settings(BaseSettings):
         raw = raw_val.strip()
         return bool(raw) and raw.lower() not in PLACEHOLDER_ADMIN_PASSWORDS
 
-    @field_validator("opnsense_base_url", "elasticsearch_url")
+    @field_validator("opnsense_base_url")
     @classmethod
-    def normalize_base_url(cls, value: str) -> str:
+    def normalize_opnsense_base_url(cls, value: str) -> str:
         cleaned = value.strip().rstrip("/")
         if not cleaned.startswith(("http://", "https://")):
             raise ValueError(f"URL must start with http:// or https:// (got '{value}').")
         return cleaned
+
+    @field_validator("elasticsearch_url")
+    @classmethod
+    def normalize_elasticsearch_urls(cls, value: str) -> str:
+        parts = [item.strip().rstrip("/") for item in (value or "").split(",") if item.strip()]
+        if not parts:
+            raise ValueError("ELASTICSEARCH_URL cannot be empty.")
+        for part in parts:
+            if not part.startswith(("http://", "https://")):
+                raise ValueError(f"URL must start with http:// or https:// (got '{part}').")
+        return ", ".join(dict.fromkeys(parts))
 
     @field_validator("plex_base_url")
     @classmethod

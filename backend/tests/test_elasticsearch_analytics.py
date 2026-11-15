@@ -48,7 +48,7 @@ def test_sanitize_domain_search() -> None:
 
 def test_build_and_normalize_network_overview() -> None:
     q = build_network_overview_query(window="24h", tz_name="America/Los_Angeles", top_n=8)
-    assert q["query"]["range"]["@timestamp"]["gte"] == "now-24h"
+    assert q["query"]["range"]["@timestamp"]["gte"] == "now-24h/m"
     assert q["aggs"]["timeline"]["date_histogram"]["fixed_interval"] == "1h"
     assert q["aggs"]["timeline"]["date_histogram"]["time_zone"] == "America/Los_Angeles"
     assert q["aggs"]["lan_devices"]["aggs"]["top_ips"]["terms"]["size"] == 8

@@ -312,6 +312,8 @@ def _reconcile_ORM_devices(
     blocked_ips: set[str],
     settings: Settings,
     now: datetime,
+    *,
+    youtube_blocked_ips: set[str] | None = None,
 ) -> list[Device]:
     """Update existing `Device` rows and return newly created `Device` instances."""
     existing_by_mac: dict[str, Device] = {d.mac_address: d for d in existing_rows}
@@ -322,6 +324,9 @@ def _reconcile_ORM_devices(
         vendor = _pick_vendor(info["arp_vendor"], info["lease_vendor"])
         is_online = mac in online_macs
         is_blocked = bool(ip and ip in blocked_ips)
+        is_yt_blocked = bool(
+            youtube_blocked_ips is not None and ip and ip in youtube_blocked_ips
+        )
         is_protected_ip = bool(ip and ip in settings.protected_ip_set)
 
         if mac in existing_by_mac:
@@ -338,6 +343,10 @@ def _reconcile_ORM_devices(
                 dev.lease_type = info["lease_type"]
             dev.is_online = is_online
             dev.is_blocked = bool(dev.ipv4_address and dev.ipv4_address in blocked_ips)
+            if youtube_blocked_ips is not None:
+                dev.is_youtube_blocked = bool(
+                    dev.ipv4_address and dev.ipv4_address in youtube_blocked_ips
+                )
             if is_protected_ip:
                 dev.is_protected = True
             if is_online:
@@ -355,6 +364,7 @@ def _reconcile_ORM_devices(
                     lease_type=info["lease_type"] or "unknown",
                     is_online=is_online,
                     is_blocked=is_blocked,
+                    is_youtube_blocked=is_yt_blocked,
                     is_protected=is_protected_ip,
                     notes="",
                     first_seen_at=now,
@@ -367,6 +377,10 @@ def _reconcile_ORM_devices(
         if mac not in discovered:
             dev.is_online = False
             dev.is_blocked = bool(dev.ipv4_address and dev.ipv4_address in blocked_ips)
+            if youtube_blocked_ips is not None:
+                dev.is_youtube_blocked = bool(
+                    dev.ipv4_address and dev.ipv4_address in youtube_blocked_ips
+                )
             if dev.ipv4_address and dev.ipv4_address in settings.protected_ip_set:
                 dev.is_protected = True
 
@@ -562,13 +576,24 @@ async def sync_devices_from_opnsense(
     arp_rows = await opnsense.get_arp_table()
     lease_rows = await opnsense.get_dnsmasq_leases()
     blocked_ips = set(await opnsense.list_blocked_alias_ips())
+    youtube_blocked_ips: set[str] | None = None
+    try:
+        youtube_blocked_ips = set(await opnsense.list_youtube_blocked_ips())
+    except (OPNsenseClientError, httpx.HTTPError):
+        youtube_blocked_ips = None
 
     now = utc_now()
     discovered, online_macs = merge_opnsense_discovery_payloads(arp_rows, lease_rows)
 
     existing_rows = list((await db.execute(select(Device))).scalars().all())
     new_devices = _reconcile_ORM_devices(
-        existing_rows, discovered, online_macs, blocked_ips, settings, now
+        existing_rows,
+        discovered,
+        online_macs,
+        blocked_ips,
+        settings,
+        now,
+        youtube_blocked_ips=youtube_blocked_ips,
     )
     for dev in new_devices:
         db.add(dev)

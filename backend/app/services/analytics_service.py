@@ -324,6 +324,24 @@ def get_analytics_cache() -> AnalyticsCache:
     return _analytics_cache
 
 
+def resolve_telemetry_cache_ttl(window: str) -> float:
+    """Return window-aware in-memory telemetry cache TTL in seconds (`Q2` / `Q4`).
+
+    - `30d`: 1800s (30m)
+    - `7d`: 900s (15m)
+    - `today`: 180s (3m)
+    - `1h`, `24h`: 90s
+    """
+    cleaned = (window or "24h").strip().lower()
+    if cleaned == "30d":
+        return 1800.0
+    if cleaned == "7d":
+        return 900.0
+    if cleaned == "today":
+        return 180.0
+    return 90.0
+
+
 # ---------------------------------------------------------------------------
 # Synchronous Helper Functions (100% traced by Python 3.12 sys.monitoring)
 # ---------------------------------------------------------------------------
@@ -644,7 +662,7 @@ async def get_network_overview_analytics(
         settings=settings,
         window=win_key,
     )
-    ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+    ttl = resolve_telemetry_cache_ttl(win_key)
     cache.set(cache_key, response, ttl_seconds=ttl)
     if record_perf:
         elapsed_ms = (time.perf_counter() - start_t) * 1000.0
@@ -751,7 +769,7 @@ async def get_device_analytics(
         es_data=enriched_es_data,
         window=win_key,
     )
-    ttl = 300.0 if win_key in ("7d", "30d") else 90.0
+    ttl = resolve_telemetry_cache_ttl(win_key)
     cache.set(cache_key, response, ttl_seconds=ttl)
     if not clean_search:
         elapsed_ms = (time.perf_counter() - start_t) * 1000.0

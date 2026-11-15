@@ -84,7 +84,7 @@ def normalize_user_role(role: str | None) -> Literal["admin", "operator"]:
 
 
 def normalize_theme_preference(theme: str | None) -> str:
-    """Validate and normalize a user theme preference ('default', 'crimson', 'ocean')."""
+    """Validate and normalize a theme preference (default/crimson/ocean/emerald/amber)."""
     cleaned = (theme or "default").strip().lower()
     if cleaned not in VALID_USER_THEMES:
         raise ValueError(
@@ -521,3 +521,64 @@ async def update_self_theme_preference(
     db.add(audit)
     await db.commit()
     return clean_theme
+
+
+class SelfPasswordChangePayload(BaseModel):
+    """Payload for POST /api/v1/auth/change-password (`FB-P16-004`)."""
+
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str | None = None
+
+
+def apply_self_password_change(
+    user_row: User | None,
+    username: str,
+    payload: SelfPasswordChangePayload,
+    settings: Settings,
+) -> tuple[User, AuditLog]:
+    """Verify current password, hash new password, and build an AuditLog (`FB-P16-004`)."""
+    if user_row is None:
+        raise LookupError(f"User account '{username}' not found.")
+
+    authenticated = evaluate_user_authentication(
+        user_row, username, payload.current_password, settings
+    )
+    if authenticated is None:
+        raise PermissionError("Current password is incorrect.")
+
+    clean_new = validate_initial_admin_passwords(
+        payload.new_password, payload.confirm_password
+    )
+    if clean_new == payload.current_password.strip():
+        raise ValueError("New password must be different from your current password.")
+
+    user_row.password_hash = hash_password(clean_new)
+    audit = AuditLog(
+        actor=username,
+        action="user.change_password",
+        audit_label="AUTH_EVENT",
+        target=user_row.username,
+        status="success",
+        details=f"User '{user_row.username}' changed their account password",
+    )
+    return user_row, audit
+
+
+async def change_own_password(
+    db: AsyncSession,
+    settings: Settings,
+    username: str,
+    payload: SelfPasswordChangePayload,
+) -> dict[str, str]:
+    """Allow an authenticated user to change their own password (`FB-P16-004`)."""
+    await ensure_default_admin_seeded(db, settings)
+    user_row = (
+        await db.execute(
+            select(User).where(func.lower(User.username) == username.lower())
+        )
+    ).scalar_one_or_none()
+    _, audit = apply_self_password_change(user_row, username, payload, settings)
+    db.add(audit)
+    await db.commit()
+    return {"status": "password_updated", "message": "Password updated successfully."}

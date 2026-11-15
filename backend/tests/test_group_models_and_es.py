@@ -60,7 +60,7 @@ def test_build_group_analytics_and_recent_domains_queries() -> None:
         top_n=12,
     )
     filters = q["query"]["bool"]["filter"]
-    assert filters[0] == {"range": {"@timestamp": {"gte": "now-7d"}}}
+    assert filters[0] == {"range": {"@timestamp": {"gte": "now-7d/h"}}}
     should_clauses = filters[1]["bool"]["should"]
     assert {"terms": {"source.ip": ips}} in should_clauses
     assert {"terms": {"destination.ip": ips}} in should_clauses

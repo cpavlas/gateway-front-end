@@ -159,7 +159,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler.add_job(
         run_telemetry_cache_prewarm,
         "interval",
-        seconds=60,
+        seconds=180,
         id="prewarm_default_telemetry_caches",
         replace_existing=True,
     )

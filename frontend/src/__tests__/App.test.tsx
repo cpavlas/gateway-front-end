@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import App from '../App'
-import { type SystemHealthResponse } from '../api/client'
+import { apiClient, type SystemHealthResponse } from '../api/client'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -51,6 +51,10 @@ const MOCK_HEALTHY_REPORT: SystemHealthResponse = {
 }
 
 describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('renders the Login page when /api/v1/auth/me returns 401 and validates empty fields', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: 'Authentication required.' }), {
@@ -109,6 +113,12 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
   })
 
   it('logs in, renders live OPNsense/Elasticsearch/SQLite health cards, refreshes, and logs out', async () => {
+    vi.spyOn(apiClient, 'getAuditLogs').mockResolvedValue({
+      total_count: 0,
+      offset: 0,
+      limit: 50,
+      items: [],
+    })
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     // 1. Initial /me check -> 401
     fetchMock.mockResolvedValueOnce(
@@ -188,6 +198,12 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
   })
 
   it('restores an existing authenticated session and handles health API errors gracefully', async () => {
+    vi.spyOn(apiClient, 'getAuditLogs').mockResolvedValue({
+      total_count: 0,
+      offset: 0,
+      limit: 50,
+      items: [],
+    })
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     // 1. Initial /me check -> 200 already authenticated
     fetchMock.mockResolvedValueOnce(

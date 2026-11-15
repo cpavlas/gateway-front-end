@@ -16,11 +16,14 @@ YOUTUBE_BLOCK_DOMAINS: tuple[str, ...] = (
     "youtube.com",
     "www.youtube.com",
     "m.youtube.com",
+    "music.youtube.com",
+    "kids.youtube.com",
     "youtu.be",
     "googlevideo.com",
     "ytimg.com",
     "i.ytimg.com",
     "s.ytimg.com",
+    "yt3.ggpht.com",
     "youtubei.googleapis.com",
     "youtube-nocookie.com",
 )
@@ -348,6 +351,41 @@ class OPNsenseClient:
                     )
                     self._raise_for_status(add_resp, f"alias/add_item/{alias_name}")
                     created_aliases.append(alias_name)
+                elif alias_name == self._youtube_domains_alias:
+                    _u, alias_dict, existing_domains = await self._get_alias_uuid_and_item(
+                        client, alias_name
+                    )
+                    missing = [d for d in YOUTUBE_BLOCK_DOMAINS if d not in existing_domains]
+                    if missing:
+                        merged_domains = list(
+                            dict.fromkeys([*existing_domains, *YOUTUBE_BLOCK_DOMAINS])
+                        )
+                        upd_resp = await client.post(
+                            f"/api/firewall/alias/set_item/{uuid_val}",
+                            json={
+                                "alias": {
+                                    "enabled": str(alias_dict.get("enabled", "1")),
+                                    "name": str(alias_dict.get("name", alias_name)),
+                                    "type": _extract_selected_option(
+                                        alias_dict.get("type"), default="host"
+                                    ),
+                                    "proto": _extract_selected_option(
+                                        alias_dict.get("proto"), default=""
+                                    ),
+                                    "interface": _extract_selected_option(
+                                        alias_dict.get("interface"), default=""
+                                    ),
+                                    "counters": str(alias_dict.get("counters", "1")),
+                                    "updatefreq": str(alias_dict.get("updatefreq", "")),
+                                    "content": "\n".join(merged_domains),
+                                    "description": str(
+                                        alias_dict.get("description", description)
+                                    ),
+                                }
+                            },
+                        )
+                        self._raise_for_status(upd_resp, f"alias/set_item/{uuid_val}")
+                        created_aliases.append(alias_name)
             if created_aliases:
                 reconf_resp = await client.post(
                     "/api/firewall/alias/reconfigure", json={}

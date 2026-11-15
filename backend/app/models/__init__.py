@@ -18,7 +18,7 @@ VALID_GROUP_COLORS = frozenset(
 VALID_OVERRIDE_MODES = frozenset({"pause", "bonus"})
 VALID_OVERRIDE_TARGETS = frozenset({"device", "group"})
 VALID_USER_ROLES = frozenset({"admin", "operator"})
-VALID_USER_THEMES = frozenset({"default", "crimson", "ocean"})
+VALID_USER_THEMES = frozenset({"default", "crimson", "ocean", "emerald", "amber"})
 VALID_AUDIT_LABELS = frozenset(
     {
         "AUTH_EVENT",

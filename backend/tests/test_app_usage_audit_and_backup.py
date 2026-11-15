@@ -261,6 +261,9 @@ async def test_audit_logs_pruning_backup_restore_and_security_headers(
     respx.get(f"{base}/api/firewall/alias_util/list/gateway_blocked_devices").mock(
         return_value=httpx.Response(200, json={"rows": []})
     )
+    respx.get(f"{base}/api/firewall/alias_util/list/gateway_youtube_blocked_devices").mock(
+        return_value=httpx.Response(200, json={"rows": []})
+    )
 
     # Check security headers on ping
     ping_resp = await async_client.get("/api/v1/system/ping")
