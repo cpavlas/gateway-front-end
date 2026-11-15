@@ -138,6 +138,7 @@ async def test_device_discovery_reconciliation_search_and_rename_across_ip_drift
         "online_devices": 3,
         "blocked_devices": 0,
         "protected_devices": 2,  # 192.168.1.1 (gateway) + 192.168.1.25 (admin session IP)
+        "archived_devices": 0,
     }
     assert body["last_synced_at"] is not None
 

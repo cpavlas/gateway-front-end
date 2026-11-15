@@ -247,6 +247,7 @@ class Device(Base):
         Boolean, nullable=False, default=False, index=True
     )
     is_protected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
@@ -367,6 +368,12 @@ class RecurringSchedule(Base):
     end_time: Mapped[str] = mapped_column(String(8), nullable=False)
     timezone: Mapped[str] = mapped_column(
         String(64), nullable=False, default="America/Los_Angeles"
+    )
+    block_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="internet", index=True
+    )
+    snoozed_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -416,7 +416,7 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
 
     // Verify group YouTube toggle button renders and triggers group block mutation
     const groupYtBtn = await screen.findByTestId('group-youtube-toggle-1')
-    expect(groupYtBtn).toHaveTextContent('YT Allowed')
+    expect(groupYtBtn).toHaveAttribute('aria-label', expect.stringContaining('YouTube Allowed'))
     await user.click(groupYtBtn)
     expect(blockGroupYtSpy).toHaveBeenCalledWith(1)
 
@@ -539,7 +539,11 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     expect(await screen.findByTestId('drawer-app-usage-panel')).toBeInTheDocument()
     expect(screen.getByTestId('drawer-app-minutes-youtube')).toHaveTextContent('30m')
     expect(screen.getByTestId('drawer-app-minutes-plex')).toHaveTextContent('1h')
-    expect(screen.getByTestId('drawer-youtube-toggle')).toHaveTextContent(
+    expect(screen.getByTestId('drawer-youtube-toggle')).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Click to block YouTube'),
+    )
+    expect(screen.getByTestId('drawer-app-youtube-toggle')).toHaveTextContent(
       /Block YouTube/i,
     )
 
@@ -554,7 +558,11 @@ describe('Phase 7 Features & Phase 6 Backlog Items (FB-P6-001 through FB-P6-005)
     expect(await screen.findByTestId('group-drawer-app-usage-panel')).toBeInTheDocument()
     expect(screen.getByTestId('group-drawer-app-minutes-youtube')).toHaveTextContent('30m')
     expect(screen.getByTestId('group-drawer-app-minutes-plex')).toHaveTextContent('1h')
-    expect(screen.getByTestId('group-drawer-youtube-toggle')).toHaveTextContent(
+    expect(screen.getByTestId('group-drawer-youtube-toggle')).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('YouTube Allowed for Group'),
+    )
+    expect(screen.getByTestId('group-drawer-app-youtube-toggle')).toHaveTextContent(
       /Block YouTube/i,
     )
   })

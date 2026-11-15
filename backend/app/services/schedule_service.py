@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -30,6 +31,8 @@ from app.services.timer_service import ActiveOverrideInfo, load_active_override_
 
 logger = logging.getLogger(__name__)
 
+ScheduleBlockMode = Literal["internet", "youtube"]
+
 PolicyReason = Literal[
     "protected",
     "bonus_timer",
@@ -48,6 +51,7 @@ class ActiveScheduleInfo(BaseModel):
     target_type: Literal["device", "group"]
     target_id: int
     target_name: str
+    block_mode: ScheduleBlockMode = "internet"
     start_time: str
     end_time: str
     timezone: str
@@ -61,6 +65,7 @@ class ScheduleCreateRequest(BaseModel):
     target_type: Literal["device", "group"]
     device_id: int | None = None
     group_id: int | None = None
+    block_mode: ScheduleBlockMode = "internet"
     days_of_week: list[int] = Field(..., min_length=1, max_length=7)
     start_time: str = Field(..., description="24-hour HH:MM start time")
     end_time: str = Field(..., description="24-hour HH:MM end time")
@@ -76,6 +81,7 @@ class ScheduleUpdateRequest(BaseModel):
     target_type: Literal["device", "group"] | None = None
     device_id: int | None = None
     group_id: int | None = None
+    block_mode: ScheduleBlockMode | None = None
     days_of_week: list[int] | None = Field(default=None, min_length=1, max_length=7)
     start_time: str | None = Field(default=None, description="24-hour HH:MM start time")
     end_time: str | None = Field(default=None, description="24-hour HH:MM end time")
@@ -89,6 +95,14 @@ class ScheduleToggleRequest(BaseModel):
     is_enabled: bool
 
 
+class ScheduleSnoozeRequest(BaseModel):
+    """Request payload for snoozing or clearing snooze on a recurring schedule (`FB-P17-005`)."""
+
+    duration_minutes: int | None = Field(default=60, ge=1, le=1440)
+    until_end_of_window: bool = False
+    clear: bool = False
+
+
 class ScheduleResponse(BaseModel):
     """Serialized recurring schedule with live active-window evaluation."""
 
@@ -99,12 +113,15 @@ class ScheduleResponse(BaseModel):
     device_id: int | None
     group_id: int | None
     target_name: str
+    block_mode: ScheduleBlockMode = "internet"
     days_of_week: list[int]
     start_time: str
     end_time: str
     timezone: str
     is_enabled: bool
     is_active_now: bool
+    is_snoozed: bool = False
+    snoozed_until: str | None = None
     created_at: str
     updated_at: str
 
@@ -136,6 +153,66 @@ class ScheduleReconciliationSummary(BaseModel):
     unblocked_count: int = 0
     ip_drift_healed_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+
+
+def normalize_schedule_block_mode(raw_mode: str | None) -> ScheduleBlockMode:
+    """Normalize recurring schedule enforcement mode ('internet' vs 'youtube')."""
+    if isinstance(raw_mode, str) and raw_mode.strip().lower() == "youtube":
+        return "youtube"
+    return "internet"
+
+
+def is_schedule_snoozed(
+    snoozed_until: datetime | None,
+    now_utc: datetime | None = None,
+) -> bool:
+    """Return True if a recurring schedule currently has an active future snooze timestamp."""
+    if snoozed_until is None:
+        return False
+    ref_utc = now_utc or utc_now()
+    if ref_utc.tzinfo is None:
+        ref_utc = ref_utc.replace(tzinfo=UTC)
+    target_utc = (
+        snoozed_until.replace(tzinfo=UTC)
+        if snoozed_until.tzinfo is None
+        else snoozed_until.astimezone(UTC)
+    )
+    return target_utc > ref_utc
+
+
+def compute_snooze_until(
+    end_time: str,
+    tz_name: str = "America/Los_Angeles",
+    duration_minutes: int | None = 60,
+    until_end_of_window: bool = False,
+    now_utc: datetime | None = None,
+) -> datetime:
+    """Compute UTC expiration timestamp for a recurring schedule snooze request."""
+    ref_utc = now_utc or utc_now()
+    if ref_utc.tzinfo is None:
+        ref_utc = ref_utc.replace(tzinfo=UTC)
+
+    if until_end_of_window:
+        try:
+            tz = ZoneInfo(tz_name or "America/Los_Angeles")
+        except ZoneInfoNotFoundError:
+            tz = ZoneInfo("UTC")
+        end_minutes = _parse_hhmm_minutes(end_time)
+        local_dt = ref_utc.astimezone(tz)
+        candidate_local = local_dt.replace(
+            hour=end_minutes // 60,
+            minute=end_minutes % 60,
+            second=0,
+            microsecond=0,
+        )
+        if candidate_local <= local_dt:
+            candidate_local += timedelta(days=1)
+        candidate_utc = candidate_local.astimezone(UTC)
+        if candidate_utc > ref_utc:
+            return candidate_utc
+
+    safe_minutes = max(1, min(int(duration_minutes or 60), 1440))
+    return ref_utc + timedelta(minutes=safe_minutes)
 
 
 def _parse_hhmm_minutes(time_str: str) -> int:
@@ -262,13 +339,26 @@ def build_schedule_response(
         target_name = "Unknown Target"
 
     days_list = parse_days_of_week(schedule.days_of_week)
-    active_now = bool(schedule.is_enabled) and is_schedule_window_active(
+    snoozed_raw = getattr(schedule, "snoozed_until", None)
+    snoozed = is_schedule_snoozed(snoozed_raw, now_utc=now_utc)
+    snoozed_iso: str | None = None
+    if snoozed and snoozed_raw is not None:
+        snoozed_dt = (
+            snoozed_raw.replace(tzinfo=UTC)
+            if snoozed_raw.tzinfo is None
+            else snoozed_raw.astimezone(UTC)
+        )
+        snoozed_iso = snoozed_dt.isoformat()
+
+    raw_active = bool(schedule.is_enabled) and is_schedule_window_active(
         days_list,
         schedule.start_time,
         schedule.end_time,
         schedule.timezone,
         now_utc=now_utc,
     )
+    active_now = raw_active and not snoozed
+    mode = normalize_schedule_block_mode(getattr(schedule, "block_mode", "internet"))
 
     created_iso = (
         schedule.created_at.isoformat()
@@ -289,12 +379,15 @@ def build_schedule_response(
         device_id=schedule.device_id,
         group_id=schedule.group_id,
         target_name=target_name,
+        block_mode=mode,
         days_of_week=days_list,
         start_time=schedule.start_time,
         end_time=schedule.end_time,
         timezone=schedule.timezone,
         is_enabled=bool(schedule.is_enabled),
         is_active_now=active_now,
+        is_snoozed=snoozed,
+        snoozed_until=snoozed_iso,
         created_at=created_iso,
         updated_at=updated_iso,
     )
@@ -306,14 +399,32 @@ def build_active_schedule_maps(
     group_names: dict[int, str],
     group_member_ids: dict[int, list[int]],
     now_utc: datetime | None = None,
+    *,
+    mode_filter: ScheduleBlockMode | None = None,
 ) -> tuple[dict[int, ActiveScheduleInfo], dict[int, ActiveScheduleInfo]]:
-    """Build (device_id -> ActiveScheduleInfo, group_id -> ActiveScheduleInfo) for active rules."""
+    """Build (device_id -> ActiveScheduleInfo, group_id -> ActiveScheduleInfo) for active rules.
+
+    When `mode_filter` is omitted, internet-mode schedules take precedence over youtube-mode
+    schedules per target while still exposing both for badge display.
+    """
     device_map: dict[int, ActiveScheduleInfo] = {}
     group_map: dict[int, ActiveScheduleInfo] = {}
 
+    ordered_schedules = sorted(
+        schedules,
+        key=lambda s: 0
+        if normalize_schedule_block_mode(getattr(s, "block_mode", "internet")) == "internet"
+        else 1,
+    )
+
     # 1. Process direct device schedules first (higher display priority than group schedules)
-    for sched in schedules:
+    for sched in ordered_schedules:
         if not sched.is_enabled or sched.target_type != "device" or sched.device_id is None:
+            continue
+        if is_schedule_snoozed(getattr(sched, "snoozed_until", None), now_utc=now_utc):
+            continue
+        sched_mode = normalize_schedule_block_mode(getattr(sched, "block_mode", "internet"))
+        if mode_filter is not None and sched_mode != mode_filter:
             continue
         if is_schedule_window_active(
             sched.days_of_week,
@@ -331,14 +442,20 @@ def build_active_schedule_maps(
                     target_name=device_names.get(
                         sched.device_id, f"Device #{sched.device_id}"
                     ),
+                    block_mode=sched_mode,
                     start_time=sched.start_time,
                     end_time=sched.end_time,
                     timezone=sched.timezone,
                 )
 
     # 2. Process group schedules and propagate to member devices not already covered
-    for sched in schedules:
+    for sched in ordered_schedules:
         if not sched.is_enabled or sched.target_type != "group" or sched.group_id is None:
+            continue
+        if is_schedule_snoozed(getattr(sched, "snoozed_until", None), now_utc=now_utc):
+            continue
+        sched_mode = normalize_schedule_block_mode(getattr(sched, "block_mode", "internet"))
+        if mode_filter is not None and sched_mode != mode_filter:
             continue
         if is_schedule_window_active(
             sched.days_of_week,
@@ -353,6 +470,7 @@ def build_active_schedule_maps(
                 target_type="group",
                 target_id=sched.group_id,
                 target_name=group_names.get(sched.group_id, f"Group #{sched.group_id}"),
+                block_mode=sched_mode,
                 start_time=sched.start_time,
                 end_time=sched.end_time,
                 timezone=sched.timezone,
@@ -413,7 +531,7 @@ def evaluate_device_effective_policy(
             active_schedule=active_schedule,
         )
 
-    if active_schedule is not None:
+    if active_schedule is not None and active_schedule.block_mode == "internet":
         return PolicyDecision(
             device_id=device.id,
             should_be_blocked=True,
@@ -558,12 +676,14 @@ async def create_schedule(
                 detail=f"Device group #{payload.group_id} not found.",
             )
 
+    sched_mode = normalize_schedule_block_mode(payload.block_mode)
     new_sched = RecurringSchedule(
         name=name,
         description=payload.description.strip(),
         target_type=target_type,
         device_id=payload.device_id if target_type == "device" else None,
         group_id=payload.group_id if target_type == "group" else None,
+        block_mode=sched_mode,
         days_of_week=format_days_of_week(days_list),
         start_time=start_t,
         end_time=end_t,
@@ -577,7 +697,7 @@ async def create_schedule(
             action="schedule_create",
             target=f"{target_type}:{payload.device_id or payload.group_id}",
             status="success",
-            details=f"Created schedule '{name}' ({start_t}-{end_t} {clean_tz}).",
+            details=f"Created {sched_mode} schedule '{name}' ({start_t}-{end_t} {clean_tz}).",
         )
     )
     await db.commit()
@@ -589,23 +709,33 @@ async def create_schedule(
     return build_schedule_response(new_sched, device_names, group_names)
 
 
-async def update_schedule(
+async def _collect_schedule_target_device_ids(
     db: AsyncSession,
-    opnsense: OPNsenseClient,
-    settings: Settings,
-    schedule_id: int,
-    payload: ScheduleUpdateRequest,
-    actor_ip: str = "unknown",
-) -> ScheduleResponse:
-    """Update an existing recurring schedule and immediately reconcile device policies."""
-    sched = await db.get(RecurringSchedule, schedule_id)
-    if sched is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Schedule #{schedule_id} not found.",
-        )
+    sched: RecurringSchedule,
+) -> set[int]:
+    """Resolve all device IDs currently covered by a schedule target (device or group)."""
+    if sched.target_type == "device" and sched.device_id is not None:
+        return {sched.device_id}
+    if sched.target_type == "group" and sched.group_id is not None:
+        mem_rows = (
+            await db.execute(
+                select(DeviceGroupMembership.device_id).where(
+                    DeviceGroupMembership.group_id == sched.group_id
+                )
+            )
+        ).scalars().all()
+        return {int(did) for did in mem_rows}
+    return set()
 
-    tz_str = payload.timezone or sched.timezone or settings.tz
+
+def prepare_schedule_update_params(
+    sched: RecurringSchedule,
+    payload: ScheduleUpdateRequest,
+    default_tz: str,
+) -> tuple[str, str, int | None, int | None, str, str, list[int], str, str, str, bool]:
+    """Synchronously merge & validate updated fields on an existing schedule."""
+    prev_mode = normalize_schedule_block_mode(getattr(sched, "block_mode", "internet"))
+    tz_str = payload.timezone or sched.timezone or default_tz
     eff_name = payload.name if payload.name is not None else sched.name
     eff_desc = payload.description if payload.description is not None else sched.description
     eff_target_type = payload.target_type or sched.target_type
@@ -627,7 +757,11 @@ async def update_schedule(
     eff_start = payload.start_time if payload.start_time is not None else sched.start_time
     eff_end = payload.end_time if payload.end_time is not None else sched.end_time
     eff_enabled = payload.is_enabled if payload.is_enabled is not None else sched.is_enabled
-
+    eff_block_mode = (
+        normalize_schedule_block_mode(payload.block_mode)
+        if payload.block_mode is not None
+        else prev_mode
+    )
     name, target_type, days_list, start_t, end_t, clean_tz = validate_schedule_payload(
         eff_name,
         eff_target_type,
@@ -638,6 +772,88 @@ async def update_schedule(
         eff_end,
         tz_str,
     )
+    return (
+        name,
+        target_type,
+        eff_device_id,
+        eff_group_id,
+        eff_desc.strip(),
+        eff_block_mode,
+        days_list,
+        start_t,
+        end_t,
+        clean_tz,
+        bool(eff_enabled),
+    )
+
+
+def apply_schedule_update_orm(
+    sched: RecurringSchedule,
+    schedule_id: int,
+    params: tuple[
+        str, str, int | None, int | None, str, str, list[int], str, str, str, bool
+    ],
+    actor_ip: str = "unknown",
+) -> AuditLog:
+    """Synchronously apply validated update parameters to `RecurringSchedule`."""
+    (
+        name,
+        target_type,
+        eff_device_id,
+        eff_group_id,
+        clean_desc,
+        eff_block_mode,
+        days_list,
+        start_t,
+        end_t,
+        clean_tz,
+        eff_enabled,
+    ) = params
+    sched.name = name
+    sched.description = clean_desc
+    sched.target_type = target_type
+    sched.device_id = eff_device_id if target_type == "device" else None
+    sched.group_id = eff_group_id if target_type == "group" else None
+    sched.block_mode = eff_block_mode
+    sched.days_of_week = format_days_of_week(days_list)
+    sched.start_time = start_t
+    sched.end_time = end_t
+    sched.timezone = clean_tz
+    sched.is_enabled = eff_enabled
+    return AuditLog(
+        actor=f"admin ({actor_ip})",
+        action="schedule_update",
+        target=f"schedule:{schedule_id}",
+        status="success",
+        details=f"Updated {eff_block_mode} schedule '{name}' ({start_t}-{end_t} {clean_tz}).",
+    )
+
+
+async def update_schedule(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    schedule_id: int,
+    payload: ScheduleUpdateRequest,
+    actor_ip: str = "unknown",
+) -> ScheduleResponse:
+    """Update an existing recurring schedule and immediately reconcile device policies."""
+    sched = await db.get(RecurringSchedule, schedule_id)
+    if sched is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule #{schedule_id} not found.",
+        )
+
+    prev_mode = normalize_schedule_block_mode(getattr(sched, "block_mode", "internet"))
+    prev_target_device_ids = (
+        await _collect_schedule_target_device_ids(db, sched)
+        if prev_mode == "youtube"
+        else set()
+    )
+
+    params = prepare_schedule_update_params(sched, payload, settings.tz)
+    _, target_type, eff_device_id, eff_group_id, *_ = params
 
     if target_type == "device":
         dev = await db.get(Device, eff_device_id)
@@ -654,30 +870,16 @@ async def update_schedule(
                 detail=f"Device group #{eff_group_id} not found.",
             )
 
-    sched.name = name
-    sched.description = eff_desc.strip()
-    sched.target_type = target_type
-    sched.device_id = eff_device_id if target_type == "device" else None
-    sched.group_id = eff_group_id if target_type == "group" else None
-    sched.days_of_week = format_days_of_week(days_list)
-    sched.start_time = start_t
-    sched.end_time = end_t
-    sched.timezone = clean_tz
-    sched.is_enabled = eff_enabled
-
-    db.add(
-        AuditLog(
-            actor=f"admin ({actor_ip})",
-            action="schedule_update",
-            target=f"schedule:{schedule_id}",
-            status="success",
-            details=f"Updated schedule '{name}' ({start_t}-{end_t} {clean_tz}).",
-        )
-    )
+    db.add(apply_schedule_update_orm(sched, schedule_id, params, actor_ip=actor_ip))
     await db.commit()
     await db.refresh(sched)
 
-    await reconcile_schedules_and_policies(db, opnsense, settings)
+    await reconcile_schedules_and_policies(
+        db,
+        opnsense,
+        settings,
+        extra_youtube_unblock_device_ids=prev_target_device_ids,
+    )
 
     _, device_names, group_names, _ = await _load_schedule_context(db)
     return build_schedule_response(sched, device_names, group_names)
@@ -733,6 +935,12 @@ async def delete_schedule(
             detail=f"Schedule #{schedule_id} not found.",
         )
 
+    sched_mode = normalize_schedule_block_mode(getattr(sched, "block_mode", "internet"))
+    yt_device_ids = (
+        await _collect_schedule_target_device_ids(db, sched)
+        if sched_mode == "youtube"
+        else set()
+    )
     sched_name = sched.name
     await db.delete(sched)
     db.add(
@@ -746,7 +954,170 @@ async def delete_schedule(
     )
     await db.commit()
 
+    await reconcile_schedules_and_policies(
+        db,
+        opnsense,
+        settings,
+        extra_youtube_unblock_device_ids=yt_device_ids,
+    )
+
+
+def build_cloned_schedule_row(
+    sched: RecurringSchedule,
+    actor_ip: str = "unknown",
+) -> tuple[RecurringSchedule, AuditLog]:
+    """Synchronously construct a cloned `RecurringSchedule` ORM object and audit entry."""
+    base_name = sched.name.strip()
+    suffix = " (Copy)"
+    cloned_name = f"{base_name[: max(1, 128 - len(suffix))]}{suffix}"
+    cloned = RecurringSchedule(
+        name=cloned_name,
+        description=sched.description or "",
+        target_type=sched.target_type,
+        device_id=sched.device_id,
+        group_id=sched.group_id,
+        block_mode=normalize_schedule_block_mode(getattr(sched, "block_mode", "internet")),
+        days_of_week=sched.days_of_week,
+        start_time=sched.start_time,
+        end_time=sched.end_time,
+        timezone=sched.timezone,
+        is_enabled=bool(sched.is_enabled),
+        snoozed_until=None,
+    )
+    audit = AuditLog(
+        actor=f"admin ({actor_ip})",
+        action="schedule_clone",
+        target=f"schedule:{sched.id}",
+        status="success",
+        details=f"Cloned schedule '{sched.name}' -> '{cloned_name}'.",
+    )
+    return cloned, audit
+
+
+def apply_schedule_snooze_mutation(
+    sched: RecurringSchedule,
+    payload: ScheduleSnoozeRequest,
+    actor_ip: str = "unknown",
+    now_utc: datetime | None = None,
+) -> AuditLog:
+    """Synchronously apply snooze/clear mutation on a `RecurringSchedule` row."""
+    if payload.clear:
+        sched.snoozed_until = None
+        action_detail = f"Cleared snooze on schedule '{sched.name}'."
+    else:
+        until_utc = compute_snooze_until(
+            sched.end_time,
+            tz_name=sched.timezone,
+            duration_minutes=payload.duration_minutes,
+            until_end_of_window=payload.until_end_of_window,
+            now_utc=now_utc,
+        )
+        sched.snoozed_until = until_utc
+        action_detail = f"Snoozed schedule '{sched.name}' until {until_utc.isoformat()}."
+
+    return AuditLog(
+        actor=f"admin ({actor_ip})",
+        action="schedule_snooze",
+        target=f"schedule:{sched.id}",
+        status="success",
+        details=action_detail,
+    )
+
+
+def plan_youtube_schedule_actions(
+    devices: list[Device],
+    schedules: list[RecurringSchedule],
+    youtube_schedule_map: dict[int, ActiveScheduleInfo],
+    effective_override_map: dict[int, ActiveOverrideInfo],
+    group_member_ids: dict[int, list[int]],
+    current_yt_alias_ips: set[str],
+    protected_ips: frozenset[str],
+    extra_youtube_unblock_device_ids: set[int] | None = None,
+) -> tuple[list[tuple[Device, ActiveScheduleInfo]], list[Device]]:
+    """Compute (devices_to_block_youtube, devices_to_unblock_youtube) for YouTube schedules."""
+    all_yt_target_ids: set[int] = set(extra_youtube_unblock_device_ids or set())
+    for sched in schedules:
+        if normalize_schedule_block_mode(getattr(sched, "block_mode", "internet")) != "youtube":
+            continue
+        if sched.target_type == "device" and sched.device_id is not None:
+            all_yt_target_ids.add(sched.device_id)
+        elif sched.target_type == "group" and sched.group_id is not None:
+            all_yt_target_ids.update(group_member_ids.get(sched.group_id, []))
+
+    to_yt_block: list[tuple[Device, ActiveScheduleInfo]] = []
+    to_yt_unblock: list[Device] = []
+
+    for dev in devices:
+        dev_ip = dev.ipv4_address
+        is_prot = bool(dev.is_protected) or (bool(dev_ip) and dev_ip in protected_ips)
+        active_ov = effective_override_map.get(dev.id)
+        has_bonus = (
+            active_ov is not None and active_ov.is_active and active_ov.mode == "bonus"
+        )
+        yt_sched = youtube_schedule_map.get(dev.id)
+
+        if yt_sched is not None and not is_prot and not has_bonus:
+            if dev_ip and (not dev.is_youtube_blocked or dev_ip not in current_yt_alias_ips):
+                to_yt_block.append((dev, yt_sched))
+        elif dev.id in all_yt_target_ids:
+            if (dev_ip and dev_ip in current_yt_alias_ips) or dev.is_youtube_blocked:
+                to_yt_unblock.append(dev)
+
+    return to_yt_block, to_yt_unblock
+
+
+async def clone_schedule(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    schedule_id: int,
+    actor_ip: str = "unknown",
+) -> ScheduleResponse:
+    """Duplicate an existing recurring schedule with '(Copy)' suffix (`FB-P17-004`)."""
+    sched = await db.get(RecurringSchedule, schedule_id)
+    if sched is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule #{schedule_id} not found.",
+        )
+
+    cloned, audit = build_cloned_schedule_row(sched, actor_ip=actor_ip)
+    db.add(cloned)
+    db.add(audit)
+    await db.commit()
+    await db.refresh(cloned)
+
     await reconcile_schedules_and_policies(db, opnsense, settings)
+
+    _, device_names, group_names, _ = await _load_schedule_context(db)
+    return build_schedule_response(cloned, device_names, group_names)
+
+
+async def snooze_schedule(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    schedule_id: int,
+    payload: ScheduleSnoozeRequest,
+    actor_ip: str = "unknown",
+) -> ScheduleResponse:
+    """Snooze an active schedule temporarily or clear an active snooze (`FB-P17-005`)."""
+    sched = await db.get(RecurringSchedule, schedule_id)
+    if sched is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule #{schedule_id} not found.",
+        )
+
+    audit = apply_schedule_snooze_mutation(sched, payload, actor_ip=actor_ip)
+    db.add(audit)
+    await db.commit()
+    await db.refresh(sched)
+
+    await reconcile_schedules_and_policies(db, opnsense, settings)
+
+    _, device_names, group_names, _ = await _load_schedule_context(db)
+    return build_schedule_response(sched, device_names, group_names)
 
 
 async def reconcile_schedules_and_policies(
@@ -754,6 +1125,8 @@ async def reconcile_schedules_and_policies(
     opnsense: OPNsenseClient,
     settings: Settings,
     now_utc: datetime | None = None,
+    *,
+    extra_youtube_unblock_device_ids: set[int] | None = None,
 ) -> ScheduleReconciliationSummary:
     """Evaluate all devices against the 5-Tier Policy Precedence Engine & sync OPNsense."""
     summary = ScheduleReconciliationSummary()
@@ -771,8 +1144,21 @@ async def reconcile_schedules_and_policies(
     schedules, device_names, group_names, group_member_ids = await _load_schedule_context(
         db
     )
-    device_schedule_map, _ = build_active_schedule_maps(
-        schedules, device_names, group_names, group_member_ids, now_utc=ref_utc
+    internet_schedule_map, _ = build_active_schedule_maps(
+        schedules,
+        device_names,
+        group_names,
+        group_member_ids,
+        now_utc=ref_utc,
+        mode_filter="internet",
+    )
+    youtube_schedule_map, _ = build_active_schedule_maps(
+        schedules,
+        device_names,
+        group_names,
+        group_member_ids,
+        now_utc=ref_utc,
+        mode_filter="youtube",
     )
     # Propagate active group overrides to member devices without a direct device override
     effective_override_map: dict[int, ActiveOverrideInfo] = dict(device_override_map)
@@ -789,7 +1175,7 @@ async def reconcile_schedules_and_policies(
             dev,
             protected_ips=protected_ips,
             active_override=effective_override_map.get(dev.id),
-            active_schedule=device_schedule_map.get(dev.id),
+            active_schedule=internet_schedule_map.get(dev.id),
         )
 
     try:
@@ -887,6 +1273,84 @@ async def reconcile_schedules_and_policies(
             err = f"Failed to remove drifted IP {stale_ip}: {exc}"
             logger.warning(err)
             summary.errors.append(err)
+
+    # 4. Enforce YouTube-only schedules (add/remove IPs on gateway_youtube_blocked_devices)
+    has_youtube_rules = bool(youtube_schedule_map or extra_youtube_unblock_device_ids) or any(
+        normalize_schedule_block_mode(getattr(s, "block_mode", "internet")) == "youtube"
+        for s in schedules
+    )
+    if has_youtube_rules:
+        try:
+            current_yt_alias_ips = set(await opnsense.list_youtube_blocked_ips())
+        except (OPNsenseClientError, httpx.HTTPError) as exc:
+            err_msg = (
+                f"Failed to list OPNsense YouTube blocked alias IPs during policy reconcile: {exc}"
+            )
+            logger.warning(err_msg)
+            summary.errors.append(err_msg)
+            current_yt_alias_ips = None
+
+        if current_yt_alias_ips is not None:
+            to_yt_block, to_yt_unblock = plan_youtube_schedule_actions(
+                devices,
+                schedules,
+                youtube_schedule_map,
+                effective_override_map,
+                group_member_ids,
+                current_yt_alias_ips,
+                protected_ips,
+                extra_youtube_unblock_device_ids=extra_youtube_unblock_device_ids,
+            )
+            for dev, yt_sched in to_yt_block:
+                dev_ip = dev.ipv4_address
+                dev_id = dev.id
+                if not dev_ip:
+                    continue
+                try:
+                    await opnsense.add_ip_to_youtube_block_alias(dev_ip)
+                    dev.is_youtube_blocked = True
+                    db.add(
+                        AuditLog(
+                            actor="schedule",
+                            action="policy_enforce_youtube_schedule",
+                            target=f"device:{dev_id} ({dev_ip})",
+                            status="success",
+                            details=(
+                                f"Blocked YouTube on {dev_ip} via schedule '{yt_sched.name}'."
+                            ),
+                        )
+                    )
+                    await db.commit()
+                except Exception as exc:
+                    await db.rollback()
+                    err = f"Failed to block YouTube for device #{dev_id} ({dev_ip}): {exc}"
+                    logger.warning(err)
+                    summary.errors.append(err)
+
+            for dev in to_yt_unblock:
+                dev_ip = dev.ipv4_address
+                dev_id = dev.id
+                try:
+                    if dev_ip and dev_ip in current_yt_alias_ips:
+                        await opnsense.remove_ip_from_youtube_block_alias(dev_ip)
+                    dev.is_youtube_blocked = False
+                    db.add(
+                        AuditLog(
+                            actor="schedule",
+                            action="policy_unblock_youtube_schedule",
+                            target=f"device:{dev_id} ({dev_ip or 'no-ip'})",
+                            status="success",
+                            details=(
+                                "Restored YouTube access after schedule window / snooze / bonus."
+                            ),
+                        )
+                    )
+                    await db.commit()
+                except Exception as exc:
+                    await db.rollback()
+                    err = f"Failed to unblock YouTube for device #{dev_id} ({dev_ip}): {exc}"
+                    logger.warning(err)
+                    summary.errors.append(err)
 
     summary.blocked_count = len(summary.newly_blocked_ips)
     summary.unblocked_count = len(summary.newly_unblocked_ips)

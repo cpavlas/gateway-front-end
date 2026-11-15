@@ -595,6 +595,40 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Release Sign-Off (`v1.3.0-rc1`):**
   - All 4 verification sections (`Section A` through `Section D`) in `docs/development/Validation/PHASE16-Verify.md` passed user live validation (`[pass]`), with `BUG-P16-005` resolved and `FB-P16-007` logged prior to release tag `v1.3.0-rc1`.
 
+---
+
+## Phase 17 Exit Analysis & Unplanned-Information Retrospective (`v1.3.0-rc2` — 2026-11-14)
+
+### 1. Phase 17 Deliverables & Quality Gate Summary
+- **Deliverables Completed (`FB-P17-001`..`FB-P17-005`):**
+  1. **`FB-P17-001` — Collapsible `Device Groups & Profiles` Section & Compact Group Card Icons (`DevicesPage.tsx`):**
+     - Added a persistent collapse/expand toggle (`gateway_devices_groups_collapsed` in `localStorage`) and converted Group Card actions (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon-only controls matching the Device Inventory table.
+  2. **`FB-P17-002` — Unified `Actions` Column, Sortable Columns, Inline `+ Group` Popover & Offline Device Archiving (`models/__init__.py`, `db/__init__.py`, `alembic/versions/0008_phase17_archive_and_schedule_modes.py`, `device_service.py`, `api/devices.py`, `DevicesPage.tsx`):**
+     - Merged `Telemetry` and `Internet Access` into a single right-aligned `Actions` column, added ascending/descending sorting (`Online`, `Device / Hostname`, `IPv4` numeric sort, `Vendor / OUI`, `Status`), added inline `+ Group` quick-assignment popovers on rows and inline edits, and implemented `devices.is_archived` with `POST /api/v1/devices/{id}/archive`, `POST /api/v1/devices/{id}/restore`, `DELETE /api/v1/devices/{id}` (guarded against online/protected devices), and an `Archived` filter pill (`All` excludes archived devices by default).
+  3. **`FB-P17-003` — Device & Group Analytics Drawer Compact Header Icons & Inline Timer (`DeviceAnalyticsDrawer.tsx`, `GroupAnalyticsDrawer.tsx`, `TimerPopoverMenu.tsx`):**
+     - Upgraded drawer headers with compact icon toggles for `YouTube`, embedded `<TimerPopoverMenu testIdPrefix="drawer-" iconOnly />`, and `Internet Access` / `Protected` status.
+  4. **`FB-P17-004` — Schedule `YouTube Only` Block Mode, Editable Target & Duplicate/Clone (`models/__init__.py`, `schedule_service.py`, `api/schedules.py`, `audit_and_backup_service.py`, `ScheduleFormModal.tsx`, `SchedulesPage.tsx`):**
+     - Added `schedules.block_mode` (`"internet" | "youtube"`) with Step 4 schedule reconciliation routing active `"youtube"` windows through OPNsense `gateway_youtube_blocked_devices`, preserved `block_mode`/`snoozed_until`/`is_archived` in Config Backup/Restore JSON, enabled changing `target_type` + target device/group while editing an existing rule, and added `POST /api/v1/schedules/{id}/clone`.
+  5. **`FB-P17-005` — Visual 7-Day / 24-Hour Weekly Timeline Matrix, Compact Controls, Snooze & Auto-Refresh (`WeeklyScheduleTimeline.tsx`, `SchedulesPage.tsx`, `schedule_service.py`, `api/schedules.py`):**
+     - Built `<WeeklyScheduleTimeline />` visualizing Mon–Sun 24-hour coverage across `Full Internet Block`, `YouTube Only`, and `Snoozed` segments (including overnight split segments and click-to-edit), converted Schedule Card controls to compact icons/buttons, added `POST /api/v1/schedules/{id}/snooze` (`30m`, `60m`, `until_end_of_window`, `clear`) respected by the reconciliation engine, and added `<AutoRefreshSelector />` to the `Schedules` header.
+- **Final Automated Quality Metrics (`v1.3.0-rc2`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `144 / 144` passed in `21.77s` (`85%` coverage across `6,279` statements / `33` source files), `0` ruff/SAST errors, `0` mypy type issues.
+  - **Frontend (`vitest`, `tsc && vite build`):** `35 / 35` passed across `9` test files (`90.98%` statement/line coverage; `DevicesPage.tsx` `92.72%`, `SchedulesPage.tsx` `89.42%`, `WeeklyScheduleTimeline.tsx` `100%`, `DeviceAnalyticsDrawer.tsx` `91.64%`), `0` TypeScript/bundle errors (`1.79s` Vite build).
+
+### 2. Unplanned Information Audit, Bug Retrospective & Feed-Forward (`v1.3.0-rc2`)
+- **Finding 1 — Async SQLAlchemy Inner Rollback Attribute Expiration (`BUG-P17-001`):**
+  - Inside `reconcile_schedules_and_policies()` Step 4, calling `await db.rollback()` after an OPNsense error expired attributes on `dev`, triggering `StatementError` when accessing `dev.id` outside the `try` block to append `errors`. Caching `dev_id = dev.id` prior to `try` / `await db.rollback()` prevents post-rollback ORM attribute reloads across async reconciliation loops.
+- **Finding 2 — Unique Drawer Action Test IDs During UI Consolidation (`BUG-P17-002`):**
+  - Adding compact `YouTube` toggle icon buttons to the headers of `DeviceAnalyticsDrawer.tsx` and `GroupAnalyticsDrawer.tsx` initially reused `drawer-youtube-toggle` and `group-drawer-youtube-toggle` already present inside the inline Application Usage card footers. Disambiguating the inline footer buttons (`drawer-app-youtube-toggle` and `group-drawer-app-youtube-toggle`) preserved clean component testing and prevented duplicate `data-testid` collisions.
+- **Waterfalled User Feedback & Next Phase Handoff (`PHASE_18_TRACKING.md`):**
+  - Three new requests recorded during live Gate 2 validation (`PHASE17-Verify.md`) are waterfalled directly into **Phase 18 (`v1.3.0-rc3`)**:
+    1. **`FB-P17-006`:** Group-level daily YouTube viewing time quota (e.g., `1h / day`) automatically enforcing a daily YouTube block once reached, with **Reward / Bonus Timers always taking strict precedence**.
+    2. **`FB-P17-007`:** Mobile-compact `Devices` inventory table showing only **Device / Friendly Name** and **Action Buttons** on `< sm` viewports so rows fit with zero horizontal scroll.
+    3. **`FB-P17-008`:** Default the `Devices` inventory filter pill to **`Online`** on first load (`gateway_devices_status_filter` in `localStorage`) and remember the user's chosen filter afterwards.
+  - **Phase 18 (`v1.3.0-rc3`):** Ready for Gate 1 review (`FB-P18-001`..`FB-P18-003` + `FB-P17-006`..`FB-P17-008`).
+- **Release Sign-Off (`v1.3.0-rc2`):**
+  - All 4 verification sections (`Section A` through `Section D`) in `docs/development/Validation/PHASE17-Verify.md` passed user live validation (`[pass]`), with `BUG-P17-001` and `BUG-P17-002` resolved prior to release tag `v1.3.0-rc2`.
+
 
 
 

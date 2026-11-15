@@ -638,7 +638,7 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - Add 2 additional dark-room color themes (`Emerald & Forest` and `Amber & Carbon`) to the User Menu (`5` total themes persisted per user).
      - Add a global `Ctrl+K` / `Cmd+K` **Quick-Search & Jump Modal** across tabs and devices (documented in `README.md`), add a responsive **Mobile Bottom Navigation Bar** on small viewports, expand `YOUTUBE_BLOCK_DOMAINS` to all `13` domains with automatic alias updates, and reconcile `gateway_youtube_blocked_devices` state during `POST /api/v1/devices/sync`.
 
-### Phase 17 (`v1.3.0-rc2` — PLANNED): `Devices` Tab Overhaul, Drawer Control Consistency & `Schedules` Tab Upgrades (`FB-P17-001`..`FB-P17-005`)
+### Phase 17 (`v1.3.0-rc2` — COMPLETE): `Devices` Tab Overhaul, Drawer Control Consistency & `Schedules` Tab Upgrades (`FB-P17-001`..`FB-P17-005`)
 - **Deliverables:**
   1. **Collapsible Group Section & Compact Icon Group Controls (`FB-P17-001`):**
      - Add a collapsible/compact toggle (persisted in `localStorage`) for **Device Groups & Profiles**, convert Group Card controls (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact icon-only mobile-friendly buttons, and support inline quick group assignment.
@@ -656,7 +656,7 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - Add a visual **7-Day / 24-Hour Weekly Schedule Timeline** bar at the top of `SchedulesPage.tsx` visualizing active blackout/YouTube windows across the week.
      - Convert Schedule Card actions (`Edit`, `Clone`, `Enable/Disable`, `Delete`, and active **Snooze / Skip Next Window**) to consistent compact controls and add `AutoRefreshSelector` to the `Schedules` header.
 
-### Phase 18 (`v1.3.0-rc3` — PLANNED): Per-Device & Global Domain/ASN Blocking, Multi-App Telemetry, Enhanced Plex `Now Playing` & `Analytics` Drilldowns (`FB-P4-007`..`009`, `FB-P18-001`..`FB-P18-003`)
+### Phase 18 (`v1.3.0-rc3` — PLANNED): Per-Device & Global Domain/ASN Blocking, Multi-App Telemetry, Enhanced Plex `Now Playing`, `Analytics` Drilldowns & Phase 17 Waterfalled Devices/Quota UX (`FB-P4-007`..`009`, `FB-P18-001`..`FB-P18-003`, `FB-P17-006`..`FB-P17-008`)
 - **Deliverables:**
   1. **Per-Device & Global Domain / ASN Organization Blocking (`FB-P18-001` — Completing `FB-P4-007`, `FB-P4-008`, `FB-P4-009`):**
      - Enrich `Top Destination Organizations (ASN)` payloads with numeric `asn` (`destination.as.number`).
@@ -668,6 +668,10 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
   3. **`Analytics` Tab Sortable LAN Devices Table & Domain/ASN Client Attribution (`FB-P18-003`):**
      - Add column sorting (`Device`, `DNS Queries`, `Firewall Bytes`, `Total Events`) and a live search filter input to **Top Active LAN Devices**.
      - Make items in **Top Queried Domains (FQDN)**, **Top Registered Root Domains**, and **Top Destination Organizations (ASN)** clickable to open a client-attribution breakdown showing which LAN devices queried that domain or contacted that ASN (with direct jump to inspect or block).
+  4. **Waterfalled from Phase 17 — Group Daily YouTube Time Limit Quota, Mobile-Compact `Devices` Table & Remembered `Online`-Default Filter (`FB-P17-006`..`FB-P17-008`):**
+     - **`FB-P17-006`:** Add optional `daily_youtube_limit_minutes` on Device Groups so background reconciliation automatically blocks YouTube once today's combined group active YouTube watch time hits the daily quota while ensuring **Reward / Bonus Timers always take strict precedence** over daily limits and schedules.
+     - **`FB-P17-007`:** Render only **Device / Friendly Name** and **Action Buttons** on `< sm` mobile viewports in `DevicesPage.tsx` (hiding secondary columns with `hidden sm:table-cell`) for zero horizontal scrolling alongside the mobile bottom navigation bar.
+     - **`FB-P17-008`:** Default `DevicesPage.tsx` status filter to **`Online`** on first load and persist the user's selected filter pill in `localStorage` (`gateway_devices_status_filter`).
 
 ### Phase 19 (`v1.3.0` Final Release — PLANNED): `Firewall` Tab Security Drilldowns, External WAN IP Blocking, Clickable GeoIP Maps & Interactive Packet Log Explorer (`FB-P16-007`, `FB-P19-001`..`FB-P19-003`)
 - **Deliverables:**

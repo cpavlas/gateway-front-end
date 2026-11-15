@@ -8,7 +8,7 @@ from typing import Any, Literal
 import httpx
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.opnsense import (
@@ -22,7 +22,9 @@ from app.models import (
     Device,
     DeviceGroup,
     DeviceGroupMembership,
+    RecurringSchedule,
     SystemMetadata,
+    TemporaryOverride,
     clean_discovered_hostname,
     normalize_mac_address,
     utc_now,
@@ -35,7 +37,9 @@ from app.services.timer_service import (
 )
 
 LAST_SYNC_METADATA_KEY = "devices_last_synced_at"
-DeviceStatusFilter = Literal["all", "online", "blocked", "protected", "unassigned"]
+DeviceStatusFilter = Literal[
+    "all", "online", "blocked", "protected", "unassigned", "archived"
+]
 
 
 class DeviceGroupBadge(BaseModel):
@@ -63,6 +67,7 @@ class DeviceResponse(BaseModel):
     is_blocked: bool
     is_youtube_blocked: bool = False
     is_protected: bool
+    is_archived: bool = False
     protection_reason: str | None = None
     notes: str
     groups: list[DeviceGroupBadge] = Field(default_factory=list)
@@ -80,6 +85,7 @@ class DeviceSummaryStats(BaseModel):
     online_devices: int = 0
     blocked_devices: int = 0
     protected_devices: int = 0
+    archived_devices: int = 0
 
 
 class DeviceListResponse(BaseModel):
@@ -96,6 +102,8 @@ class DeviceUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
     notes: str | None = Field(default=None, max_length=2000)
     is_protected: bool | None = None
+    is_archived: bool | None = None
+    group_ids: list[int] | None = None
 
 
 class DeviceActionResponse(BaseModel):
@@ -194,6 +202,7 @@ def build_device_response(
         is_blocked=device.is_blocked,
         is_youtube_blocked=bool(getattr(device, "is_youtube_blocked", False)),
         is_protected=effective_protected,
+        is_archived=bool(getattr(device, "is_archived", False)),
         protection_reason=protection_reason,
         notes=device.notes or "",
         groups=groups or [],
@@ -423,22 +432,29 @@ def _filter_and_summarize_devices(
         )
     )
 
+    active_responses = [d for d in all_responses if not d.is_archived]
+    archived_responses = [d for d in all_responses if d.is_archived]
+
     summary = DeviceSummaryStats(
-        total_devices=len(all_responses),
-        online_devices=sum(1 for d in all_responses if d.is_online),
-        blocked_devices=sum(1 for d in all_responses if d.is_blocked or d.is_youtube_blocked),
-        protected_devices=sum(1 for d in all_responses if d.is_protected),
+        total_devices=len(active_responses),
+        online_devices=sum(1 for d in active_responses if d.is_online),
+        blocked_devices=sum(1 for d in active_responses if d.is_blocked or d.is_youtube_blocked),
+        protected_devices=sum(1 for d in active_responses if d.is_protected),
+        archived_devices=len(archived_responses),
     )
 
-    filtered = all_responses
-    if status_filter == "online":
-        filtered = [d for d in filtered if d.is_online]
-    elif status_filter == "blocked":
-        filtered = [d for d in filtered if d.is_blocked or d.is_youtube_blocked]
-    elif status_filter == "protected":
-        filtered = [d for d in filtered if d.is_protected]
-    elif status_filter == "unassigned":
-        filtered = [d for d in filtered if len(d.groups) == 0]
+    if status_filter == "archived":
+        filtered = archived_responses
+    else:
+        filtered = active_responses
+        if status_filter == "online":
+            filtered = [d for d in filtered if d.is_online]
+        elif status_filter == "blocked":
+            filtered = [d for d in filtered if d.is_blocked or d.is_youtube_blocked]
+        elif status_filter == "protected":
+            filtered = [d for d in filtered if d.is_protected]
+        elif status_filter == "unassigned":
+            filtered = [d for d in filtered if len(d.groups) == 0]
 
     if group_id is not None:
         filtered = [d for d in filtered if any(g.id == group_id for g in d.groups)]
@@ -500,8 +516,36 @@ def _apply_device_metadata_updates(
             )
         dev.is_protected = payload.is_protected
 
+    if payload.is_archived is not None:
+        if payload.is_archived:
+            validate_device_archive(bool(dev.is_online))
+        dev.is_archived = bool(payload.is_archived)
+
     dev.updated_at = utc_now()
     return dev
+
+
+def validate_device_archive(is_online: bool) -> None:
+    """Validate that only offline devices can be archived (`FB-P17-002`)."""
+    if is_online:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Online devices cannot be archived. Wait until the device goes offline.",
+        )
+
+
+def validate_device_delete(is_online: bool, is_protected: bool) -> None:
+    """Validate that online or protected devices cannot be deleted (`FB-P17-002`)."""
+    if is_online:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Online devices cannot be deleted.",
+        )
+    if is_protected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Protected devices cannot be deleted.",
+        )
 
 
 def _validate_device_blockable(
@@ -652,6 +696,42 @@ async def list_devices_inventory(
     )
 
 
+def validate_and_build_device_group_memberships(
+    requested_group_ids: list[int],
+    found_group_ids: set[int],
+    device_id: int,
+) -> list[DeviceGroupMembership]:
+    """Synchronously validate group IDs and construct `DeviceGroupMembership` ORM rows."""
+    unique_ids = list(dict.fromkeys(int(gid) for gid in requested_group_ids))
+    missing_ids = [gid for gid in unique_ids if gid not in found_group_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Device group(s) not found: {missing_ids}",
+        )
+    return [DeviceGroupMembership(group_id=gid, device_id=device_id) for gid in unique_ids]
+
+
+def build_device_update_audit(
+    dev: Device,
+    actor: str,
+    group_ids: list[int] | None,
+) -> AuditLog:
+    """Construct the `AuditLog` entry for a metadata update on a device."""
+    return AuditLog(
+        actor=actor,
+        action="device.update",
+        target=f"{dev.mac_address} ({dev.ipv4_address or 'no-ip'})",
+        status="success",
+        details=(
+            f"Updated display_name={dev.display_name!r}, "
+            f"is_protected={dev.is_protected}, "
+            f"is_archived={getattr(dev, 'is_archived', False)}"
+            + (f", group_ids={group_ids}" if group_ids is not None else "")
+        ),
+    )
+
+
 async def update_device_metadata(
     db: AsyncSession,
     settings: Settings,
@@ -661,25 +741,175 @@ async def update_device_metadata(
     actor: str,
     client_ip: str | None = None,
 ) -> DeviceResponse:
-    """Update user-editable metadata (`display_name`, `notes`, `is_protected`) on a device."""
+    """Update user-editable metadata (`display_name`, `notes`, `is_protected`, `group_ids`)."""
     raw_dev = (
         await db.execute(select(Device).where(Device.id == device_id))
     ).scalar_one_or_none()
     dev = _apply_device_metadata_updates(raw_dev, device_id, payload, settings)
 
-    db.add(
-        AuditLog(
-            actor=actor,
-            action="device.update",
-            target=f"{dev.mac_address} ({dev.ipv4_address or 'no-ip'})",
-            status="success",
-            details=f"Updated display_name={dev.display_name!r}, is_protected={dev.is_protected}",
+    if payload.group_ids is not None:
+        unique_group_ids = list(dict.fromkeys(int(gid) for gid in payload.group_ids))
+        found_groups: set[int] = set()
+        if unique_group_ids:
+            found_groups = set(
+                (
+                    await db.execute(
+                        select(DeviceGroup.id).where(DeviceGroup.id.in_(unique_group_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        new_memberships = validate_and_build_device_group_memberships(
+            payload.group_ids, found_groups, dev.id
         )
-    )
+        await db.execute(
+            delete(DeviceGroupMembership).where(
+                DeviceGroupMembership.device_id == dev.id
+            )
+        )
+        for mem in new_memberships:
+            db.add(mem)
+
+    db.add(build_device_update_audit(dev, actor, payload.group_ids))
     await db.commit()
     await db.refresh(dev)
     badges = await _load_device_group_badges(db, device_id=dev.id)
     return build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, []))
+
+
+def apply_device_archive_mutation(
+    dev: Device | None,
+    device_id: int,
+    archive: bool,
+    actor: str,
+) -> tuple[Device, AuditLog]:
+    """Synchronously validate and mutate `Device.is_archived` plus return audit record."""
+    if not dev:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Device {device_id} not found.",
+        )
+    if archive:
+        validate_device_archive(bool(dev.is_online))
+    dev.is_archived = archive
+    dev.updated_at = utc_now()
+    label = dev.display_name or dev.hostname or dev.mac_address
+    action = "device.archive" if archive else "device.restore"
+    details = (
+        f"Archived offline device '{label}'."
+        if archive
+        else f"Restored device '{label}' from archive."
+    )
+    audit = AuditLog(
+        actor=actor,
+        action=action,
+        target=f"{dev.mac_address} ({dev.ipv4_address or 'no-ip'})",
+        status="success",
+        details=details,
+    )
+    return dev, audit
+
+
+def prepare_device_delete_audit(
+    dev: Device | None,
+    device_id: int,
+    settings: Settings,
+    actor: str,
+    client_ip: str | None = None,
+) -> tuple[Device, AuditLog]:
+    """Synchronously validate deletion eligibility and build audit log entry."""
+    if not dev:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Device {device_id} not found.",
+        )
+    ip = dev.ipv4_address
+    effective_protected = bool(
+        dev.is_protected
+        or (ip and ip in settings.protected_ip_set)
+        or (ip and client_ip and ip == client_ip)
+    )
+    validate_device_delete(bool(dev.is_online), effective_protected)
+    label = dev.display_name or dev.hostname or dev.mac_address
+    audit = AuditLog(
+        actor=actor,
+        action="device.delete",
+        target=f"{dev.mac_address} ({ip or 'no-ip'})",
+        status="success",
+        details=f"Permanently deleted offline device '{label}'.",
+    )
+    return dev, audit
+
+
+async def archive_device(
+    db: AsyncSession,
+    settings: Settings,
+    device_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> DeviceResponse:
+    """Archive an offline device so it moves out of the active inventory (`FB-P17-002`)."""
+    raw_dev = (
+        await db.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one_or_none()
+    dev, audit = apply_device_archive_mutation(raw_dev, device_id, True, actor)
+    db.add(audit)
+    await db.commit()
+    await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
+    return build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, []))
+
+
+async def restore_device(
+    db: AsyncSession,
+    settings: Settings,
+    device_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> DeviceResponse:
+    """Restore an archived device back into the active inventory (`FB-P17-002`)."""
+    raw_dev = (
+        await db.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one_or_none()
+    dev, audit = apply_device_archive_mutation(raw_dev, device_id, False, actor)
+    db.add(audit)
+    await db.commit()
+    await db.refresh(dev)
+    badges = await _load_device_group_badges(db, device_id=dev.id)
+    return build_device_response(dev, settings, client_ip, groups=badges.get(dev.id, []))
+
+
+async def delete_device(
+    db: AsyncSession,
+    settings: Settings,
+    device_id: int,
+    *,
+    actor: str,
+    client_ip: str | None = None,
+) -> None:
+    """Permanently delete a stale offline device and associated device links (`FB-P17-002`)."""
+    raw_dev = (
+        await db.execute(select(Device).where(Device.id == device_id))
+    ).scalar_one_or_none()
+    dev, audit = prepare_device_delete_audit(
+        raw_dev, device_id, settings, actor, client_ip=client_ip
+    )
+
+    await db.execute(
+        delete(DeviceGroupMembership).where(DeviceGroupMembership.device_id == dev.id)
+    )
+    await db.execute(
+        delete(TemporaryOverride).where(TemporaryOverride.device_id == dev.id)
+    )
+    await db.execute(
+        delete(RecurringSchedule).where(RecurringSchedule.device_id == dev.id)
+    )
+    await db.delete(dev)
+    db.add(audit)
+    await db.commit()
 
 
 async def block_device_internet(

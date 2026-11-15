@@ -332,7 +332,10 @@ describe('Phase 3 Elasticsearch 9.4.3 Traffic & DNS Analytics UI', () => {
     // Toggle block inside the drawer
     await user.click(screen.getByTestId('drawer-access-toggle'))
     await waitFor(() => {
-      expect(screen.getByTestId('drawer-access-toggle')).toHaveTextContent('Blocked')
+      expect(screen.getByTestId('drawer-access-toggle')).toHaveAttribute(
+        'aria-label',
+        'Blocked, Click to Allow',
+      )
     })
 
     // Close drawer

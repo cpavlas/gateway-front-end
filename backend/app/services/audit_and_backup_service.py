@@ -67,6 +67,7 @@ class ConfigBackupDeviceItem(BaseModel):
     is_protected: bool = False
     is_manually_blocked: bool = False
     is_youtube_blocked: bool = False
+    is_archived: bool = False
 
 
 class ConfigBackupGroupItem(BaseModel):
@@ -91,6 +92,7 @@ class ConfigBackupScheduleItem(BaseModel):
     start_time: str
     end_time: str
     timezone: str = "America/Los_Angeles"
+    block_mode: Literal["internet", "youtube"] = "internet"
     is_enabled: bool = True
 
 
@@ -207,6 +209,7 @@ def assemble_backup_payload(
             is_protected=bool(d.is_protected),
             is_manually_blocked=bool(d.is_manually_blocked),
             is_youtube_blocked=bool(getattr(d, "is_youtube_blocked", False)),
+            is_archived=bool(getattr(d, "is_archived", False)),
         )
         for d in sorted(devices, key=lambda item: item.mac_address)
     ]
@@ -246,6 +249,11 @@ def assemble_backup_payload(
                 start_time=s.start_time,
                 end_time=s.end_time,
                 timezone=s.timezone,
+                block_mode=(
+                    "youtube"
+                    if getattr(s, "block_mode", "internet") == "youtube"
+                    else "internet"
+                ),
                 is_enabled=bool(s.is_enabled),
             )
         )
@@ -279,6 +287,7 @@ def prepare_restored_devices(
                 is_protected=bool(item.is_protected),
                 is_manually_blocked=bool(item.is_manually_blocked),
                 is_youtube_blocked=bool(item.is_youtube_blocked),
+                is_archived=bool(item.is_archived),
                 first_seen_at=now,
                 last_seen_at=now,
                 updated_at=now,
@@ -291,6 +300,7 @@ def prepare_restored_devices(
             dev.is_protected = bool(item.is_protected)
             dev.is_manually_blocked = bool(item.is_manually_blocked)
             dev.is_youtube_blocked = bool(item.is_youtube_blocked)
+            dev.is_archived = bool(item.is_archived)
             dev.updated_at = now
         updated_count += 1
     return dev_by_mac, new_devices, updated_count
@@ -362,6 +372,7 @@ def prepare_restored_schedules(
         if target_dev_id is None and target_grp_id is None:
             continue
 
+        sched_mode = "youtube" if s_item.block_mode == "youtube" else "internet"
         sched = sched_by_name.get(clean_sched_name.lower())
         if sched is None:
             sched = Schedule(
@@ -370,6 +381,7 @@ def prepare_restored_schedules(
                 target_type=s_item.target_type,
                 device_id=target_dev_id,
                 group_id=target_grp_id,
+                block_mode=sched_mode,
                 days_of_week=days_csv,
                 start_time=start_hhmm,
                 end_time=end_hhmm,
@@ -385,6 +397,7 @@ def prepare_restored_schedules(
             sched.target_type = s_item.target_type
             sched.device_id = target_dev_id
             sched.group_id = target_grp_id
+            sched.block_mode = sched_mode
             sched.days_of_week = days_csv
             sched.start_time = start_hhmm
             sched.end_time = end_hhmm
