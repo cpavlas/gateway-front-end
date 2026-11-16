@@ -11,11 +11,11 @@ Self-hosted, single-container Dockerized web application (`http://localhost:8080
 
 ```mermaid
 flowchart LR
-    UI["React 18 + TypeScript + Vite SPA<br/>(Devices · Schedules · Analytics · Firewall · System)"] <-->|Session Auth + RBAC| API["FastAPI + APScheduler<br/>(Single Container :8080)"]
-    API <--> DB[("SQLite Store<br/>/app/data/gateway.db")]
-    API <-->|MVC REST API| OPN["OPNsense 26.7.7-amd64<br/>(ARP, Dnsmasq, 7 Aliases, NAT, kill_states)"]
-    API -->|"_msearch + docvalue_fields"| ES["Elasticsearch 9.4.3 Cluster<br/>(logs-pfsense.log* logsdb)"]
-    API -->|Optional X-Plex-Token| PLEX["Plex Media Server<br/>(Now Playing & History)"]
+    UI["React 18 + TypeScript + Vite SPA"] <-->|"Session Auth & RBAC"| API["FastAPI + APScheduler Container - Port 8080"]
+    API <--> DB[("SQLite Store: /app/data/gateway.db")]
+    API <-->|"MVC REST API"| OPN["OPNsense 26.7.7: ARP, Dnsmasq, 7 Aliases, NAT, kill_states"]
+    API -->|"_msearch + docvalue_fields"| ES["Elasticsearch 9.4.3 Cluster: logs-pfsense.log*"]
+    API -->|"Optional X-Plex-Token"| PLEX["Plex Media Server: Now Playing & History"]
 ```
 
 ---

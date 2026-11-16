@@ -23,11 +23,11 @@ Welcome to the official User Manual for the **Gateway Access Control & Analytics
 
 ```mermaid
 flowchart LR
-    UI["Browser SPA<br/>(React 18 + TypeScript + Vite)<br/>5 Tabs + Drawers + Ctrl+K Search"] <-->|HTTPS / Session Cookie| API["FastAPI Backend + APScheduler<br/>(Single Docker Container :8080 -> :8000)"]
-    API <--> DB[("SQLite Store<br/>(/app/data/gateway.db)<br/>Devices, Groups, Timers,<br/>Schedules, Rules, Audits, Settings")]
-    API <-->|MVC REST API<br/>(svc_gateway_ui)| OPN["OPNsense Gateway (26.7.7)<br/>• ARP & Dnsmasq Leases<br/>• 7 Managed Firewall Aliases<br/>• NAT Port Forwards & kill_states"]
-    API -->|"_msearch + docvalue_fields"| ES["Elasticsearch Cluster (9.4.3)<br/>(logs-pfsense.log* logsdb)<br/>• Unbound DNS & Filterlog"]
-    API -->|Optional X-Plex-Token| PLEX["Plex Media Server<br/>• /status/sessions & History"]
+    UI["Browser SPA: React 18, TypeScript & Vite"] <-->|"HTTPS & Session Cookie"| API["FastAPI + APScheduler Container - Port 8080"]
+    API <--> DB[("SQLite Store: /app/data/gateway.db")]
+    API <-->|"MVC REST API - svc_gateway_ui"| OPN["OPNsense 26.7.7: ARP, Dnsmasq, 7 Aliases & NAT"]
+    API -->|"_msearch + docvalue_fields"| ES["Elasticsearch 9.4.3 Cluster: logs-pfsense.log*"]
+    API -->|"Optional X-Plex-Token"| PLEX["Plex Media Server: /status/sessions & History"]
 ```
 
 ### Background Automation Loops (`APScheduler`)
@@ -61,15 +61,15 @@ Whenever the scheduler reconciles device state (every 60s, on timer creation/exp
 
 ```mermaid
 flowchart TD
-    T1["Tier 1: Protected Device Guardrail<br/>(is_protected = true / OPNSENSE_PROTECTED_IPS)"] -->|Match| R1["ALWAYS ALLOWED<br/>(Never Blocked by UI, Timers, Quotas, or Schedules)"]
-    T1 -->|No| T2["Tier 2: Active Temporary Timer Override"]
-    T2 -->|Bonus Timer| R2B["TEMPORARILY ALLOWED<br/>(Overrides Manual Blocks, Quotas & Schedules)"]
-    T2 -->|Pause Timer| R2P["TEMPORARILY BLOCKED<br/>(Immediate Internet + YouTube Cutoff)"]
-    T2 -->|None| T3["Tier 3: Manual Control State<br/>(is_blocked or is_youtube_blocked)"]
-    T3 -->|Match| R3["MANUALLY BLOCKED<br/>(Enforced Until Unblocked or Bonus Timer)"]
-    T3 -->|No| T4["Tier 4: Group Daily YouTube Quota<br/>(daily_youtube_limit_minutes exceeded today)"]
-    T4 -->|Exceeded| R4["YOUTUBE BLOCKED (QUOTA)<br/>(Internet & Plex Stay Allowed)"]
-    T4 -->|OK / None| T5["Tier 5: Active Recurring Schedule<br/>(block_mode: Full Internet or YouTube Only)"]
-    T5 -->|Active & Not Snoozed| R5["SCHEDULE BLOCKED<br/>(Until End of Window, Snooze, or Bonus Timer)"]
-    T5 -->|Inactive / Snoozed| R6["Tier 6: Default Allow<br/>(Normal LAN & Internet Access)"]
+    T1["Tier 1: Protected Device Guardrail - is_protected / OPNSENSE_PROTECTED_IPS"] -->|"Match"| R1["ALWAYS ALLOWED - Never Blocked by UI, Timers, Quotas, or Schedules"]
+    T1 -->|"No"| T2["Tier 2: Active Temporary Timer Override"]
+    T2 -->|"Bonus Timer"| R2B["TEMPORARILY ALLOWED - Overrides Manual Blocks, Quotas & Schedules"]
+    T2 -->|"Pause Timer"| R2P["TEMPORARILY BLOCKED - Immediate Internet & YouTube Cutoff"]
+    T2 -->|"None"| T3["Tier 3: Manual Control State - is_blocked or is_youtube_blocked"]
+    T3 -->|"Match"| R3["MANUALLY BLOCKED - Enforced Until Unblocked or Bonus Timer"]
+    T3 -->|"No"| T4["Tier 4: Group Daily YouTube Quota - daily_youtube_limit_minutes"]
+    T4 -->|"Exceeded"| R4["YOUTUBE BLOCKED BY QUOTA - Internet & Plex Stay Allowed"]
+    T4 -->|"OK or None"| T5["Tier 5: Active Recurring Schedule - Full Internet or YouTube Only"]
+    T5 -->|"Active & Not Snoozed"| R5["SCHEDULE BLOCKED - Until End of Window, Snooze, or Bonus Timer"]
+    T5 -->|"Inactive or Snoozed"| R6["Tier 6: Default Allow - Normal LAN & Internet Access"]
 ```
