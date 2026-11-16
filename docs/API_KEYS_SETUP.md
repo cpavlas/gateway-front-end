@@ -123,6 +123,43 @@ For OPNsense to drop traffic matching those two aliases, add a single **Reject**
 
 ---
 
+### Step 1E: Custom Domain & BGP ASN Blocking Aliases (`v1.3.0` Analytics Blocking)
+
+When you use **Block Domain** or **Block ASN** from the **Analytics** tab or **Device Analytics Drawer**, the backend automatically creates and updates three OPNsense Firewall Aliases via `Firewall: Alias: Edit`:
+
+| Alias Name | Type | Managed Content |
+| :--- | :---: | :--- |
+| **`gateway_custom_blocked_domains`** | `Host(s)` | Blocked FQDNs (resolved dynamically by OPNsense `filterdns`). |
+| **`gateway_custom_blocked_asns`** | `BGP ASN` | Numeric BGP ASNs (e.g., `32934`) for blocked destination organizations. |
+| **`gateway_custom_blocked_devices`** | `Host(s)` | LAN IPv4 addresses of devices scoped to custom per-device rules *(empty when only global rules are active, or use separate global vs. device-scoped rules)*. |
+
+To enforce these aliases on OPNsense (**Firewall → Rules → LAN**, placed above your default `LAN net -> any` allow rule):
+- Add a **`Reject`** rule (`Interface: LAN`, `Direction: in`, `Protocol: any`) for **Source:** `LAN net` (or `gateway_custom_blocked_devices` if scoping to selected devices) → **Destination:** `gateway_custom_blocked_domains`.
+- Add a matching **`Reject`** rule for **Destination:** `gateway_custom_blocked_asns` *(ensure OPNsense IP/ASN lists are enabled under `Firewall → Aliases` / BGP ASN tables)*.
+- Click **Save** and **Apply Changes**.
+
+---
+
+### Step 1F: External WAN IP Blocklist Alias (`gateway_wan_blocked_ips`)
+
+On backend startup (and whenever you block a public IP via **Top Blocked External WAN Scanners**, **Open Port Sessions Drawer**, or the **Blocked External WAN IPs** card on the **Firewall** tab), the portal automatically provisions and persists `gateway_wan_blocked_ips` (`OPNSENSE_WAN_BLOCK_ALIAS`, type `Host(s)`).
+
+To drop unsolicited inbound WAN traffic from any IP added to this blocklist:
+1. Navigate to **Firewall → Rules → WAN** and click **+** (Add).
+2. Configure the rule:
+   - **Action:** `Block` (or `Drop`)
+   - **Interface:** `WAN`
+   - **Direction:** `in`
+   - **TCP/IP Version:** `IPv4`
+   - **Protocol:** `any`
+   - **Source:** `gateway_wan_blocked_ips`
+   - **Destination:** `any`
+   - **Log:** Checked *(recommended so dropped scanner probes appear in Elasticsearch telemetry)*
+   - **Description:** `Block external WAN IPs managed in gateway_wan_blocked_ips`
+3. Place this rule near the **top of your WAN rule list** (above any `NAT` port-forward allow rules), click **Save**, and click **Apply Changes**.
+
+---
+
 ## 2. Elasticsearch Setup (`Elasticsearch 9.4.3`)
 
 When OPNsense firewall (`filterlog`) and DNS (`unbound`) logs are ingested via the **Elastic `pfSense` Integration (`v1.25.4`)** into the **`logs-pfsense.log*`** data stream (`logs-pfsense.log-default`), scope your read-only API key directly to `logs-pfsense.log*`.
@@ -155,3 +192,21 @@ POST /_security/api_key
   ELASTICSEARCH_API_KEY=PASTE_ENCODED_STRING_HERE
   ELASTICSEARCH_INDEX_PATTERNS=logs-pfsense.log*
   ```
+
+> **Multi-Node High Availability (`v1.3.0`):** `ELASTICSEARCH_URL` supports comma-separated cluster node URLs (e.g., `https://es01.example.local:9200, https://es02.example.local:9200, https://es03.example.local:9200`) configured either in `.env` or live inside **System → Integration Settings**. Optional self-signed cluster CA certificates can be supplied via `ELASTICSEARCH_CA_CERT_PATH`.
+
+---
+
+## 3. Plex Media Server Setup (Optional — Tautulli-Style Playback Telemetry)
+
+Connecting your **Plex Media Server** enables real-time **Now Playing** session cards (user, show/episode title, player/platform, resolution, transcode bitrate, playback `%`) and accurate L2 Smart TV active-minutes correlation inside **Application Usage Stats**.
+
+1. Retrieve your `X-Plex-Token` from an authenticated Plex Web session (see Plex support documentation: inspect any media item's XML info and copy `X-Plex-Token=...` from the URL).
+2. Set `PLEX_BASE_URL` and `PLEX_API_TOKEN` in `.env` (or configure them directly in the UI under **System → Integration Settings** — comma-separated URLs are supported for failover):
+   ```dotenv
+   PLEX_BASE_URL=https://plex.example.local:32400
+   PLEX_API_TOKEN=PASTE_YOUR_X_PLEX_TOKEN_HERE
+   PLEX_VERIFY_SSL=false
+   PLEX_TIMEOUT_SECONDS=8
+   ```
+3. Run **Test All Connections** from the **System** tab to verify Plex reachability alongside OPNsense, Elasticsearch, and SQLite.
