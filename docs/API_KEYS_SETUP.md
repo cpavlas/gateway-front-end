@@ -197,7 +197,7 @@ POST /_security/api_key
 
 ---
 
-## 3. Plex Media Server Setup (Optional — Tautulli-Style Playback Telemetry)
+## 3. Plex Media Server Setup (Optional Playback Telemetry)
 
 Connecting your **Plex Media Server** enables real-time **Now Playing** session cards (user, show/episode title, player/platform, resolution, transcode bitrate, playback `%`) and accurate L2 Smart TV active-minutes correlation inside **Application Usage Stats**.
 
