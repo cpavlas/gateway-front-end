@@ -357,9 +357,11 @@ describe('Phase 16 Frontend Features: Navigation, Themes, Passwords, Plex Card &
       </QueryClientProvider>,
     )
 
-    // 4th ServiceCard for Plex + collapsible formatted details
+    // 4th ServiceCard for Plex + collapsible formatted details (FB-P18-010 omits redundant message)
     const plexCard = await screen.findByTestId('service-card-plex')
-    expect(within(plexCard).getByText('Plex Media Server connected')).toBeInTheDocument()
+    expect(within(plexCard).getByText('Plex Media Server')).toBeInTheDocument()
+    expect(within(plexCard).getByText('Active Streams')).toBeInTheDocument()
+    expect(within(plexCard).queryByText('Plex Media Server connected')).not.toBeInTheDocument()
     const opnCard = screen.getByTestId('service-card-opnsense')
     expect(within(opnCard).getByText('ARP Entries')).toBeInTheDocument()
     await user.click(screen.getByTestId('toggle-details-service-card-opnsense'))

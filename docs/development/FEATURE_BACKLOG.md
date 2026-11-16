@@ -71,9 +71,9 @@
 | **`FB-P18-001`** | Analytics & Device Drawer (`FB-P4-007`..`009`) | Per-device & global Domain and ASN Organization blocking (OPNsense aliases/rules + Unbound), `destination.as.number` enrichment, Blocked Domains & ASNs management panel, and Backup/Restore support | New Control Feature (Domain/ASN Filtering) | `4 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
 | **`FB-P18-002`** | Analytics Tab (Expanded App Usage & Plex Details) | Track additional apps (`Netflix`, `Disney+`, `Twitch`, `TikTok`, `Discord`, `Gaming`) with expandable device/bandwidth breakdown, and enhance Plex `Now Playing` with username, progress bar %, and bitrate | Application Analytics | `3 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
 | **`FB-P18-003`** | Analytics Tab (LAN Table & Domain/ASN Drilldowns) | Add column sorting + search input to `Top Active LAN Devices` table, and make Domain/FQDN/ASN items clickable to inspect which LAN devices queried/contacted them | Analytics Drilldown | `2.5 / 5` | **Phase 18 (`v1.3.0-rc3`)** | `SCHEDULED (Phase 18)` |
-| **`FB-P19-001`** | Firewall Tab (Noisy LAN & Open WAN Ports) | Convert `Noisy LAN Devices` Block/Unblock to compact icon buttons + add `Inspect` (`DeviceAnalyticsDrawer`) button, and show friendly NAT service descriptions (`Plex Media Server`, `WireGuard VPN`) + `Last Seen` in `Open WAN Ports` | Security UX & Polish | `2 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
-| **`FB-P19-002`** | Firewall Tab (External Scanners & WAN IP Blocklist) | Display GeoIP Country/City badges on `Top Blocked External WAN Scanners` (clickable to filter logs), and add Country summary bar + `Block External IP at WAN` (`gateway_wan_blocked_ips`) in `FirewallOpenPortSessionsDrawer` | Security & WAN Enforcement | `3 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
-| **`FB-P19-003`** | Firewall Tab (Packet Log Explorer) | Make `Source IP`, `Destination IP`, `Port`, `Protocol`, and `Interface` cells clickable to filter with active filter chips, and add row limit selector (`50`/`100`/`250`) + CSV/JSON export | Log Explorer UX | `2 / 5` | **Phase 19 (`v1.3.0`)** | `SCHEDULED (Phase 19)` |
+| **`FB-P19-001`** | Firewall Tab (Noisy LAN & Open WAN Ports) | Convert `Noisy LAN Devices` Block/Unblock to compact icon buttons + add `Inspect` (`DeviceAnalyticsDrawer`) button, and show friendly NAT service descriptions (`Plex Media Server`, `WireGuard VPN`) + `Last Seen` in `Open WAN Ports` | Security UX & Polish | `2 / 5` | **Phase 19 (`v1.3.0`)** | `COMPLETED (Phase 19 — v1.3.0)` |
+| **`FB-P19-002`** | Firewall Tab (External Scanners & WAN IP Blocklist) | Display GeoIP Country/City badges on `Top Blocked External WAN Scanners` (clickable to filter logs), and add Country summary bar + `Block External IP at WAN` (`gateway_wan_blocked_ips`) in `FirewallOpenPortSessionsDrawer` | Security & WAN Enforcement | `3 / 5` | **Phase 19 (`v1.3.0`)** | `COMPLETED (Phase 19 — v1.3.0)` |
+| **`FB-P19-003`** | Firewall Tab (Packet Log Explorer) | Make `Source IP`, `Destination IP`, `Port`, `Protocol`, and `Interface` cells clickable to filter with active filter chips, and add row limit selector (`50`/`100`/`250`) + CSV/JSON export | Log Explorer UX | `2 / 5` | **Phase 19 (`v1.3.0`)** | `COMPLETED (Phase 19 — v1.3.0)` |
 
 ---
 
@@ -671,7 +671,7 @@
 - **User Feedback (`PHASE16-Verify.md` Round 2):** *"When viewing data that shows GEOIP location, make the location clickable such that it opens google maps in a new tab with the location centered and a marker at the location."*
 - **Technical Evaluation & Planned Scope:** Wherever GeoIP location data is rendered (`FirewallOpenPortSessionsDrawer.tsx`, `ExternalConnectionDrawer.tsx`, and **Top Blocked External WAN Scanners** on `FirewallPage.tsx`), render the GeoIP location badge/text as an interactive external link (`target="_blank" rel="noopener noreferrer"`) pointing to `https://www.google.com/maps/search/?api=1&query=<lat>,<lon>` (when `latitude`/`longitude` coordinates are present in ES `source.geo.location` / `destination.geo.location`) or `https://www.google.com/maps/search/?api=1&query=<encoded City, Region, Country>` so Google Maps opens in a new tab centered with a marker pin at that location.
 - **Complexity:** `1.5 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P17-001` — `Devices` Tab Collapsible Group Section & Compact Icon Group Action Controls
 - **User Feedback (`v1.3` Q&A):** Add a collapsible/compact mode for `Device Groups & Profiles` and convert Group Card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Allow/Block Group`) to compact mobile-friendly icon buttons matching the Device Table rows.
@@ -732,68 +732,93 @@
 - **User Feedback (`PHASE18-Verify.md` Section B):** When a Device Group has an active daily YouTube limit that was breached (causing YouTube to be blocked) and the user subsequently deletes/clears the daily limit (or raises it above today's usage), YouTube should automatically be unblocked rather than staying blocked.
 - **Technical Evaluation & Planned Scope:** Update `update_group()` in `backend/app/services/group_service.py` so whenever `daily_youtube_limit_minutes` is cleared (`None`) or increased above `today_youtube_minutes`, non-protected group members not covered by an active `pause` override or active `youtube`-mode schedule have `is_youtube_blocked` released and OPNsense `gateway_youtube_blocked_devices` synchronized immediately.
 - **Complexity:** `1.5 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-005` — Click-to-Expand Application Usage Telemetry Card Modal / Detail View
 - **User Feedback (`PHASE18-Verify.md` Section C):** Clicking any box inside **Application Usage Stats** should open an expanded card/modal showing complete untruncated application details (e.g., full Plex `Now Playing` show/episode title, user, player/platform, resolution, transcode decision, bitrate, progress bar, and full per-device usage breakdown).
 - **Technical Evaluation & Planned Scope:** Add interactive click expansion / `<AppUsageDetailModal />` across `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, and `GroupAnalyticsDrawer.tsx` rendering the complete application telemetry metrics, untruncated `Now Playing` stream cards, and all active devices/minutes/DNS/bandwidth for the clicked app.
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-006` — `Analytics` Tab Mobile-Compact `Top Active LAN Devices` Table
 - **User Feedback (`PHASE18-Verify.md`):** In the mobile view (`< sm` viewport), update the `Top Active LAN Devices` table on `AnalyticsPage.tsx` to display only **Device**, **Total Events**, and **Inspect** so all columns fit cleanly on screen.
 - **Technical Evaluation & Planned Scope:** Apply `hidden sm:table-cell` to the `IPv4 & Vendor`, `DNS Queries`, and `Firewall Bytes` `<th>` and `<td>` cells inside `overview-top-devices-table` in `AnalyticsPage.tsx`.
 - **Complexity:** `1 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-007` (`BUG-P18-005`) — Consistent Auto-Refresh Timer Execution & `Updated: HH:MM:SS` Across All Tabs
 - **User Feedback (`PHASE18-Verify.md`):** Auto-refresh timer behavior is inconsistent across tabs (`Devices` sync timer never updates live state/timestamp, `Analytics` fires a flash without refreshing cached data or `Updated:` clock, `Firewall` updates the `Updated:` timestamp without updating panel snapshots).
 - **Technical Evaluation & Planned Scope:** Ensure `DevicesPage.tsx` runs `apiClient.syncDevices()` on auto-refresh ticks (updating live inventory & `Synced: HH:MM:SS`), and update `AnalyticsPage.tsx` and `FirewallPage.tsx` so scheduled background refetches pass `refresh: true` to bypass short-TTL backend cache, update `windowSnapshots[windowKey]`, and refresh `Updated: HH:MM:SS`.
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-008` — Configurable App Telemetry Catalog in `System` Settings (Default `YouTube` & `Plex`, Opt-In Others) + Combined `Facebook & Threads`
 - **User Feedback (`PHASE18-Verify.md`):** Add a settings area in **System** to configure which items are displayed for Application Telemetry (defaulting to **YouTube** and **Plex** enabled with all other apps opt-in), and add combined tracking for **Facebook and Threads** as a single grouped item.
 - **Technical Evaluation & Planned Scope:** Add `facebook_threads` (`Facebook & Threads`: `facebook.com`, `fbcdn.net`, `instagram.com`, `threads.net`, `threads.com`, Meta ASN `AS32934` correlation) as a single grouped application category (`9` total), persist `enabled_telemetry_apps` (defaulting to `["youtube", "plex"]`) via `runtime_settings_service.py` / `api/system.py`, and add an **Application Telemetry Visibility** configuration section in `StatusPage.tsx` respected by `AnalyticsPage.tsx`, `DeviceAnalyticsDrawer.tsx`, and `GroupAnalyticsDrawer.tsx`.
 - **Complexity:** `2.5 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-009` — Centered Screen Modal Popup for User `Change My Password`
 - **User Feedback (`PHASE18-Verify.md`):** In the User Panel (Header User Menu dropdown), replace the inline downward-chevron accordion for changing password with a trigger that opens a centered screen modal popup to perform the password change.
 - **Technical Evaluation & Planned Scope:** Move the self-service `Change My Password` form in `AppLayout.tsx` into a centered modal dialog (`ChangePasswordModal`) opened from the User Menu button and closing cleanly on backdrop click/Escape/`Cancel`.
 - **Complexity:** `1.5 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-010` — `System` Tab Top 4 Service Health Cards — Remove Redundant Subtitle & Status Message Text
 - **User Feedback (`PHASE18-Verify.md`):** On the **System** tab, remove the redundant subtitle (`OPNsense REST API...`, etc.) and status message paragraph (`OPNsense API connected...`, etc.) underneath the 4 top vertical Service Health Card titles because that data is already visible in the Technical Details section.
 - **Technical Evaluation & Planned Scope:** Update `ServiceCard` in `StatusPage.tsx` to omit the redundant subtitle line and descriptive status paragraph underneath each card title while retaining the card title, status badge, primary KPI/shard/storage highlights, and collapsible Technical Details.
 - **Complexity:** `1 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-011` — Sticky Top Page Header in Desktop / Full-Page Mode
 - **User Feedback (`PHASE18-Verify.md`):** When in full-page/desktop mode (not mobile), keep the top page header always visible at the top of the viewport so users do not need to scroll back up to switch tabs (matching mobile's persistent bottom nav).
 - **Technical Evaluation & Planned Scope:** Update `<header>` in `AppLayout.tsx` from `relative z-30` to `sticky top-0 z-40` so navigation tabs, health badge, and user controls remain pinned while scrolling.
 - **Complexity:** `1 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P18-012` — `System` Tab `Test All Connections` Popup — Show Average Ping Latency for Multi-Node Services
 - **User Feedback (`PHASE18-Verify.md`):** In the `Test All Connections` popup modal on **System**, display the average ping time in `OK (time)` when multiple nodes are configured for a service (e.g., average across 3 Elasticsearch nodes), while single-node services (e.g., OPNsense) continue showing their individual ping time.
 - **Technical Evaluation & Planned Scope:** Compute the rounded arithmetic mean across `nodeRows` (`nodeRows.length > 1`) in `StatusPage.tsx` (and/or `runtime_settings_service.py`) for the service summary badge (`OK (avg XX.X ms)` / average latency) while retaining per-node latency rows underneath.
 - **Complexity:** `1 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P19-001` — `Firewall` Tab Compact `Noisy LAN` Controls (`Inspect` Trigger) & Open WAN Port Service Descriptions
 - **User Feedback (`v1.3` Q&A):** Convert `Noisy LAN Devices` Block/Unblock controls to compact icon buttons and add the Magnifying Glass `Inspect` button to open `DeviceAnalyticsDrawer` directly from the `Firewall` tab; display friendly OPNsense D-NAT rule descriptions (`Plex Media Server`, `WireGuard VPN`) and `Last Seen` timestamps in `Active Inbound WAN Exposure (Open Ports)`.
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P19-002` — `Firewall` Tab External WAN Scanner GeoIP Badges, Clickable Google Maps Links (`FB-P16-007`) & `Block External IP at WAN` Enforcement
 - **User Feedback (`v1.3` Q&A + `PHASE16-Verify.md` Round 2):** Display GeoIP Country/City badges on `Top Blocked External WAN Scanners` (clickable to filter logs), render clickable GeoIP locations across external connection drawers and scanner views (`FB-P16-007`) opening Google Maps centered with a location marker in a new tab, and add a Country summary breakdown bar + `Block External IP at WAN` button (backed by an OPNsense WAN blocklist alias) inside `FirewallOpenPortSessionsDrawer`.
 - **Complexity:** `3 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 
 #### `FB-P19-003` — `Firewall` Tab Interactive Click-to-Filter Packet Log Explorer, Row Limits & CSV/JSON Export
 - **User Feedback (`v1.3` Q&A):** Make `Source IP`, `Destination IP`, `Port`, and `Interface` cells clickable inside the Firewall Packet Log Explorer to apply removable filter chips, and add configurable row limit selectors (`50` / `100` / `250`) plus CSV/JSON export.
 - **Complexity:** `2 / 5`
-- **Status:** `SCHEDULED (Phase 19 — v1.3.0)`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-004` — `Analytics` -> `Application Usage Stats` Bidirectional **Configure Apps** Modal
+- **User Feedback (`PHASE19-Verify.md` Gate 2):** Add a **Configure Apps** button in the `Analytics` -> **Application Usage Stats** card that opens a modal allowing users to toggle visible telemetry categories in place and stay bi-directionally synchronized with `System` -> **Application Telemetry Visibility**.
+- **Complexity:** `2 / 5`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-005` — `Firewall` Tab **Blocked External WAN IPs** Management Card (`gateway_wan_blocked_ips`)
+- **User Feedback (`PHASE19-Verify.md` Gate 2):** Add a dedicated card on `Firewall` showing all external IPs currently blocked in OPNsense `gateway_wan_blocked_ips` with manual public IPv4 add, GeoIP/packet-filter actions, and 1-click **Unblock** controls.
+- **Complexity:** `2 / 5`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-006` — `System` Page Header Dynamic Connected OPNsense & Elasticsearch Versions
+- **User Feedback (`PHASE19-Verify.md` Gate 2):** Update the description beneath `"System Connectivity & Telemetry Status"` to interpolate live connected OPNsense and Elasticsearch server versions returned by `/api/v1/system/health`.
+- **Complexity:** `1 / 5`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-007` — `Devices` Tab Group Card Unified Action Button Dimensions
+- **User Feedback (`PHASE19-Verify.md` Gate 2):** Standardize **Filter**, **Analytics**, **YouTube**, **Timer**, and **Internet** action buttons inside Device Group cards to identical `h-9 w-9 min-h-9 min-w-9 p-2` dimensions with `h-4 w-4` icons.
+- **Complexity:** `1 / 5`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
+
+#### `FB-P19-008` — `GroupFormModal` **Current Group Members** Card with 1-Click Member Removal
+- **User Feedback (`PHASE19-Verify.md` Gate 2):** Display a compact **Current Group Members** card when editing a Device Profile / Group so administrators can see assigned devices at a glance and remove any member in one click without scrolling through the full assignment list.
+- **Complexity:** `1 / 5`
+- **Status:** `COMPLETED (Phase 19 — v1.3.0)`
 

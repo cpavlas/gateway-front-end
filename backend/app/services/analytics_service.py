@@ -20,11 +20,12 @@ from app.clients.elasticsearch import (
 )
 from app.clients.opnsense import OPNsenseClient, OPNsenseClientError
 from app.clients.plex import PlexActiveSessionItem
-from app.config import Settings
+from app.config import Settings, get_runtime_overrides, get_settings
 from app.models import (
     AuditLog,
     BlockedTarget,
     Device,
+    SystemSetting,
     normalize_block_scope_type,
     normalize_block_target_type,
     normalize_block_target_value,
@@ -53,6 +54,7 @@ AppUsageKeyLiteral = Literal[
     "twitch",
     "tiktok",
     "discord",
+    "facebook_threads",
     "gaming",
 ]
 
@@ -79,9 +81,9 @@ class AppUsageItem(BaseModel):
     active_sessions: list[PlexActiveSessionItem] = Field(default_factory=list)
 
 
-def _build_zero_app_usage() -> list[AppUsageItem]:
+def _build_zero_app_usage(settings: Settings | None = None) -> list[AppUsageItem]:
     """Return zeroed multi-app usage items when Elasticsearch is empty or unreachable."""
-    return [
+    all_items = [
         AppUsageItem(app_key="youtube", display_name="YouTube"),
         AppUsageItem(app_key="plex", display_name="Plex"),
         AppUsageItem(app_key="netflix", display_name="Netflix"),
@@ -89,8 +91,15 @@ def _build_zero_app_usage() -> list[AppUsageItem]:
         AppUsageItem(app_key="twitch", display_name="Twitch"),
         AppUsageItem(app_key="tiktok", display_name="TikTok"),
         AppUsageItem(app_key="discord", display_name="Discord"),
+        AppUsageItem(app_key="facebook_threads", display_name="Facebook & Threads"),
         AppUsageItem(app_key="gaming", display_name="Gaming"),
     ]
+    if settings is None:
+        return all_items
+    enabled = set(getattr(settings, "enabled_telemetry_app_list", []) or [])
+    if not enabled:
+        return all_items
+    return [item for item in all_items if item.app_key in enabled]
 
 
 def _apply_plex_override_to_es_data(
@@ -140,7 +149,13 @@ def _parse_app_usage_items(
     """Parse raw `application_usage` dicts into `AppUsageItem` objects with SQLite enrichment."""
     raw = es_data.get("application_usage")
     if not isinstance(raw, list) or not raw:
-        return _build_zero_app_usage()
+        return _build_zero_app_usage(settings)
+
+    enabled_set = (
+        set(getattr(settings, "enabled_telemetry_app_list", []) or [])
+        if settings is not None
+        else None
+    )
 
     by_ip: dict[str, Device] = {
         d.ipv4_address: d for d in (sqlite_devices or []) if d.ipv4_address
@@ -148,6 +163,9 @@ def _parse_app_usage_items(
     parsed: list[AppUsageItem] = []
     for a in raw:
         if not isinstance(a, dict):
+            continue
+        app_key_val = str(a.get("app_key") or "").strip().lower()
+        if enabled_set and app_key_val not in enabled_set:
             continue
         raw_top = a.get("top_devices") or []
         enriched_top: list[AppUsageDeviceItem] = []
@@ -193,11 +211,11 @@ def _parse_app_usage_items(
         ]
         item_copy = {
             **a,
-            "top_devices": enriched_top[:3],
+            "top_devices": enriched_top[:5],
             "active_sessions": parsed_sessions,
         }
         parsed.append(AppUsageItem(**item_copy))
-    return parsed or _build_zero_app_usage()
+    return parsed or _build_zero_app_usage(settings)
 
 
 class TimelineBucketItem(BaseModel):
@@ -559,6 +577,7 @@ def _build_empty_overview_response(
     window: str,
     warning: str,
     es_reachable: bool = False,
+    settings: Settings | None = None,
 ) -> NetworkOverviewResponse:
     """Return a graceful fallback NetworkOverviewResponse when Elasticsearch is unreachable."""
     return NetworkOverviewResponse(
@@ -579,6 +598,7 @@ def _build_empty_overview_response(
         top_domains=[],
         top_registered_domains=[],
         top_organizations=[],
+        application_usage=_build_zero_app_usage(settings),
     )
 
 
@@ -602,6 +622,7 @@ def _build_empty_device_analytics_response(
     window: str,
     warning: str,
     es_reachable: bool = False,
+    settings: Settings | None = None,
 ) -> DeviceAnalyticsResponse:
     """Return a zero-state DeviceAnalyticsResponse when device has no IP or ES is unreachable."""
     return DeviceAnalyticsResponse(
@@ -627,6 +648,7 @@ def _build_empty_device_analytics_response(
         top_registered_domains=[],
         top_organizations=[],
         recent_queries=[],
+        application_usage=_build_zero_app_usage(settings),
     )
 
 
@@ -634,6 +656,7 @@ def _assemble_device_analytics_response(
     device_resp: DeviceResponse,
     es_data: dict[str, Any],
     window: str,
+    settings: Settings | None = None,
 ) -> DeviceAnalyticsResponse:
     """Build a typed DeviceAnalyticsResponse from normalized ES output."""
     raw_summary = es_data.get("summary") or {}
@@ -668,7 +691,7 @@ def _assemble_device_analytics_response(
         recent_queries=[
             RecentDomainQueryItem(**q) for q in (es_data.get("recent_queries") or [])
         ],
-        application_usage=_parse_app_usage_items(es_data),
+        application_usage=_parse_app_usage_items(es_data, settings=settings),
     )
 
 
@@ -687,6 +710,28 @@ def _require_device_or_404(dev: Device | None, device_id: int) -> Device:
 # ---------------------------------------------------------------------------
 
 
+async def resolve_effective_analytics_settings(
+    db: AsyncSession, settings: Settings
+) -> Settings:
+    """Resolve `enabled_telemetry_apps` from SQLite overrides or runtime cache (`BUG-P19-001`)."""
+    row = (
+        await db.execute(
+            select(SystemSetting).where(SystemSetting.key == "enabled_telemetry_apps")
+        )
+    ).scalar_one_or_none()
+    if row is not None and row.value_text.strip():
+        return settings.model_copy(
+            update={"enabled_telemetry_apps": row.value_text.strip()}
+        )
+    overrides = get_runtime_overrides()
+    override_apps = overrides.get("enabled_telemetry_apps")
+    if isinstance(override_apps, str) and override_apps.strip() and settings is get_settings():
+        return settings.model_copy(
+            update={"enabled_telemetry_apps": override_apps.strip()}
+        )
+    return settings
+
+
 async def get_network_overview_analytics(
     db: AsyncSession,
     settings: Settings,
@@ -697,9 +742,11 @@ async def get_network_overview_analytics(
 ) -> NetworkOverviewResponse:
     """Return network-wide usage, timeline, top devices (joined with SQLite), and top domains."""
     start_t = time.perf_counter()
+    settings = await resolve_effective_analytics_settings(db, settings)
     win_key, _, _ = resolve_time_window(window)
+    apps_sig = ",".join(settings.enabled_telemetry_app_list)
     cache = get_analytics_cache()
-    cache_key = f"overview:{win_key}"
+    cache_key = f"overview:{win_key}:{apps_sig}"
 
     if not refresh:
         cached = cache.get(cache_key)
@@ -746,6 +793,7 @@ async def get_network_overview_analytics(
             window=win_key,
             warning=str(exc),
             es_reachable=False,
+            settings=settings,
         )
 
     fallback_plex = next(
@@ -800,6 +848,7 @@ async def get_device_analytics(
 ) -> DeviceAnalyticsResponse:
     """Return per-device usage stats, 24-hour access profile, and visited domains."""
     start_t = time.perf_counter()
+    settings = await resolve_effective_analytics_settings(db, settings)
     win_key, _, _ = resolve_time_window(window)
     clean_search = sanitize_domain_search(domain_search)
 
@@ -815,10 +864,14 @@ async def get_device_analytics(
             window=win_key,
             warning="Device does not currently have an IPv4 address assigned.",
             es_reachable=True,
+            settings=settings,
         )
 
     cache = get_analytics_cache()
-    cache_key = f"device:{dev.id}:{dev.ipv4_address}:{win_key}:{clean_search or ''}"
+    apps_sig = ",".join(settings.enabled_telemetry_app_list)
+    cache_key = (
+        f"device:{dev.id}:{dev.ipv4_address}:{win_key}:{clean_search or ''}:{apps_sig}"
+    )
     if not refresh:
         cached = cache.get(cache_key)
         if isinstance(cached, DeviceAnalyticsResponse):
@@ -853,6 +906,7 @@ async def get_device_analytics(
             window=win_key,
             warning=str(exc),
             es_reachable=False,
+            settings=settings,
         )
 
     fallback_plex = next(
@@ -878,6 +932,7 @@ async def get_device_analytics(
         device_resp=dev_resp,
         es_data=enriched_es_data,
         window=win_key,
+        settings=settings,
     )
     ttl = resolve_telemetry_cache_ttl(win_key)
     cache.set(cache_key, response, ttl_seconds=ttl)

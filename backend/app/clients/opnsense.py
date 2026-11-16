@@ -12,6 +12,20 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings
 
+WELL_KNOWN_PORT_DESCRIPTIONS: dict[int, str] = {
+    22: "SSH Server",
+    80: "HTTP Web Server",
+    443: "HTTPS Reverse Proxy",
+    500: "IKEv2 / IPsec VPN",
+    1194: "OpenVPN Server",
+    3389: "Remote Desktop (RDP)",
+    8080: "HTTP Alternate",
+    8443: "HTTPS Alternate",
+    25565: "Minecraft Server",
+    32400: "Plex Media Server",
+    51820: "WireGuard VPN",
+}
+
 YOUTUBE_BLOCK_DOMAINS: tuple[str, ...] = (
     "youtube.com",
     "www.youtube.com",
@@ -75,6 +89,35 @@ class OPNsenseClientError(Exception):
         self.status_code = status_code
 
 
+DEFAULT_OPNSENSE_VERSION_FALLBACK = "26.7.7"
+
+
+def extract_opnsense_version(
+    payload: Any, fallback: str = DEFAULT_OPNSENSE_VERSION_FALLBACK
+) -> str:
+    """Extract a clean OPNsense version string from firmware/system JSON payloads."""
+    if not isinstance(payload, dict):
+        return fallback
+    candidates: list[Any] = [
+        payload.get("product_version"),
+        payload.get("version"),
+        payload.get("product", {}).get("product_version")
+        if isinstance(payload.get("product"), dict)
+        else None,
+    ]
+    for raw in candidates:
+        if isinstance(raw, str):
+            cleaned = raw.strip()
+            if not cleaned:
+                continue
+            cleaned = cleaned.replace("OPNsense", "").strip()
+            if "-" in cleaned:
+                cleaned = cleaned.split("-", 1)[0].strip()
+            if cleaned:
+                return cleaned
+    return fallback
+
+
 class OPNsenseClient:
     """Async client for OPNsense 26.7.7-amd64 MVC endpoints."""
 
@@ -102,6 +145,11 @@ class OPNsenseClient:
             settings,
             "opnsense_custom_devices_alias",
             "gateway_custom_blocked_devices",
+        )
+        self._wan_block_alias = getattr(
+            settings,
+            "opnsense_wan_block_alias",
+            "gateway_wan_blocked_ips",
         )
         self._auth = (
             settings.opnsense_api_key.get_secret_value(),
@@ -605,6 +653,151 @@ class OPNsenseClient:
             "device_ips": synced_ips,
         }
 
+    async def ensure_wan_block_alias_exists(self) -> str:
+        """Ensure the external WAN IP blocklist alias (`gateway_wan_blocked_ips`) exists."""
+        async with self._create_http_client() as client:
+            uuid_resp = await client.get(
+                f"/api/firewall/alias/get_alias_uuid/{self._wan_block_alias}"
+            )
+            uuid_val: str | None = None
+            if uuid_resp.status_code == 200:
+                payload = uuid_resp.json()
+                if isinstance(payload, dict) and payload.get("uuid"):
+                    uuid_val = str(payload["uuid"])
+            if not uuid_val:
+                add_resp = await client.post(
+                    "/api/firewall/alias/add_item",
+                    json={
+                        "alias": {
+                            "enabled": "1",
+                            "name": self._wan_block_alias,
+                            "type": "host",
+                            "content": "",
+                            "description": (
+                                "External WAN IP blocklist managed by Gateway Controller"
+                            ),
+                        }
+                    },
+                )
+                self._raise_for_status(
+                    add_resp, f"alias/add_item/{self._wan_block_alias}"
+                )
+                add_payload = add_resp.json()
+                if isinstance(add_payload, dict) and add_payload.get("result") not in (
+                    None,
+                    "saved",
+                    "ok",
+                ):
+                    raise OPNsenseClientError(
+                        f"OPNsense alias add_item rejected creation of "
+                        f"'{self._wan_block_alias}': {add_payload}",
+                        status_code=400,
+                    )
+                reconf_resp = await client.post(
+                    "/api/firewall/alias/reconfigure", json={}
+                )
+                self._raise_for_status(reconf_resp, "alias/reconfigure")
+        return self._wan_block_alias
+
+    async def list_wan_blocked_ips(self) -> list[str]:
+        """List external WAN IPs currently persisted in `gateway_wan_blocked_ips`."""
+        try:
+            await self.ensure_wan_block_alias_exists()
+            async with self._create_http_client() as client:
+                return await self._list_alias_ips_via_config_api(
+                    client, self._wan_block_alias
+                )
+        except OPNsenseClientError as exc:
+            if exc.status_code in (400, 403, 404):
+                try:
+                    return await self.list_blocked_alias_ips(self._wan_block_alias)
+                except OPNsenseClientError as inner_exc:
+                    if inner_exc.status_code in (400, 404):
+                        return []
+                    raise
+            raise
+
+    async def add_ip_to_wan_block_alias(self, ip: str) -> list[str]:
+        """Add an external IPv4 to persistent `gateway_wan_blocked_ips` and reconfigure."""
+        valid_ip = validate_ipv4_address(ip)
+        await self.ensure_wan_block_alias_exists()
+        try:
+            async with self._create_http_client() as client:
+                ips = await self._mutate_alias_ips_via_config_api(
+                    client, self._wan_block_alias, add_ip=valid_ip
+                )
+        except OPNsenseClientError as exc:
+            if exc.status_code in (400, 403, 404):
+                ips = await self.add_ip_to_block_alias(
+                    valid_ip, alias_name=self._wan_block_alias
+                )
+            else:
+                raise
+        try:
+            async with self._create_http_client() as client:
+                await client.post(
+                    f"/api/firewall/alias_util/add/{self._wan_block_alias}",
+                    json={"address": valid_ip},
+                )
+        except httpx.HTTPError:
+            pass
+        try:
+            await self.kill_states_for_ip(valid_ip)
+        except (OPNsenseClientError, httpx.HTTPError):
+            pass
+        return ips
+
+    async def remove_ip_from_wan_block_alias(self, ip: str) -> list[str]:
+        """Remove an external IPv4 from persistent `gateway_wan_blocked_ips` and reconfigure."""
+        valid_ip = validate_ipv4_address(ip)
+        try:
+            async with self._create_http_client() as client:
+                ips = await self._mutate_alias_ips_via_config_api(
+                    client, self._wan_block_alias, remove_ip=valid_ip
+                )
+        except OPNsenseClientError as exc:
+            if exc.status_code == 404:
+                return []
+            if exc.status_code in (400, 403):
+                try:
+                    return await self.remove_ip_from_block_alias(
+                        valid_ip, alias_name=self._wan_block_alias
+                    )
+                except OPNsenseClientError as inner_exc:
+                    if inner_exc.status_code in (400, 404):
+                        return []
+                    raise
+            raise
+        try:
+            async with self._create_http_client() as client:
+                await client.post(
+                    f"/api/firewall/alias_util/delete/{self._wan_block_alias}",
+                    json={"address": valid_ip},
+                )
+        except httpx.HTTPError:
+            pass
+        return ips
+
+    async def _detect_opnsense_version(self) -> str:
+        """Probe OPNsense firmware running version when permitted; fall back safely."""
+        if getattr(self._settings, "app_env", "") == "testing":
+            return DEFAULT_OPNSENSE_VERSION_FALLBACK
+        try:
+            async with self._create_http_client() as client:
+                for endpoint in (
+                    "/api/core/firmware/running",
+                    "/api/core/firmware/info",
+                    "/api/core/firmware/status",
+                ):
+                    resp = await client.get(endpoint)
+                    if resp.status_code == 200:
+                        detected = extract_opnsense_version(resp.json())
+                        if detected:
+                            return detected
+        except Exception:  # noqa: S110
+            pass
+        return DEFAULT_OPNSENSE_VERSION_FALLBACK
+
     @staticmethod
     def _raise_for_status(resp: httpx.Response, endpoint_label: str) -> None:
         if resp.status_code in (401, 403):
@@ -652,6 +845,7 @@ class OPNsenseClient:
         # Check whether the configured block alias exists and is queryable
         try:
             blocked_ips = await self.list_blocked_alias_ips()
+            opnsense_version = await self._detect_opnsense_version()
             elapsed = round((time.perf_counter() - start) * 1000, 2)
             return ServiceHealthStatus(
                 service="opnsense",
@@ -660,6 +854,7 @@ class OPNsenseClient:
                 message="OPNsense API connected (ARP, Dnsmasq leases, and block alias verified).",
                 details={
                     "base_url": self._base_url,
+                    "version": opnsense_version,
                     "arp_count": len(arp_entries),
                     "dnsmasq_lease_count": len(lease_entries),
                     "block_alias": self._alias_name,
@@ -667,6 +862,7 @@ class OPNsenseClient:
                 },
             )
         except (OPNsenseClientError, httpx.HTTPError) as exc:
+            opnsense_version = await self._detect_opnsense_version()
             elapsed = round((time.perf_counter() - start) * 1000, 2)
             return ServiceHealthStatus(
                 service="opnsense",
@@ -678,20 +874,19 @@ class OPNsenseClient:
                 ),
                 details={
                     "base_url": self._base_url,
+                    "version": opnsense_version,
                     "arp_count": len(arp_entries),
                     "dnsmasq_lease_count": len(lease_entries),
                     "block_alias": self._alias_name,
                 },
             )
 
-    async def get_destination_nat_mappings(
+    async def get_destination_nat_details(
         self,
-    ) -> dict[tuple[str, int, str], int]:
-        """Discover external WAN port -> internal `(lan_ip, lan_port, proto)` mappings
-        from OPNsense Destination NAT rules (`/api/firewall/d_nat/searchRule`) and
-        active PF state table entries (`/api/diagnostics/firewall/query_states`).
-        """
+    ) -> tuple[dict[tuple[str, int, str], int], dict[tuple[str, int, str], str]]:
+        """Discover external WAN port mappings and rule descriptions from OPNsense D-NAT."""
         mappings: dict[tuple[str, int, str], int] = {}
+        descriptions: dict[tuple[str, int, str], str] = {}
         try:
             async with self._create_http_client() as client:
                 # 1. Try MVC Destination NAT rules if privilege is assigned
@@ -723,12 +918,18 @@ class OPNsenseClient:
                                 .strip()
                                 .lower()
                             )
+                            descr = str(
+                                row.get("descr") or row.get("description") or ""
+                            ).strip()
                             if (
                                 target_ip
                                 and local_p.isdigit()
                                 and ext_p.isdigit()
                             ):
-                                mappings[(target_ip, int(local_p), proto)] = int(ext_p)
+                                key = (target_ip, int(local_p), proto)
+                                mappings[key] = int(ext_p)
+                                if descr:
+                                    descriptions[key] = descr
                 except httpx.HTTPError:
                     pass
 
@@ -768,4 +969,11 @@ class OPNsenseClient:
                     pass
         except Exception:  # noqa: S110
             pass
+        return mappings, descriptions
+
+    async def get_destination_nat_mappings(
+        self,
+    ) -> dict[tuple[str, int, str], int]:
+        """Discover external WAN port -> internal `(lan_ip, lan_port, proto)` mappings."""
+        mappings, _ = await self.get_destination_nat_details()
         return mappings

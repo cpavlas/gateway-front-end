@@ -1,9 +1,11 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
+  Ban,
   Clock,
+  ExternalLink,
   Globe,
   MapPin,
   Network,
@@ -11,10 +13,12 @@ import {
   Search,
   Server,
   ShieldCheck,
+  Unlock,
   X,
 } from 'lucide-react'
 import {
   apiClient,
+  buildGoogleMapsUrl,
   formatActiveMinutes,
   formatBytes,
   formatClock24h,
@@ -44,6 +48,10 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
   const queryClient = useQueryClient()
   const [windowKey, setWindowKey] = useState<TimeWindow>(initialWindow)
   const [searchInput, setSearchInput] = useState<string>('')
+  const [wanFeedback, setWanFeedback] = useState<{
+    kind: 'success' | 'error'
+    text: string
+  } | null>(null)
   const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
   const destinationIp = openPort?.destination_ip ?? ''
@@ -78,7 +86,7 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
         search: searchInput.trim() || undefined,
       }),
     enabled: openPort !== null,
-    refetchInterval,
+    refetchInterval: false,
     placeholderData: (previousData) => previousData,
   })
 
@@ -98,6 +106,54 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
     },
   })
 
+  const refreshFnRef = useRef<() => void>(() => { })
+  refreshFnRef.current = () => {
+    refreshMutation.mutate()
+  }
+
+  useEffect(() => {
+    if (openPort === null || typeof refetchInterval !== 'number' || refetchInterval <= 0) {
+      return undefined
+    }
+    const timerId = window.setInterval(() => {
+      refreshFnRef.current()
+    }, refetchInterval)
+    return () => window.clearInterval(timerId)
+  }, [openPort, refetchInterval])
+
+  const wanBlockMutation = useMutation({
+    mutationFn: async (vars: { ip: string; block: boolean; note?: string }) => {
+      if (vars.block) {
+        return apiClient.blockExternalWanIp({
+          ip_address: vars.ip,
+          reason: vars.note,
+        })
+      }
+      return apiClient.unblockExternalWanIp(vars.ip)
+    },
+    onSuccess: (res) => {
+      const verb = res.blocked ? 'Blocked' : 'Unblocked'
+      const warnText = res.warning ? ` (${res.warning})` : ''
+      setWanFeedback({
+        kind: 'success',
+        text: `${verb} external WAN IP ${res.ip_address} in OPNsense alias ${res.alias_name}.${warnText}`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['firewallOverview'] })
+      void queryClient.invalidateQueries({ queryKey: ['firewallOpenPortSessions'] })
+      void queryClient.invalidateQueries({ queryKey: ['wanBlockedIps'] })
+      refreshMutation.mutate()
+    },
+    onError: (err) => {
+      setWanFeedback({
+        kind: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Failed to update external WAN IP blocklist.',
+      })
+    },
+  })
+
   if (openPort === null) {
     return null
   }
@@ -107,7 +163,9 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
     sessions?.port_mapping ||
     openPort.port_mapping ||
     `${externalPort}:${destinationPort}`
+  const ruleDescription = sessions?.rule_description || openPort.rule_description
   const summary = sessions?.summary
+  const countryBreakdown = summary?.country_breakdown ?? []
   const connectedIps = sessions?.external_ips ?? []
   const recentEvents = sessions?.recent_events ?? []
   const lastUpdatedClock = formatClock24h(sessions?.generated_at || dataUpdatedAt)
@@ -130,6 +188,14 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
               <span className="rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-xs font-semibold text-amber-300">
                 {portMapping} / {protocol.toUpperCase()}
               </span>
+              {ruleDescription && (
+                <span
+                  data-testid="open-port-drawer-rule-desc"
+                  className="rounded border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-200"
+                >
+                  {ruleDescription}
+                </span>
+              )}
             </div>
             <p className="mt-1 font-mono text-xs text-slate-400">
               Target LAN Host: {destinationIp} • Inbound WAN Permitted Sessions Inspector
@@ -162,11 +228,10 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                 type="button"
                 data-testid={`open-port-drawer-window-${w.key}`}
                 onClick={() => setWindowKey(w.key)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  windowKey === w.key
-                    ? 'bg-indigo-600 text-white'
-                    : 'border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${windowKey === w.key
+                  ? 'bg-indigo-600 text-white'
+                  : 'border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-800'
+                  }`}
               >
                 {w.label}
               </button>
@@ -185,9 +250,8 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-60 cursor-pointer shrink-0"
               >
                 <RefreshCw
-                  className={`h-4 w-4 ${
-                    isFetching || refreshMutation.isPending ? 'animate-spin' : ''
-                  }`}
+                  className={`h-4 w-4 ${isFetching || refreshMutation.isPending ? 'animate-spin' : ''
+                    }`}
                   aria-hidden="true"
                 />
               </button>
@@ -211,6 +275,25 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
 
         {/* Drawer Body */}
         <div className="flex-1 space-y-5 overflow-y-auto p-6">
+          {wanFeedback && (
+            <div
+              data-testid="open-port-wan-feedback"
+              className={`flex items-center justify-between gap-2.5 rounded-xl border p-3.5 text-xs ${wanFeedback.kind === 'success'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+                }`}
+            >
+              <span>{wanFeedback.text}</span>
+              <button
+                type="button"
+                onClick={() => setWanFeedback(null)}
+                className="text-slate-300 hover:text-white cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {sessions?.warning && (
             <div
               data-testid="open-port-drawer-warning"
@@ -290,6 +373,28 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                 </div>
               </div>
 
+              {countryBreakdown.length > 0 && (
+                <div
+                  data-testid="open-port-country-breakdown"
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3.5 py-2.5 text-xs"
+                >
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Country Breakdown:
+                  </span>
+                  {countryBreakdown.map((c) => (
+                    <span
+                      key={c.country_name}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-[11px] text-indigo-200"
+                    >
+                      <span>{c.country_name}</span>
+                      <span className="font-mono font-bold text-indigo-300">
+                        {c.doc_count.toLocaleString()}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Search Filter */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -339,116 +444,174 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                         <th className="py-2.5 px-3">Connection Length &amp; Activity</th>
                         <th className="py-2.5 px-3 text-right">Packets &amp; Volume</th>
                         <th className="py-2.5 px-3">Session Telemetry</th>
+                        <th className="py-2.5 px-3 text-right">WAN Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
-                      {connectedIps.map((item) => (
-                        <tr
-                          key={item.source_ip}
-                          data-testid={`open-port-ext-ip-row-${item.source_ip}`}
-                          className="hover:bg-slate-800/40"
-                        >
-                          <td className="py-3 px-3 align-top">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-amber-300">
-                                {item.source_ip}
-                              </span>
-                              {item.asn !== null && (
-                                <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
-                                  AS{item.asn}
+                      {connectedIps.map((item) => {
+                        const mapUrl = buildGoogleMapsUrl(
+                          item.latitude,
+                          item.longitude,
+                          item.location_label,
+                        )
+                        return (
+                          <tr
+                            key={item.source_ip}
+                            data-testid={`open-port-ext-ip-row-${item.source_ip}`}
+                            className="hover:bg-slate-800/40"
+                          >
+                            <td className="py-3 px-3 align-top">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-amber-300">
+                                  {item.source_ip}
                                 </span>
-                              )}
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
-                              <Server className="h-3 w-3 shrink-0 text-slate-500" />
-                              <span className="truncate max-w-[220px]">
-                                {item.organization || 'Unknown ISP / ASN'}
-                              </span>
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3 align-top">
-                            <div className="flex items-center gap-1.5 font-medium text-slate-200">
-                              <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-                              <span>{item.location_label}</span>
-                              {item.country_iso_code && (
-                                <span className="rounded bg-indigo-500/20 border border-indigo-500/30 px-1.5 py-0.5 font-mono text-[10px] font-bold text-indigo-300">
-                                  {item.country_iso_code}
-                                </span>
-                              )}
-                            </div>
-                            {item.latitude !== null && item.longitude !== null && (
-                              <p className="mt-0.5 font-mono text-[10px] text-slate-500">
-                                Coords: {item.latitude.toFixed(3)},{' '}
-                                {item.longitude.toFixed(3)}
-                              </p>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-3 align-top">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">
-                                <Clock className="h-3 w-3" />
-                                {item.connection_duration_label}
-                              </span>
-                              <span className="font-mono text-[11px] text-cyan-300">
-                                ({formatActiveMinutes(item.active_duration_minutes)} active)
-                              </span>
-                            </div>
-                            <div className="mt-1 space-y-0.5 font-mono text-[10px] text-slate-400">
-                              {item.first_seen_at && (
-                                <div>
-                                  First:{' '}
-                                  {new Date(item.first_seen_at).toLocaleString([], {
-                                    hour12: false,
-                                  })}
-                                </div>
-                              )}
-                              {item.last_seen_at && (
-                                <div>
-                                  Last:{' '}
-                                  {new Date(item.last_seen_at).toLocaleString([], {
-                                    hour12: false,
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3 text-right align-top font-mono">
-                            <div className="font-bold text-emerald-300">
-                              {item.passed_packets.toLocaleString()} pkts
-                            </div>
-                            <div className="text-[11px] text-slate-300">
-                              {formatBytes(item.bytes)}
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3 align-top text-[11px]">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {item.tcp_flags && (
-                                <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-300">
-                                  Flags: {item.tcp_flags}
-                                </span>
-                              )}
-                              {item.ttl !== null && (
-                                <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
-                                  TTL {item.ttl}
-                                </span>
-                              )}
-                            </div>
-                            {item.source_ports.length > 0 && (
-                              <div className="mt-1 font-mono text-[10px] text-slate-400">
-                                Src Ports:{' '}
-                                {item.source_ports
-                                  .slice(0, 6)
-                                  .map((p) => `:${p}`)
-                                  .join(', ')}
+                                {item.asn !== null && (
+                                  <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
+                                    AS{item.asn}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                              <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
+                                <Server className="h-3 w-3 shrink-0 text-slate-500" />
+                                <span className="truncate max-w-[220px]">
+                                  {item.organization || 'Unknown ISP / ASN'}
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 align-top">
+                              <div className="flex items-center gap-1.5 font-medium text-slate-200">
+                                <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                                {mapUrl ? (
+                                  <a
+                                    href={mapUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    data-testid={`open-port-geo-map-${item.source_ip}`}
+                                    className="inline-flex items-center gap-1 text-indigo-300 hover:text-indigo-200 hover:underline"
+                                    title="Open location in Google Maps"
+                                  >
+                                    <span>{item.location_label}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                  </a>
+                                ) : (
+                                  <span>{item.location_label}</span>
+                                )}
+                                {item.country_iso_code && (
+                                  <span className="rounded bg-indigo-500/20 border border-indigo-500/30 px-1.5 py-0.5 font-mono text-[10px] font-bold text-indigo-300">
+                                    {item.country_iso_code}
+                                  </span>
+                                )}
+                              </div>
+                              {item.latitude !== null && item.longitude !== null && (
+                                <p className="mt-0.5 font-mono text-[10px] text-slate-500">
+                                  Coords: {item.latitude.toFixed(3)},{' '}
+                                  {item.longitude.toFixed(3)}
+                                </p>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3 align-top">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">
+                                  <Clock className="h-3 w-3" />
+                                  {item.connection_duration_label}
+                                </span>
+                                <span className="font-mono text-[11px] text-cyan-300">
+                                  ({formatActiveMinutes(item.active_duration_minutes)} active)
+                                </span>
+                              </div>
+                              <div className="mt-1 space-y-0.5 font-mono text-[10px] text-slate-400">
+                                {item.first_seen_at && (
+                                  <div>
+                                    First:{' '}
+                                    {new Date(item.first_seen_at).toLocaleString([], {
+                                      hour12: false,
+                                    })}
+                                  </div>
+                                )}
+                                {item.last_seen_at && (
+                                  <div>
+                                    Last:{' '}
+                                    {new Date(item.last_seen_at).toLocaleString([], {
+                                      hour12: false,
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 text-right align-top font-mono">
+                              <div className="font-bold text-emerald-300">
+                                {item.passed_packets.toLocaleString()} pkts
+                              </div>
+                              <div className="text-[11px] text-slate-300">
+                                {formatBytes(item.bytes)}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 align-top text-[11px]">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {item.tcp_flags && (
+                                  <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-300">
+                                    Flags: {item.tcp_flags}
+                                  </span>
+                                )}
+                                {item.ttl !== null && (
+                                  <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
+                                    TTL {item.ttl}
+                                  </span>
+                                )}
+                              </div>
+                              {item.source_ports.length > 0 && (
+                                <div className="mt-1 font-mono text-[10px] text-slate-400">
+                                  Src Ports:{' '}
+                                  {item.source_ports
+                                    .slice(0, 6)
+                                    .map((p) => `:${p}`)
+                                    .join(', ')}
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3 text-right align-top">
+                              <button
+                                type="button"
+                                data-testid={`open-port-wan-block-${item.source_ip}`}
+                                disabled={wanBlockMutation.isPending}
+                                onClick={() =>
+                                  wanBlockMutation.mutate({
+                                    ip: item.source_ip,
+                                    block: !item.is_wan_blocked,
+                                    note: `Open port ${portMapping} (${effectiveName})`,
+                                  })
+                                }
+                                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer disabled:opacity-60 ${item.is_wan_blocked
+                                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                                  : 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
+                                  }`}
+                                title={
+                                  item.is_wan_blocked
+                                    ? `Remove ${item.source_ip} from OPNsense WAN blocklist`
+                                    : `Block ${item.source_ip} at OPNsense WAN`
+                                }
+                              >
+                                {item.is_wan_blocked ? (
+                                  <>
+                                    <Unlock className="h-3 w-3" aria-hidden="true" />
+                                    <span>Blocked at WAN</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Ban className="h-3 w-3" aria-hidden="true" />
+                                    <span>Block at WAN</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -484,42 +647,61 @@ export const FirewallOpenPortSessionsDrawer: React.FC<
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60">
-                        {recentEvents.map((ev, idx) => (
-                          <tr
-                            key={`${ev.timestamp}-${ev.source_ip}-${idx}`}
-                            className="hover:bg-slate-800/40"
-                          >
-                            <td className="py-2 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
-                              {new Date(ev.timestamp).toLocaleString([], {
-                                hour12: false,
-                              })}
-                            </td>
-                            <td className="py-2 px-3">
-                              <div className="font-mono text-amber-300">
-                                {ev.source_ip}
-                                {ev.source_port !== null ? `:${ev.source_port}` : ''}
-                              </div>
-                              {ev.organization && (
-                                <div className="truncate max-w-[180px] text-[10px] text-slate-400">
-                                  {ev.organization}
+                        {recentEvents.map((ev, idx) => {
+                          const evMapUrl = buildGoogleMapsUrl(
+                            ev.latitude,
+                            ev.longitude,
+                            ev.location_label,
+                          )
+                          return (
+                            <tr
+                              key={`${ev.timestamp}-${ev.source_ip}-${idx}`}
+                              className="hover:bg-slate-800/40"
+                            >
+                              <td className="py-2 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                                {new Date(ev.timestamp).toLocaleString([], {
+                                  hour12: false,
+                                })}
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="font-mono text-amber-300">
+                                  {ev.source_ip}
+                                  {ev.source_port !== null ? `:${ev.source_port}` : ''}
                                 </div>
-                              )}
-                            </td>
-                            <td className="py-2 px-3 text-[11px] text-slate-300">
-                              {ev.location_label}
-                            </td>
-                            <td className="py-2 px-3 font-mono text-[11px] text-slate-300">
-                              {ev.tcp_flags ? `Flags: ${ev.tcp_flags}` : '—'}
-                              {ev.ttl !== null ? ` • TTL ${ev.ttl}` : ''}
-                            </td>
-                            <td className="py-2 px-3 font-mono text-[11px] text-slate-400">
-                              {ev.interface}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-slate-300">
-                              {formatBytes(ev.bytes)}
-                            </td>
-                          </tr>
-                        ))}
+                                {ev.organization && (
+                                  <div className="truncate max-w-[180px] text-[10px] text-slate-400">
+                                    {ev.organization}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-[11px] text-slate-300">
+                                {evMapUrl ? (
+                                  <a
+                                    href={evMapUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-indigo-300 hover:underline"
+                                  >
+                                    <span>{ev.location_label}</span>
+                                    <ExternalLink className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+                                  </a>
+                                ) : (
+                                  ev.location_label
+                                )}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-[11px] text-slate-300">
+                                {ev.tcp_flags ? `Flags: ${ev.tcp_flags}` : '—'}
+                                {ev.ttl !== null ? ` • TTL ${ev.ttl}` : ''}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-[11px] text-slate-400">
+                                {ev.interface}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-300">
+                                {formatBytes(ev.bytes)}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -18,7 +18,7 @@ from app.clients.elasticsearch import (
     sanitize_domain_search,
 )
 from app.clients.opnsense import OPNsenseClient, OPNsenseClientError
-from app.config import Settings
+from app.config import Settings, apply_runtime_overrides
 from app.models import (
     AuditLog,
     Device,
@@ -41,6 +41,7 @@ from app.services.analytics_service import (
     _build_zero_hourly_profile,
     _parse_app_usage_items,
     get_analytics_cache,
+    resolve_effective_analytics_settings,
 )
 from app.services.audit_and_backup_service import record_upstream_error_audit_log
 from app.services.device_service import (
@@ -394,6 +395,7 @@ def _build_empty_group_analytics_response(
     window: str,
     warning: str,
     es_reachable: bool = False,
+    settings: Settings | None = None,
 ) -> GroupAnalyticsResponse:
     """Return a zero-state GroupAnalyticsResponse when group has no IPs or ES is unreachable."""
     member_breakdown = [
@@ -434,6 +436,7 @@ def _build_empty_group_analytics_response(
         top_registered_domains=[],
         top_organizations=[],
         recent_queries=[],
+        application_usage=_build_zero_app_usage(settings),
     )
 
 
@@ -442,6 +445,7 @@ def _assemble_group_analytics_response(
     tracked_ips: list[str],
     es_data: dict[str, Any],
     window: str,
+    settings: Settings | None = None,
 ) -> GroupAnalyticsResponse:
     """Assemble a typed GroupAnalyticsResponse joining ES member IP buckets with SQLite members."""
     raw_summary = es_data.get("summary") or {}
@@ -526,8 +530,45 @@ def _assemble_group_analytics_response(
             TopOrganizationItem(**o) for o in (es_data.get("top_organizations") or [])
         ],
         recent_queries=recent_queries,
-        application_usage=_parse_app_usage_items(es_data),
+        application_usage=_parse_app_usage_items(es_data, settings=settings),
     )
+
+
+def select_group_devices_to_auto_unblock_youtube(
+    member_devices: list[Device],
+    *,
+    group_override: ActiveOverrideInfo | None,
+    group_schedule: ActiveScheduleInfo | None,
+    overrides_by_device: dict[int, ActiveOverrideInfo],
+    schedules_by_device: dict[int, ActiveScheduleInfo],
+) -> list[Device]:
+    """Return YouTube-blocked non-protected members eligible for auto-unblock (`FB-P18-004`)."""
+    if group_override and group_override.mode == "pause":
+        return []
+    if group_schedule and group_schedule.block_mode == "youtube":
+        return []
+    eligible: list[Device] = []
+    for d in member_devices:
+        if not d.is_youtube_blocked or d.is_protected:
+            continue
+        dev_ov = overrides_by_device.get(d.id)
+        if dev_ov and dev_ov.mode == "pause":
+            continue
+        dev_sched = schedules_by_device.get(d.id)
+        if dev_sched and dev_sched.block_mode == "youtube":
+            continue
+        eligible.append(d)
+    return eligible
+
+
+def mark_devices_youtube_unblocked(devices: list[Device], now: datetime) -> list[str]:
+    """Mark eligible devices YouTube-unblocked in ORM and return display labels (`FB-P18-004`)."""
+    names: list[str] = []
+    for d in devices:
+        d.is_youtube_blocked = False
+        d.updated_at = now
+        names.append(d.display_name or d.hostname or d.ipv4_address or d.mac_address)
+    return names
 
 
 def _require_group_or_404(group: DeviceGroup | None, group_id: int) -> DeviceGroup:
@@ -793,12 +834,15 @@ async def update_group(
     *,
     actor: str,
     client_ip: str | None = None,
+    opnsense: OPNsenseClient | None = None,
+    es_client: ElasticsearchServiceClient | None = None,
 ) -> GroupResponse:
     """Update a device group's metadata and/or member device list."""
     raw_grp = (
         await db.execute(select(DeviceGroup).where(DeviceGroup.id == group_id))
     ).scalar_one_or_none()
     grp = _require_group_or_404(raw_grp, group_id)
+    prev_yt_limit = grp.daily_youtube_limit_minutes
 
     new_name = payload.name if payload.name is not None else grp.name
     new_color = payload.color_badge if payload.color_badge is not None else grp.color_badge
@@ -842,13 +886,89 @@ async def update_group(
     if payload.device_ids is not None:
         await _sync_group_memberships(db, grp.id, payload.device_ids)
 
+    auto_unblocked_names: list[str] = []
+    if (
+        "daily_youtube_limit_minutes" in payload.model_fields_set
+        and prev_yt_limit is not None
+        and prev_yt_limit > 0
+    ):
+        memberships = list(
+            (
+                await db.execute(
+                    select(DeviceGroupMembership).where(
+                        DeviceGroupMembership.group_id == grp.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        member_ids = [m.device_id for m in memberships]
+        member_devs = (
+            list(
+                (await db.execute(select(Device).where(Device.id.in_(member_ids))))
+                .scalars()
+                .all()
+            )
+            if member_ids
+            else []
+        )
+
+        quota_cleared_or_raised = False
+        if grp.daily_youtube_limit_minutes is None:
+            quota_cleared_or_raised = True
+        else:
+            yt_map = await resolve_group_today_youtube_minutes(
+                settings, [grp], memberships, member_devs, es_client=es_client
+            )
+            today_yt_mins = yt_map.get(grp.id, 0)
+            if grp.daily_youtube_limit_minutes > today_yt_mins:
+                quota_cleared_or_raised = True
+
+        if quota_cleared_or_raised and member_devs:
+            overrides_by_device, overrides_by_group = await load_active_override_maps(db)
+            schedules_by_device, schedules_by_group = await get_active_schedule_maps(db)
+            to_unblock = select_group_devices_to_auto_unblock_youtube(
+                member_devs,
+                group_override=overrides_by_group.get(grp.id),
+                group_schedule=schedules_by_group.get(grp.id),
+                overrides_by_device=overrides_by_device,
+                schedules_by_device=schedules_by_device,
+            )
+            if to_unblock:
+                active_opn: OPNsenseClient | None = (
+                    opnsense
+                    if opnsense is not None
+                    else (
+                        OPNsenseClient(apply_runtime_overrides(settings))
+                        if settings.app_env != "testing"
+                        else None
+                    )
+                )
+                now = utc_now()
+                for d in to_unblock:
+                    if d.ipv4_address and active_opn is not None:
+                        try:
+                            await active_opn.remove_ip_from_youtube_block_alias(
+                                d.ipv4_address
+                            )
+                        except (OPNsenseClientError, httpx.HTTPError):
+                            pass
+                auto_unblocked_names = mark_devices_youtube_unblocked(to_unblock, now)
+
+    details_msg = f"Updated group '{grp.name}'."
+    if auto_unblocked_names:
+        details_msg += (
+            f" Auto-unblocked YouTube after quota cleared/raised for: "
+            f"{', '.join(auto_unblocked_names)}."
+        )
     db.add(
         AuditLog(
             actor=actor,
             action="group.update",
             target=grp.name,
             status="success",
-            details=f"Updated group '{grp.name}'.",
+            details=details_msg,
         )
     )
     await db.commit()
@@ -1276,6 +1396,7 @@ async def get_group_analytics(
     client_ip: str | None = None,
 ) -> GroupAnalyticsResponse:
     """Return multi-IP usage stats, per-member breakdown, 24h access profile, and domains."""
+    settings = await resolve_effective_analytics_settings(db, settings)
     win_key, _, _ = resolve_time_window(window)
     clean_search = sanitize_domain_search(domain_search)
     grp_resp = await get_group_by_id(db, settings, group_id, client_ip=client_ip)
@@ -1290,11 +1411,13 @@ async def get_group_analytics(
             window=win_key,
             warning="No member devices with an IPv4 address are assigned to this group yet.",
             es_reachable=True,
+            settings=settings,
         )
 
     cache = get_analytics_cache()
     ips_sig = ",".join(tracked_ips)
-    cache_key = f"group:{grp_resp.id}:{ips_sig}:{win_key}:{clean_search or ''}"
+    apps_sig = ",".join(settings.enabled_telemetry_app_list)
+    cache_key = f"group:{grp_resp.id}:{ips_sig}:{win_key}:{clean_search or ''}:{apps_sig}"
     if not refresh:
         cached = cache.get(cache_key)
         if isinstance(cached, GroupAnalyticsResponse):
@@ -1319,6 +1442,7 @@ async def get_group_analytics(
             window=win_key,
             warning=str(exc),
             es_reachable=False,
+            settings=settings,
         )
 
     member_ids = [m.id for m in grp_resp.members]
@@ -1351,6 +1475,7 @@ async def get_group_analytics(
         tracked_ips=tracked_ips,
         es_data=enriched_es_data,
         window=win_key,
+        settings=settings,
     )
     if win_key == "today":
         yt_app = next(

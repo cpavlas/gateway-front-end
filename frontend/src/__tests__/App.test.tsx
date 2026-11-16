@@ -175,7 +175,8 @@ describe('Phase 1 Frontend SPA Shell, Auth & Health Dashboard', () => {
     expect(await screen.findByTestId('overall-health-badge')).toHaveTextContent('healthy')
 
     const opnsenseCard = screen.getByTestId('service-card-opnsense')
-    expect(within(opnsenseCard).getByText('OPNsense REST API (26.7.7-amd64)')).toBeInTheDocument()
+    expect(within(opnsenseCard).getByText('OPNsense Firewall')).toBeInTheDocument()
+    expect(within(opnsenseCard).queryByText('OPNsense REST API (26.7.7-amd64)')).not.toBeInTheDocument()
     expect(within(opnsenseCard).getByText('348.3 ms')).toBeInTheDocument()
     expect(within(opnsenseCard).getByText('59')).toBeInTheDocument()
 

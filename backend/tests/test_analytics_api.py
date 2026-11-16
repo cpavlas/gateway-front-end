@@ -475,7 +475,7 @@ async def test_run_telemetry_cache_prewarm_warms_default_24h_caches(
 
     warmed = await run_telemetry_cache_prewarm(force=True)
     assert warmed is True
-    assert get_analytics_cache().get("overview:24h") is not None
+    assert get_analytics_cache().get("overview:24h:youtube,plex") is not None
     assert get_analytics_cache().get("firewall_window:24h") is not None
 
 

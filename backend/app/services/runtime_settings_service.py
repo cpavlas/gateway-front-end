@@ -19,6 +19,7 @@ from app.clients.elasticsearch import ElasticsearchServiceClient, parse_elastics
 from app.clients.opnsense import OPNsenseClient, ServiceHealthStatus
 from app.clients.plex import PlexServiceClient, parse_plex_urls
 from app.config import (
+    ALL_TELEMETRY_APP_KEYS,
     DEFAULT_GATEWAY_IP,
     Settings,
     apply_runtime_overrides,
@@ -26,6 +27,7 @@ from app.config import (
     set_runtime_overrides,
 )
 from app.models import AuditLog, SystemSetting
+from app.services.analytics_service import get_analytics_cache
 
 MASKED_SECRET_PLACEHOLDER = "••••••••"  # noqa: S105
 
@@ -80,6 +82,7 @@ class IntegrationSettingsView(BaseModel):
     plex_api_token_masked: str = ""
     plex_verify_ssl: bool = False
     plex_timeout_seconds: float = 8.0
+    enabled_telemetry_apps: list[str] = Field(default_factory=lambda: ["youtube", "plex"])
     updated_by: str | None = None
     updated_at: str | None = None
 
@@ -104,6 +107,7 @@ class IntegrationSettingsUpdatePayload(BaseModel):
     plex_api_token: str | None = None
     plex_verify_ssl: bool | None = None
     plex_timeout_seconds: float | None = Field(default=None, gt=0.5, le=60.0)
+    enabled_telemetry_apps: list[str] | None = None
 
 
 class ConnectivityTestResponse(BaseModel):
@@ -219,6 +223,27 @@ def validate_and_normalize_protected_ips(raw_ips: str) -> str:
     if DEFAULT_GATEWAY_IP not in validated:
         validated.insert(0, DEFAULT_GATEWAY_IP)
     return ",".join(dict.fromkeys(validated))
+
+
+def validate_and_normalize_enabled_telemetry_apps(
+    raw_apps: list[str] | str,
+) -> str:
+    """Validate and normalize selected application telemetry keys (`FB-P18-008`)."""
+    raw_items = (
+        raw_apps.split(",")
+        if isinstance(raw_apps, str)
+        else list(raw_apps or [])
+    )
+    allowed = set(ALL_TELEMETRY_APP_KEYS)
+    cleaned = [
+        item.strip().lower()
+        for item in raw_items
+        if item and item.strip().lower() in allowed
+    ]
+    deduped = list(dict.fromkeys(cleaned))
+    if not deduped:
+        return "youtube,plex"
+    return ",".join(deduped)
 
 
 def build_troubleshooting_hint(
@@ -358,6 +383,7 @@ def sync_runtime_cache_and_build_view(
         plex_api_token_masked=MASKED_SECRET_PLACEHOLDER if has_plex_tok else "",
         plex_verify_ssl=effective.plex_verify_ssl,
         plex_timeout_seconds=effective.plex_timeout_seconds,
+        enabled_telemetry_apps=effective.enabled_telemetry_app_list,
         updated_by=latest_row.updated_by if latest_row else None,
         updated_at=(
             _normalize_utc_datetime(latest_row.updated_at).isoformat()
@@ -447,6 +473,10 @@ def build_temporary_settings_for_test(
         updates["plex_verify_ssl"] = bool(payload.plex_verify_ssl)
     if payload.plex_timeout_seconds is not None:
         updates["plex_timeout_seconds"] = float(payload.plex_timeout_seconds)
+    if payload.enabled_telemetry_apps is not None:
+        updates["enabled_telemetry_apps"] = validate_and_normalize_enabled_telemetry_apps(
+            payload.enabled_telemetry_apps
+        )
 
     return effective.model_copy(update=updates)
 
@@ -527,6 +557,10 @@ def prepare_persisted_settings_rows(
         ),
         "plex_timeout_seconds": (
             str(merged.plex_timeout_seconds),
+            False,
+        ),
+        "enabled_telemetry_apps": (
+            merged.enabled_telemetry_apps,
             False,
         ),
     }
@@ -659,6 +693,7 @@ async def update_integration_settings(
         db.add(row)
     db.add(audit)
     await db.commit()
+    get_analytics_cache().clear()
     return await get_integration_settings(db, base_settings)
 
 
@@ -681,6 +716,7 @@ async def reset_integration_settings_to_env(
         )
     )
     await db.commit()
+    get_analytics_cache().clear()
     return sync_runtime_cache_and_build_view(base_settings, [])
 
 
@@ -736,6 +772,12 @@ async def _probe_elasticsearch_with_nodes(
         }
         for host, st in zip(hosts, per_host_statuses, strict=True)
     ]
+    if per_host_statuses:
+        avg_latency = round(
+            sum(float(st.latency_ms) for st in per_host_statuses) / len(per_host_statuses),
+            2,
+        )
+        overall_health = overall_health.model_copy(update={"latency_ms": avg_latency})
     return overall_health, node_results
 
 
@@ -810,10 +852,13 @@ async def _probe_plex_with_nodes(
         agg_status = "degraded"
     else:
         agg_status = "unhealthy"
+    avg_latency = round(
+        sum(float(st.latency_ms) for st in per_url_statuses) / len(per_url_statuses), 2
+    )
     health = ServiceHealthStatus(
         service="plex",
         status=agg_status,
-        latency_ms=round(max((st.latency_ms for st in per_url_statuses), default=0.0), 2),
+        latency_ms=avg_latency,
         message=(
             f"{len(healthy_items)}/{len(plex_urls)} Plex server(s) reachable. "
             f"{first_item.message}"
@@ -920,4 +965,91 @@ async def run_all_connectivity_diagnostics(
             "elasticsearch": es_resp,
             "plex": plex_resp,
         },
+    )
+
+
+class TelemetryAppsSettingsResponse(BaseModel):
+    """Response model for visible optional application telemetry categories."""
+
+    enabled_telemetry_apps: list[str]
+    available_telemetry_apps: list[str]
+    source: Literal["ui_override", "env"]
+
+
+class TelemetryAppsUpdatePayload(BaseModel):
+    """Update payload for visible application telemetry categories."""
+
+    enabled_telemetry_apps: list[str]
+
+
+async def get_telemetry_apps_settings(
+    db: AsyncSession, base_settings: Settings
+) -> TelemetryAppsSettingsResponse:
+    """Return active application telemetry visibility settings (`BUG-P19-001`, `FB-P19-004`)."""
+    view = await get_integration_settings(db, base_settings)
+    return TelemetryAppsSettingsResponse(
+        enabled_telemetry_apps=view.enabled_telemetry_apps,
+        available_telemetry_apps=list(ALL_TELEMETRY_APP_KEYS),
+        source=view.source,
+    )
+
+
+async def update_telemetry_apps_settings(
+    db: AsyncSession,
+    base_settings: Settings,
+    payload: TelemetryAppsUpdatePayload,
+    *,
+    actor: str,
+) -> TelemetryAppsSettingsResponse:
+    """Persist enabled application telemetry keys to SQLite and clear analytics caches."""
+    allowed = set(ALL_TELEMETRY_APP_KEYS)
+    raw_items = [str(item).strip().lower() for item in (payload.enabled_telemetry_apps or [])]
+    cleaned = [item for item in raw_items if item]
+    invalid = [item for item in cleaned if item not in allowed]
+    if invalid:
+        raise ValueError(
+            f"Unsupported telemetry app keys: {', '.join(invalid)}. "
+            f"Allowed: {', '.join(ALL_TELEMETRY_APP_KEYS)}"
+        )
+    deduped = list(dict.fromkeys(cleaned))
+    if not deduped:
+        raise ValueError("Select at least one application telemetry category.")
+    normalized = ",".join(deduped)
+
+    existing_row = (
+        await db.execute(
+            select(SystemSetting).where(SystemSetting.key == "enabled_telemetry_apps")
+        )
+    ).scalar_one_or_none()
+    if existing_row is not None:
+        existing_row.value_text = normalized
+        existing_row.is_secret = False
+        existing_row.updated_by = actor
+        existing_row.updated_at = datetime.now(UTC)
+    else:
+        db.add(
+            SystemSetting(
+                key="enabled_telemetry_apps",
+                value_text=normalized,
+                is_secret=False,
+                updated_by=actor,
+            )
+        )
+    db.add(
+        AuditLog(
+            actor=actor,
+            action="settings.telemetry_apps.update",
+            audit_label="SETTINGS_CHANGE",
+            target="enabled_telemetry_apps",
+            status="success",
+            details=f"Updated visible telemetry apps: {normalized}",
+        )
+    )
+    await db.commit()
+    get_analytics_cache().clear()
+    view = await get_integration_settings(db, base_settings)
+    return TelemetryAppsSettingsResponse(
+        enabled_telemetry_apps=view.enabled_telemetry_apps,
+        available_telemetry_apps=list(ALL_TELEMETRY_APP_KEYS),
+        source=view.source,
     )

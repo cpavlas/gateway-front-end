@@ -34,12 +34,16 @@ from app.services.runtime_settings_service import (
     ConnectivityTestResponse,
     IntegrationSettingsUpdatePayload,
     IntegrationSettingsView,
+    TelemetryAppsSettingsResponse,
+    TelemetryAppsUpdatePayload,
     get_integration_settings,
+    get_telemetry_apps_settings,
     load_runtime_settings_from_db,
     reset_integration_settings_to_env,
     run_all_connectivity_diagnostics,
     run_connectivity_diagnostic,
     update_integration_settings,
+    update_telemetry_apps_settings,
 )
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -366,6 +370,35 @@ async def delete_runtime_settings(
     return await reset_integration_settings_to_env(
         db, settings, actor=current_user.username
     )
+
+
+@router.get("/telemetry-apps", response_model=TelemetryAppsSettingsResponse)
+async def get_telemetry_apps(
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> TelemetryAppsSettingsResponse:
+    """Return active application telemetry visibility configuration."""
+    return await get_telemetry_apps_settings(db, settings)
+
+
+@router.put("/telemetry-apps", response_model=TelemetryAppsSettingsResponse)
+async def put_telemetry_apps(
+    payload: TelemetryAppsUpdatePayload,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    settings: Settings = Depends(get_settings),
+    db: AsyncSession = Depends(get_db_session),
+) -> TelemetryAppsSettingsResponse:
+    """Save visible application telemetry categories and flush analytics caches."""
+    try:
+        return await update_telemetry_apps_settings(
+            db, settings, payload, actor=current_user.username
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/settings/test-opnsense", response_model=ConnectivityTestResponse)

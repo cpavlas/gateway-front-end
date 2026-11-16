@@ -123,8 +123,12 @@ async def run_telemetry_cache_prewarm(
         )
         if include_extended_windows or not force:
             cache = get_analytics_cache()
+            apps_sig = ",".join(effective_settings.enabled_telemetry_app_list)
             for ext_win in ("today", "7d", "30d"):
-                if include_extended_windows or cache.get(f"overview:{ext_win}") is None:
+                if (
+                    include_extended_windows
+                    or cache.get(f"overview:{ext_win}:{apps_sig}") is None
+                ):
                     await get_network_overview_analytics(
                         db=session,
                         settings=effective_settings,
@@ -177,13 +181,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler.start()
     with suppress(Exception):
         await run_scheduled_override_reconciliation()
+
+    async def _ensure_wan_block_alias_on_boot() -> None:
+        with suppress(Exception):
+            base_settings = get_settings()
+            session_factory = get_session_factory(base_settings)
+            async with session_factory() as session:
+                await load_runtime_settings_from_db(session, base_settings)
+            effective_settings = apply_runtime_overrides(base_settings)
+            await OPNsenseClient(effective_settings).ensure_wan_block_alias_exists()
+
+    wan_alias_task = asyncio.create_task(_ensure_wan_block_alias_on_boot())
     prewarm_task = asyncio.create_task(run_telemetry_cache_prewarm())
     try:
         yield
     finally:
-        prewarm_task.cancel()
-        with suppress(asyncio.CancelledError, Exception):
-            await prewarm_task
+        for bg_task in (wan_alias_task, prewarm_task):
+            bg_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await bg_task
         scheduler.shutdown(wait=False)
         await dispose_db()
 

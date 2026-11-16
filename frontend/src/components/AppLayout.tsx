@@ -12,6 +12,7 @@ import {
   Server,
   ShieldAlert,
   UserCheck,
+  X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiClient, type HealthLevel, type ThemePreference } from '../api/client'
@@ -149,7 +150,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <header className="relative z-30 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -353,12 +354,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-800 pt-2.5 space-y-2">
+                    <div className="border-t border-slate-800 pt-2.5">
                       <button
                         type="button"
                         data-testid="user-menu-change-password-toggle"
                         onClick={() => {
-                          setShowChangePassword((prev) => !prev)
+                          setIsUserMenuOpen(false)
+                          setShowChangePassword(true)
                           setPwdError(null)
                           setPwdSuccess(null)
                         }}
@@ -368,71 +370,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                           <KeyRound className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
                           <span>Change My Password</span>
                         </span>
-                        <ChevronDown
-                          className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                            showChangePassword ? 'rotate-180' : ''
-                          }`}
-                          aria-hidden="true"
-                        />
                       </button>
-
-                      {showChangePassword && (
-                        <form
-                          onSubmit={(e) => {
-                            void handlePasswordSubmit(e)
-                          }}
-                          className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5"
-                        >
-                          <input
-                            type="password"
-                            data-testid="current-password-input"
-                            value={currentPassword}
-                            onChange={(e) => setCurrentPassword(e.target.value)}
-                            placeholder="Current password"
-                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                          />
-                          <input
-                            type="password"
-                            data-testid="new-password-input"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            placeholder="New password (min 12 chars)"
-                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                          />
-                          <input
-                            type="password"
-                            data-testid="confirm-password-input"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            placeholder="Confirm new password"
-                            className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                          />
-                          {pwdError && (
-                            <p
-                              data-testid="change-password-error"
-                              className="text-[11px] text-rose-300"
-                            >
-                              {pwdError}
-                            </p>
-                          )}
-                          {pwdSuccess && (
-                            <p
-                              data-testid="change-password-success"
-                              className="text-[11px] text-emerald-300"
-                            >
-                              {pwdSuccess}
-                            </p>
-                          )}
-                          <button
-                            type="submit"
-                            data-testid="submit-change-password-btn"
-                            disabled={pwdSaving}
-                            className="w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
-                          >
-                            {pwdSaving ? 'Updating...' : 'Update Password'}
-                          </button>
-                        </form>
-                      )}
                     </div>
                   </div>
                 )}
@@ -524,6 +462,127 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         onClose={() => setIsQuickSearchOpen(false)}
         onSelectTab={onSelectTab}
       />
+
+      {showChangePassword && (
+        <div
+          data-testid="change-password-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="change-password-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+                <h2
+                  id="change-password-modal-title"
+                  className="text-sm font-semibold text-slate-100"
+                >
+                  Change My Password
+                </h2>
+              </div>
+              <button
+                type="button"
+                data-testid="close-change-password-modal-btn"
+                aria-label="Close change password dialog"
+                onClick={() => setShowChangePassword(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 cursor-pointer"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                void handlePasswordSubmit(e)
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label
+                  htmlFor="modal-current-password"
+                  className="block text-xs text-slate-300 mb-1"
+                >
+                  Current Password
+                </label>
+                <input
+                  id="modal-current-password"
+                  type="password"
+                  data-testid="current-password-input"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter current password"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="modal-new-password"
+                  className="block text-xs text-slate-300 mb-1"
+                >
+                  New Password (min 12 chars)
+                </label>
+                <input
+                  id="modal-new-password"
+                  type="password"
+                  data-testid="new-password-input"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password (min 12 chars)"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="modal-confirm-password"
+                  className="block text-xs text-slate-300 mb-1"
+                >
+                  Confirm New Password
+                </label>
+                <input
+                  id="modal-confirm-password"
+                  type="password"
+                  data-testid="confirm-password-input"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              {pwdError && (
+                <p data-testid="change-password-error" className="text-xs text-rose-300">
+                  {pwdError}
+                </p>
+              )}
+              {pwdSuccess && (
+                <p data-testid="change-password-success" className="text-xs text-emerald-300">
+                  {pwdSuccess}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowChangePassword(false)}
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  data-testid="submit-change-password-btn"
+                  disabled={pwdSaving}
+                  className="rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+                >
+                  {pwdSaving ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,16 +7,23 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.system import get_elasticsearch_client
+from app.api.system import get_elasticsearch_client, get_opnsense_client
 from app.auth import AuthUserResponse, require_admin_session
 from app.clients.elasticsearch import ElasticsearchServiceClient
+from app.clients.opnsense import OPNsenseClient
 from app.config import Settings, get_settings
 from app.db import get_db_session
 from app.services.firewall_service import (
     FirewallOpenPortSessionsResponse,
     FirewallOverviewResponse,
+    WanBlockedIpCreateRequest,
+    WanBlockedIpListResponse,
+    WanBlockedIpMutationResponse,
+    block_external_wan_ip,
     get_firewall_overview_analytics,
     get_open_wan_port_sessions,
+    list_wan_blocked_ips,
+    unblock_external_wan_ip,
 )
 
 router = APIRouter(prefix="/api/v1/firewall", tags=["firewall"])
@@ -46,6 +53,12 @@ async def read_firewall_overview(
         default=None,
         description="Optional search string (IP, port, interface, protocol, or ASN organization).",
     ),
+    limit: int = Query(
+        default=100,
+        ge=10,
+        le=250,
+        description="Maximum number of recent packet log rows to return (10-250).",
+    ),
     refresh: bool = Query(
         default=False,
         description="If true, bypass the short-TTL cache and query Elasticsearch directly.",
@@ -67,6 +80,7 @@ async def read_firewall_overview(
         direction=direction,
         protocol=protocol,
         search=search,
+        recent_limit=limit,
         refresh=refresh,
     )
 
@@ -108,6 +122,7 @@ async def read_open_wan_port_sessions(
     _current_user: AuthUserResponse = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db_session),
     es_client: ElasticsearchServiceClient = Depends(get_elasticsearch_client),
+    settings: Settings = Depends(get_settings),
 ) -> FirewallOpenPortSessionsResponse:
     """Return connected external WAN IP details (GeoIP location, ASN/ISP, connection length,
     source ports, TCP flags, TTL, and recent events) for an active open WAN port (`FB-P13-002`).
@@ -122,5 +137,52 @@ async def read_open_wan_port_sessions(
         window=window,
         search=search,
         refresh=refresh,
+        settings=settings,
+    )
+
+
+@router.get("/wan-blocks", response_model=WanBlockedIpListResponse)
+async def read_wan_blocked_ips(
+    _current_user: AuthUserResponse = Depends(require_admin_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> WanBlockedIpListResponse:
+    """List external public WAN IPs currently blocked in `gateway_wan_blocked_ips`."""
+    return await list_wan_blocked_ips(settings, opnsense)
+
+
+@router.post("/wan-blocks", response_model=WanBlockedIpMutationResponse)
+async def create_wan_blocked_ip(
+    payload: WanBlockedIpCreateRequest,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> WanBlockedIpMutationResponse:
+    """Block an external public WAN IP in OPNsense `gateway_wan_blocked_ips` (`FB-P19-002`)."""
+    return await block_external_wan_ip(
+        db,
+        opnsense,
+        settings,
+        payload,
+        actor=current_user.username,
+    )
+
+
+@router.delete("/wan-blocks/{ip_address}", response_model=WanBlockedIpMutationResponse)
+async def delete_wan_blocked_ip(
+    ip_address: str,
+    current_user: AuthUserResponse = Depends(require_admin_session),
+    db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
+    settings: Settings = Depends(get_settings),
+) -> WanBlockedIpMutationResponse:
+    """Unblock an external public WAN IP from OPNsense `gateway_wan_blocked_ips`."""
+    return await unblock_external_wan_ip(
+        db,
+        opnsense,
+        settings,
+        ip_address,
+        actor=current_user.username,
     )
 

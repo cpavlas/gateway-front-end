@@ -200,7 +200,7 @@ def test_phase18_multi_app_asn_attribution_and_plex_normalization(
     }
     extracted = _extract_app_usage(fake_aggs)
     by_key = {item["app_key"]: item for item in extracted}
-    assert len(extracted) == 8
+    assert len(extracted) == 9
     assert by_key["netflix"]["active_minutes"] == 10
     assert by_key["netflix"]["top_devices"][0]["ipv4_address"] == "192.168.1.60"
     assert by_key["gaming"]["active_minutes"] == 5
@@ -277,7 +277,7 @@ def test_phase18_multi_app_asn_attribution_and_plex_normalization(
 
     # Synchronous analytics_service helper coverage (pure functions)
     zero_apps = _build_zero_app_usage()
-    assert len(zero_apps) == 8
+    assert len(zero_apps) == 9
     plex_overridden = _apply_plex_override_to_es_data(
         {"application_usage": []},
         {"app_key": "plex", "display_name": "Plex", "active_minutes": 15},

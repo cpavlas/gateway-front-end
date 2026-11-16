@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -34,9 +34,11 @@ import {
   XCircle,
 } from 'lucide-react'
 import {
+  ALL_TELEMETRY_APPS,
   apiClient,
   formatClock24h,
   type AllConnectivityTestResponse,
+  type AppUsageKey,
   type ConfigBackupPayload,
   type ConfigRestoreSummary,
   type ConnectivityTestResponse,
@@ -156,7 +158,7 @@ function formatDetailValue(value: unknown): string {
 
 interface ServiceCardProps {
   title: string
-  subtitle: string
+  subtitle?: string
   icon: React.ReactNode
   health?: ServiceHealthStatus
   testId: string
@@ -164,7 +166,6 @@ interface ServiceCardProps {
 
 const ServiceCard: React.FC<ServiceCardProps> = ({
   title,
-  subtitle,
   icon,
   health,
   testId,
@@ -206,7 +207,6 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
-              <p className="text-xs font-mono text-slate-400">{subtitle}</p>
             </div>
           </div>
 
@@ -220,10 +220,6 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           )}
         </div>
 
-        <p className="text-xs text-slate-300 leading-relaxed">
-          {health ? health.message : 'Probing service status...'}
-        </p>
-
         {/* FB-P8-006: Highlighted Elasticsearch Cluster Health & Shard Breakdown */}
         {isEs && (clusterStatus !== undefined || assignedShards !== undefined) && (
           <div
@@ -236,13 +232,12 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
               </span>
               <span
                 data-testid="es-cluster-status"
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold uppercase ${
-                  clusterStatus === 'green'
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                    : clusterStatus === 'yellow'
-                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                      : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                }`}
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold uppercase ${clusterStatus === 'green'
+                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                  : clusterStatus === 'yellow'
+                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                    : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                  }`}
               >
                 {clusterStatus ?? 'unknown'}
               </span>
@@ -264,9 +259,8 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
                 <span className="block text-[10px] text-slate-400">Unassigned</span>
                 <span
                   data-testid="es-shards-unassigned"
-                  className={`font-mono text-sm font-bold ${
-                    unassignedShards > 0 ? 'text-amber-300' : 'text-slate-200'
-                  }`}
+                  className={`font-mono text-sm font-bold ${unassignedShards > 0 ? 'text-amber-300' : 'text-slate-200'
+                    }`}
                 >
                   {unassignedShards.toLocaleString()}
                 </span>
@@ -275,9 +269,8 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
                 <span className="block text-[10px] text-slate-400">Relocating</span>
                 <span
                   data-testid="es-shards-relocating"
-                  className={`font-mono text-sm font-bold ${
-                    relocatingShards > 0 ? 'text-cyan-300' : 'text-slate-200'
-                  }`}
+                  className={`font-mono text-sm font-bold ${relocatingShards > 0 ? 'text-cyan-300' : 'text-slate-200'
+                    }`}
                 >
                   {relocatingShards.toLocaleString()}
                 </span>
@@ -328,9 +321,8 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
             >
               <span>Technical Details ({Object.keys(details).length})</span>
               <ChevronDown
-                className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                  showDetails ? 'rotate-180' : ''
-                }`}
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform ${showDetails ? 'rotate-180' : ''
+                  }`}
                 aria-hidden="true"
               />
             </button>
@@ -399,6 +391,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
   const [plexUrls, setPlexUrls] = useState<string[]>([''])
   const [plexToken, setPlexToken] = useState('')
   const [plexVerifySsl, setPlexVerifySsl] = useState(false)
+  const [enabledTelemetryApps, setEnabledTelemetryApps] = useState<AppUsageKey[]>([
+    'youtube',
+    'plex',
+  ])
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [diagnosticResult, setDiagnosticResult] = useState<ConnectivityTestResponse | null>(null)
@@ -485,10 +481,50 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       setPlexUrls(splitUrlList(data.plex_base_url))
       setPlexToken(data.plex_api_token_masked ?? '')
       setPlexVerifySsl(Boolean(data.plex_verify_ssl))
+      setEnabledTelemetryApps(
+        data.enabled_telemetry_apps && data.enabled_telemetry_apps.length > 0
+          ? data.enabled_telemetry_apps
+          : ['youtube', 'plex'],
+      )
       return data
     },
     enabled: settingsExpanded && isAdmin,
   })
+
+  const { data: telemetryAppsSettings } = useQuery({
+    queryKey: ['telemetryAppsSettings'],
+    queryFn: () => apiClient.getEnabledTelemetryApps(),
+    enabled: settingsExpanded && isAdmin,
+  })
+
+  const updateTelemetryAppsMutation = useMutation({
+    mutationFn: (apps: AppUsageKey[]) => apiClient.updateEnabledTelemetryApps(apps),
+    onSuccess: (updated) => {
+      setEnabledTelemetryApps(updated.enabled_telemetry_apps)
+      setSettingsError(null)
+      setSettingsMessage('Updated application telemetry visibility across Analytics views.')
+      queryClient.setQueryData(['telemetryAppsSettings'], updated)
+      void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['networkOverview'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics'] })
+    },
+    onError: (err) => {
+      setSettingsError(
+        err instanceof Error ? err.message : 'Failed to update application telemetry visibility.',
+      )
+    },
+  })
+
+  useEffect(() => {
+    if (
+      !updateTelemetryAppsMutation.isPending &&
+      telemetryAppsSettings?.enabled_telemetry_apps &&
+      telemetryAppsSettings.enabled_telemetry_apps.length > 0
+    ) {
+      setEnabledTelemetryApps(telemetryAppsSettings.enabled_telemetry_apps)
+    }
+  }, [telemetryAppsSettings, updateTelemetryAppsMutation.isPending])
 
   const {
     data: usersListResponse,
@@ -545,6 +581,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
     plex_base_url: joinUrlList(plexUrls),
     plex_api_token: plexToken.trim() || undefined,
     plex_verify_ssl: plexVerifySsl,
+    enabled_telemetry_apps:
+      enabledTelemetryApps.length > 0 ? enabledTelemetryApps : ['youtube', 'plex'],
   })
 
   const saveSettingsMutation = useMutation({
@@ -555,6 +593,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
         `Saved runtime integration settings (Source: ${updated.source === 'ui_override' ? 'UI Override' : '.env'}).`,
       )
       void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['telemetryAppsSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['networkOverview'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics'] })
       void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
     },
     onError: (err) => {
@@ -582,8 +624,17 @@ export const StatusPage: React.FC<StatusPageProps> = ({
       setPlexUrls(splitUrlList(resetView.plex_base_url))
       setPlexToken(resetView.plex_api_token_masked ?? '')
       setPlexVerifySsl(Boolean(resetView.plex_verify_ssl))
+      setEnabledTelemetryApps(
+        resetView.enabled_telemetry_apps && resetView.enabled_telemetry_apps.length > 0
+          ? resetView.enabled_telemetry_apps
+          : ['youtube', 'plex'],
+      )
       setSettingsMessage('Reset integration settings to .env defaults.')
       void queryClient.invalidateQueries({ queryKey: ['integrationSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['telemetryAppsSettings'] })
+      void queryClient.invalidateQueries({ queryKey: ['networkOverview'] })
+      void queryClient.invalidateQueries({ queryKey: ['deviceAnalytics'] })
+      void queryClient.invalidateQueries({ queryKey: ['groupAnalytics'] })
       void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
     },
     onError: (err) => {
@@ -797,11 +848,11 @@ export const StatusPage: React.FC<StatusPageProps> = ({
         typeof file.text === 'function'
           ? await file.text()
           : await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve(String(reader.result ?? ''))
-              reader.onerror = () => reject(reader.error)
-              reader.readAsText(file)
-            })
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result ?? ''))
+            reader.onerror = () => reject(reader.error)
+            reader.readAsText(file)
+          })
       const parsed = JSON.parse(text) as ConfigBackupPayload
       restoreMutation.mutate(parsed)
     } catch {
@@ -892,9 +943,25 @@ export const StatusPage: React.FC<StatusPageProps> = ({
             <h1 className="text-xl font-bold text-slate-100">
               System Connectivity &amp; Telemetry Status
             </h1>
-            <p className="text-sm text-slate-400">
-              Live health verification for OPNsense firewall API, Elasticsearch 9.4.3 data stream, and local state storage
-            </p>
+            {(() => {
+              const opnRawVersion = healthReport?.services?.opnsense?.details?.version
+              const esRawVersion = healthReport?.services?.elasticsearch?.details?.version
+              const opnVersion =
+                typeof opnRawVersion === 'string' && opnRawVersion.trim()
+                  ? opnRawVersion.trim()
+                  : null
+              const esVersion =
+                typeof esRawVersion === 'string' &&
+                esRawVersion.trim() &&
+                esRawVersion.trim().toLowerCase() !== 'unknown'
+                  ? esRawVersion.trim()
+                  : null
+              return (
+                <p data-testid="status-page-header-description" className="text-sm text-slate-400">
+                  Live health verification for {opnVersion ? `OPNsense ${opnVersion}` : 'OPNsense firewall API'}, {esVersion ? `Elasticsearch ${esVersion}` : 'Elasticsearch'} data stream, and local state storage
+                </p>
+              )
+            })()}
           </div>
 
           <div className="flex flex-col items-start sm:items-end gap-1 self-start shrink-0">
@@ -1168,11 +1235,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     {integrationSettings && (
                       <span
                         data-testid="settings-source-badge"
-                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          integrationSettings.source === 'ui_override'
-                            ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                            : 'border-slate-700 bg-slate-800 text-slate-300'
-                        }`}
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${integrationSettings.source === 'ui_override'
+                          ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                          }`}
                       >
                         {integrationSettings.source === 'ui_override'
                           ? 'Source: UI Override'
@@ -1216,9 +1282,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
                 >
                   <ChevronDown
-                    className={`h-4 w-4 transition-transform ${
-                      settingsExpanded ? 'rotate-180' : ''
-                    }`}
+                    className={`h-4 w-4 transition-transform ${settingsExpanded ? 'rotate-180' : ''
+                      }`}
                     aria-hidden="true"
                   />
                   <span>{settingsExpanded ? 'Hide Connections' : 'Configure Connections'}</span>
@@ -1249,11 +1314,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                 {diagnosticResult && (
                   <div
                     data-testid="connectivity-diagnostic-result"
-                    className={`rounded-lg border p-3.5 text-xs ${
-                      diagnosticResult.reachable
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-                        : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
-                    }`}
+                    className={`rounded-lg border p-3.5 text-xs ${diagnosticResult.reachable
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                      : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+                      }`}
                   >
                     <div className="flex items-center justify-between font-semibold">
                       <span className="uppercase">
@@ -1626,6 +1690,63 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   </div>
                 </div>
 
+                {/* Application Telemetry Visibility (FB-P18-008) */}
+                <div
+                  data-testid="telemetry-visibility-settings"
+                  className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2.5"
+                >
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300">
+                      Application Telemetry Visibility
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Choose which applications are tracked and displayed across Analytics, Device Drawers, and Group Drawers (defaults to YouTube &amp; Plex)
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    {ALL_TELEMETRY_APPS.map((app) => {
+                      const checked = enabledTelemetryApps.includes(app.key)
+                      return (
+                        <label
+                          key={app.key}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs cursor-pointer transition ${checked
+                            ? 'border-indigo-500/40 bg-indigo-500/10 text-slate-100'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                            }`}
+                        >
+                          <input
+                            type="checkbox"
+                            data-testid={`settings-telemetry-app-${app.key}`}
+                            checked={checked}
+                            onChange={(e) => {
+                              const nextChecked = e.target.checked
+                              const nextApps: AppUsageKey[] = nextChecked
+                                ? enabledTelemetryApps.includes(app.key)
+                                  ? enabledTelemetryApps
+                                  : [...enabledTelemetryApps, app.key]
+                                : (() => {
+                                    const remaining = enabledTelemetryApps.filter(
+                                      (k) => k !== app.key,
+                                    )
+                                    return remaining.length > 0 ? remaining : enabledTelemetryApps
+                                  })()
+                              setEnabledTelemetryApps(nextApps)
+                              if (
+                                nextApps.length !== enabledTelemetryApps.length ||
+                                nextApps.some((k, idx) => k !== enabledTelemetryApps[idx])
+                              ) {
+                                updateTelemetryAppsMutation.mutate(nextApps)
+                              }
+                            }}
+                            className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                          />
+                          <span className="truncate font-medium">{app.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-slate-800 pt-3">
                   <button
                     type="button"
@@ -1844,11 +1965,10 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                           </td>
                           <td className="py-2.5 px-3">
                             <span
-                              className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                u.is_active
-                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                                  : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                              }`}
+                              className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${u.is_active
+                                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                                }`}
                             >
                               {u.is_active ? 'Active' : 'Disabled'}
                             </span>
@@ -2009,9 +2129,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                     }
                   }}
                   disabled={isFetchingAudit}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 ${
-                    auditEnabled ? 'h-8 w-8' : 'px-3.5 py-2'
-                  } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 ${auditEnabled ? 'h-8 w-8' : 'px-3.5 py-2'
+                    } text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-60 cursor-pointer`}
                 >
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${isFetchingAudit ? 'animate-spin' : ''}`}
@@ -2154,16 +2273,15 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                           <td className="py-2 px-3">
                             <span
                               data-testid="audit-label-badge"
-                              className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
-                                log.audit_label === 'DIAGNOSTIC_ERROR'
-                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                                  : log.audit_label === 'PERFORMANCE_ANALYSIS'
-                                    ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
-                                    : log.audit_label === 'USER_MGMT' ||
-                                        log.audit_label === 'SETTINGS_CHANGE'
-                                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                                      : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                              }`}
+                              className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${log.audit_label === 'DIAGNOSTIC_ERROR'
+                                ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                : log.audit_label === 'PERFORMANCE_ANALYSIS'
+                                  ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                                  : log.audit_label === 'USER_MGMT' ||
+                                    log.audit_label === 'SETTINGS_CHANGE'
+                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                                }`}
                             >
                               {log.audit_label ?? 'SYSTEM'}
                             </span>
@@ -2196,9 +2314,9 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                   {totalAuditCount === 0
                     ? 'Showing 0 of 0 events'
                     : `Showing ${auditOffset + 1}-${Math.min(
-                        auditOffset + auditLogs.length,
-                        totalAuditCount,
-                      )} of ${totalAuditCount} events`}
+                      auditOffset + auditLogs.length,
+                      totalAuditCount,
+                    )} of ${totalAuditCount} events`}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -2290,33 +2408,42 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                       : plexUrls
                 const nodeRows: NodeConnectivityResult[] =
                   Array.isArray(res.details?.node_results) &&
-                  res.details.node_results.length > 0
+                    res.details.node_results.length > 0
                     ? res.details.node_results
                     : fallbackUrls
-                        .map((u) => u.trim())
-                        .filter(Boolean)
-                        .map((u) => ({
-                          url: u,
-                          reachable: res.reachable,
-                          status: res.status,
-                          latency_ms: res.latency_ms,
-                          message: res.message,
-                        }))
+                      .map((u) => u.trim())
+                      .filter(Boolean)
+                      .map((u) => ({
+                        url: u,
+                        reachable: res.reachable,
+                        status: res.status,
+                        latency_ms: res.latency_ms,
+                        message: res.message,
+                      }))
+
+                const hasMultiNode = nodeRows.length > 1
+                const headerLatencyMs = hasMultiNode
+                  ? Math.round(
+                    (nodeRows.reduce((sum, n) => sum + (Number(n.latency_ms) || 0), 0) /
+                      nodeRows.length) *
+                    100,
+                  ) / 100
+                  : res.latency_ms
 
                 return (
                   <div
                     key={svcName}
                     data-testid={`test-all-service-${svcName}`}
-                    className={`rounded-lg border p-3.5 text-xs space-y-2 ${
-                      res.reachable
-                        ? 'border-emerald-500/30 bg-emerald-500/5'
-                        : 'border-rose-500/30 bg-rose-500/5'
-                    }`}
+                    className={`rounded-lg border p-3.5 text-xs space-y-2 ${res.reachable
+                      ? 'border-emerald-500/30 bg-emerald-500/5'
+                      : 'border-rose-500/30 bg-rose-500/5'
+                      }`}
                   >
                     <div className="flex items-center justify-between font-semibold uppercase">
                       <span className="text-slate-100">{svcName}</span>
                       <span className={res.reachable ? 'text-emerald-300' : 'text-rose-300'}>
-                        {res.reachable ? 'OK' : 'FAIL'} ({res.latency_ms} ms)
+                        {res.reachable ? 'OK' : 'FAIL'} ({headerLatencyMs} ms
+                        {hasMultiNode ? ' avg' : ''})
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-300">{res.message}</p>
@@ -2338,9 +2465,8 @@ export const StatusPage: React.FC<StatusPageProps> = ({
                               </span>
                             </div>
                             <span
-                              className={`text-[11px] font-mono font-semibold ${
-                                node.reachable ? 'text-emerald-300' : 'text-rose-300'
-                              }`}
+                              className={`text-[11px] font-mono font-semibold ${node.reachable ? 'text-emerald-300' : 'text-rose-300'
+                                }`}
                             >
                               {node.reachable ? 'REACHABLE' : 'FAILED'} · {node.latency_ms} ms
                             </span>

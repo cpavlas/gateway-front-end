@@ -87,6 +87,7 @@ export interface IntegrationSettingsView {
   plex_api_token_masked?: string
   plex_verify_ssl?: boolean
   plex_timeout_seconds?: number
+  enabled_telemetry_apps?: AppUsageKey[]
   updated_by?: string | null
   updated_at?: string | null
 }
@@ -109,6 +110,7 @@ export interface IntegrationSettingsUpdatePayload {
   plex_api_token?: string
   plex_verify_ssl?: boolean
   plex_timeout_seconds?: number
+  enabled_telemetry_apps?: AppUsageKey[]
 }
 
 export interface NodeConnectivityResult {
@@ -135,6 +137,12 @@ export interface ConnectivityTestResponse {
 export interface AllConnectivityTestResponse {
   overall_reachable: boolean
   results: Record<string, ConnectivityTestResponse>
+}
+
+export interface TelemetryAppsSettingsResponse {
+  enabled_telemetry_apps: AppUsageKey[]
+  available_telemetry_apps: AppUsageKey[]
+  source: 'ui_override' | 'env'
 }
 
 export interface SelfPasswordChangePayload {
@@ -446,7 +454,24 @@ export type AppUsageKey =
   | 'twitch'
   | 'tiktok'
   | 'discord'
+  | 'facebook_threads'
   | 'gaming'
+
+export const ALL_TELEMETRY_APPS: ReadonlyArray<{
+  key: AppUsageKey
+  label: string
+  colorClass: string
+}> = [
+  { key: 'youtube', label: 'YouTube', colorClass: 'text-rose-400' },
+  { key: 'plex', label: 'Plex', colorClass: 'text-amber-400' },
+  { key: 'netflix', label: 'Netflix', colorClass: 'text-red-400' },
+  { key: 'disney_plus', label: 'Disney+', colorClass: 'text-cyan-400' },
+  { key: 'twitch', label: 'Twitch', colorClass: 'text-violet-400' },
+  { key: 'tiktok', label: 'TikTok', colorClass: 'text-pink-400' },
+  { key: 'discord', label: 'Discord', colorClass: 'text-indigo-400' },
+  { key: 'facebook_threads', label: 'Facebook & Threads', colorClass: 'text-blue-400' },
+  { key: 'gaming', label: 'Gaming', colorClass: 'text-emerald-400' },
+]
 
 export interface AppUsageItem {
   app_key: AppUsageKey
@@ -778,6 +803,13 @@ export interface FirewallNoisyLanDeviceItem {
 export interface FirewallExternalScannerItem {
   source_ip: string
   organization: string | null
+  country_name?: string | null
+  country_iso_code?: string | null
+  city_name?: string | null
+  location_label?: string
+  latitude?: number | null
+  longitude?: number | null
+  is_wan_blocked?: boolean
   blocked_packets: number
   bytes: number
   target_ports: number[]
@@ -791,6 +823,7 @@ export interface FirewallOpenWanPortItem {
   external_port?: number
   destination_port: number
   port_mapping?: string
+  rule_description?: string | null
   protocol: string
   passed_packets: number
   bytes: number
@@ -829,11 +862,17 @@ export interface FirewallOverviewResponse {
   recent_events: FirewallLogEventItem[]
 }
 
+export interface FirewallCountryBreakdownItem {
+  country_name: string
+  doc_count: number
+}
+
 export interface FirewallOpenPortSessionsSummary {
   total_passed_packets: number
   total_bytes: number
   unique_external_ips: number
   top_country: string | null
+  country_breakdown?: FirewallCountryBreakdownItem[]
   first_seen_at?: string | null
   last_seen_at?: string | null
 }
@@ -851,6 +890,7 @@ export interface FirewallConnectedExternalIpItem {
   location_label: string
   latitude: number | null
   longitude: number | null
+  is_wan_blocked?: boolean
   passed_packets: number
   bytes: number
   first_seen_at: string | null
@@ -874,6 +914,8 @@ export interface FirewallOpenPortSessionEventItem {
   organization: string | null
   location_label: string
   country_iso_code?: string | null
+  latitude?: number | null
+  longitude?: number | null
   protocol: string
   tcp_flags: string | null
   ttl: number | null
@@ -893,10 +935,46 @@ export interface FirewallOpenPortSessionsResponse {
   external_port: number
   destination_port: number
   port_mapping: string
+  rule_description?: string | null
   protocol: string
   summary: FirewallOpenPortSessionsSummary
   external_ips: FirewallConnectedExternalIpItem[]
   recent_events: FirewallOpenPortSessionEventItem[]
+}
+
+export interface WanBlockedIpListResponse {
+  alias_name: string
+  ips: string[]
+  total_count: number
+}
+
+export interface WanBlockedIpMutationResponse {
+  alias_name: string
+  ip_address: string
+  blocked: boolean
+  ips: string[]
+  opnsense_synced: boolean
+  warning?: string | null
+}
+
+export function buildGoogleMapsUrl(
+  latitude?: number | null,
+  longitude?: number | null,
+  locationLabel?: string | null,
+): string | null {
+  if (
+    typeof latitude === 'number' &&
+    typeof longitude === 'number' &&
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude)
+  ) {
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`
+  }
+  const clean = (locationLabel ?? '').trim()
+  if (!clean || clean.toLowerCase() === 'unknown location') {
+    return null
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clean)}`
 }
 
 export function formatActiveMinutes(minutes: number): string {
@@ -1379,6 +1457,21 @@ export const apiClient = {
     })
   },
 
+  getEnabledTelemetryApps(): Promise<TelemetryAppsSettingsResponse> {
+    return requestJson<TelemetryAppsSettingsResponse>('/api/v1/system/telemetry-apps', {
+      method: 'GET',
+    })
+  },
+
+  updateEnabledTelemetryApps(
+    enabledApps: AppUsageKey[],
+  ): Promise<TelemetryAppsSettingsResponse> {
+    return requestJson<TelemetryAppsSettingsResponse>('/api/v1/system/telemetry-apps', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled_telemetry_apps: enabledApps }),
+    })
+  },
+
   testOpnsenseConnectivity(
     payload?: IntegrationSettingsUpdatePayload,
   ): Promise<ConnectivityTestResponse> {
@@ -1527,6 +1620,7 @@ export const apiClient = {
     direction?: string
     protocol?: string
     search?: string
+    limit?: number
     refresh?: boolean
   }): Promise<FirewallOverviewResponse> {
     const query = new URLSearchParams()
@@ -1543,12 +1637,38 @@ export const apiClient = {
     if (params?.search && params.search.trim()) {
       query.set('search', params.search.trim())
     }
+    if (params?.limit) {
+      query.set('limit', String(params.limit))
+    }
     if (params?.refresh) {
       query.set('refresh', 'true')
     }
     return requestJson<FirewallOverviewResponse>(
       `/api/v1/firewall/overview?${query.toString()}`,
       { method: 'GET' },
+    )
+  },
+
+  getWanBlockedIps(): Promise<WanBlockedIpListResponse> {
+    return requestJson<WanBlockedIpListResponse>('/api/v1/firewall/wan-blocks', {
+      method: 'GET',
+    })
+  },
+
+  blockExternalWanIp(payload: {
+    ip_address: string
+    reason?: string
+  }): Promise<WanBlockedIpMutationResponse> {
+    return requestJson<WanBlockedIpMutationResponse>('/api/v1/firewall/wan-blocks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  unblockExternalWanIp(ipAddress: string): Promise<WanBlockedIpMutationResponse> {
+    return requestJson<WanBlockedIpMutationResponse>(
+      `/api/v1/firewall/wan-blocks/${encodeURIComponent(ipAddress)}`,
+      { method: 'DELETE' },
     )
   },
 
