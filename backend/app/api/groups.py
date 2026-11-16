@@ -90,6 +90,7 @@ async def patch_single_group(
     request: Request,
     current_user: AuthUserResponse = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db_session),
+    opnsense: OPNsenseClient = Depends(get_opnsense_client),
     settings: Settings = Depends(get_settings),
 ) -> GroupResponse:
     """Update a device group's name, description, color badge, icon, or member list."""
@@ -101,6 +102,7 @@ async def patch_single_group(
         payload,
         actor=current_user.username,
         client_ip=client_ip,
+        opnsense=opnsense,
     )
 
 

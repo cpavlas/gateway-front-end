@@ -180,6 +180,7 @@ _APP_USAGE_CATALOG: tuple[tuple[str, str], ...] = (
     ("twitch", "Twitch"),
     ("tiktok", "TikTok"),
     ("discord", "Discord"),
+    ("facebook_threads", "Facebook & Threads"),
     ("gaming", "Gaming"),
 )
 
@@ -218,6 +219,15 @@ _EXTENDED_APP_DOMAINS: dict[str, list[str]] = {
         "discord.media",
         "discordapp.net",
         "discord.gift",
+    ],
+    "facebook_threads": [
+        "facebook.com",
+        "fbcdn.net",
+        "fbsbx.com",
+        "instagram.com",
+        "cdninstagram.com",
+        "threads.net",
+        "threads.com",
     ],
     "gaming": [
         "playstation.net",
@@ -322,14 +332,26 @@ def _build_app_usage_agg(
         },
     }
     for app_key, reg_domains in _EXTENDED_APP_DOMAINS.items():
-        filters_map[app_key] = {
-            "bool": {
-                "must_not": common_must_not,
-                "filter": {
-                    "terms": {"dns.question.registered_domain": reg_domains},
-                },
+        if app_key == "facebook_threads":
+            filters_map[app_key] = {
+                "bool": {
+                    "must_not": common_must_not,
+                    "should": [
+                        {"terms": {"dns.question.registered_domain": reg_domains}},
+                        {"term": {"destination.as.number": 32934}},
+                    ],
+                    "minimum_should_match": 1,
+                }
             }
-        }
+        else:
+            filters_map[app_key] = {
+                "bool": {
+                    "must_not": common_must_not,
+                    "filter": {
+                        "terms": {"dns.question.registered_domain": reg_domains},
+                    },
+                }
+            }
 
     return {
         "filters": {"filters": filters_map},
@@ -1377,7 +1399,7 @@ def build_firewall_overview_query(
     """
     _, es_gte, interval = resolve_time_window(window)
     safe_tz = (tz_name or "UTC").strip() or "UTC"
-    safe_limit = max(1, min(int(recent_limit), 150))
+    safe_limit = max(1, min(int(recent_limit), 250))
 
     filters: list[dict[str, Any]] = [
         _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
@@ -1536,6 +1558,22 @@ def build_firewall_overview_query(
                                             "size": 1,
                                         }
                                     },
+                                    "latest_geo": {
+                                        "top_hits": {
+                                            "size": 1,
+                                            "sort": [{"@timestamp": {"order": "desc"}}],
+                                            "_source": False,
+                                            "docvalue_fields": [
+                                                "source.as.number",
+                                                "source.as.organization.name",
+                                                "source.geo.city_name",
+                                                "source.geo.region_name",
+                                                "source.geo.country_name",
+                                                "source.geo.country_iso_code",
+                                                "source.geo.location",
+                                            ],
+                                        }
+                                    },
                                 },
                             }
                         },
@@ -1689,10 +1727,23 @@ def normalize_firewall_overview_response(
         else:
             if ip_str not in seen_external_ips and len(external_scanners) < 12:
                 seen_external_ips.add(ip_str)
+                geo_hits = (
+                    ((sb.get("latest_geo") or {}).get("hits") or {}).get("hits") or []
+                )
+                geo_src = _extract_hit_fields(geo_hits[0]) if geo_hits else {}
+                geo_meta = _extract_geo_metadata(geo_src.get("source") or {})
                 external_scanners.append(
                     {
                         "source_ip": ip_str,
-                        "organization": org_name,
+                        "asn": geo_meta["asn"],
+                        "organization": org_name or geo_meta["organization"],
+                        "city_name": geo_meta["city_name"],
+                        "region_name": geo_meta["region_name"],
+                        "country_name": geo_meta["country_name"],
+                        "country_iso_code": geo_meta["country_iso_code"],
+                        "location_label": geo_meta["location_label"],
+                        "latitude": geo_meta["latitude"],
+                        "longitude": geo_meta["longitude"],
                         "blocked_packets": pkt_count,
                         "bytes": byte_count,
                         "target_ports": top_ports,
@@ -1848,6 +1899,58 @@ def format_geo_location_label(
         if part not in deduped:
             deduped.append(part)
     return ", ".join(deduped)
+
+
+def _extract_geo_metadata(source_obj: dict[str, Any]) -> dict[str, Any]:
+    """Extract normalized ASN and GeoIP metadata from an ES `source` object (`FB-P19-002`)."""
+    as_obj = source_obj.get("as") or {}
+    geo_obj = source_obj.get("geo") or {}
+    loc_obj = geo_obj.get("location")
+
+    lat_val: float | None = None
+    lon_val: float | None = None
+    if isinstance(loc_obj, dict):
+        if loc_obj.get("lat") is not None and loc_obj.get("lon") is not None:
+            lat_val = round(float(loc_obj["lat"]), 4)
+            lon_val = round(float(loc_obj["lon"]), 4)
+        elif isinstance(loc_obj.get("coordinates"), list) and len(loc_obj["coordinates"]) >= 2:
+            lon_val = round(float(loc_obj["coordinates"][0]), 4)
+            lat_val = round(float(loc_obj["coordinates"][1]), 4)
+    elif isinstance(loc_obj, str) and "," in loc_obj:
+        parts = [p.strip() for p in loc_obj.split(",", 1)]
+        try:
+            lat_val = round(float(parts[0]), 4)
+            lon_val = round(float(parts[1]), 4)
+        except ValueError:
+            pass
+
+    asn_val = int(as_obj["number"]) if as_obj.get("number") is not None else None
+    org_val = ((as_obj.get("organization") or {}).get("name")) or None
+    city_val = geo_obj.get("city_name") or None
+    region_val = geo_obj.get("region_name") or None
+    region_iso_val = geo_obj.get("region_iso_code") or None
+    country_val = geo_obj.get("country_name") or None
+    country_iso_val = geo_obj.get("country_iso_code") or None
+    continent_val = geo_obj.get("continent_name") or None
+    loc_label = format_geo_location_label(
+        city_name=city_val,
+        region_name=region_val,
+        country_name=country_val,
+        country_iso_code=country_iso_val,
+    )
+    return {
+        "asn": asn_val,
+        "organization": str(org_val) if org_val else None,
+        "city_name": str(city_val) if city_val else None,
+        "region_name": str(region_val) if region_val else None,
+        "region_iso_code": str(region_iso_val) if region_iso_val else None,
+        "country_name": str(country_val) if country_val else None,
+        "country_iso_code": str(country_iso_val) if country_iso_val else None,
+        "continent_name": str(continent_val) if continent_val else None,
+        "location_label": loc_label,
+        "latitude": lat_val,
+        "longitude": lon_val,
+    }
 
 
 def _extract_hit_fields(hit: dict[str, Any]) -> dict[str, Any]:
@@ -2067,6 +2170,14 @@ def normalize_open_wan_port_sessions_response(
         if country_buckets and country_buckets[0].get("key")
         else None
     )
+    country_breakdown = [
+        {
+            "country_name": str(cb.get("key")),
+            "doc_count": int(cb.get("doc_count") or 0),
+        }
+        for cb in country_buckets
+        if cb.get("key")
+    ]
 
     external_ips: list[dict[str, Any]] = []
     for eb in ext_buckets:
@@ -2100,9 +2211,7 @@ def normalize_open_wan_port_sessions_response(
         )
         sample_src = _extract_hit_fields(sample_hits[0]) if sample_hits else {}
         source_obj = sample_src.get("source") or {}
-        as_obj = source_obj.get("as") or {}
-        geo_obj = source_obj.get("geo") or {}
-        loc_obj = geo_obj.get("location") or {}
+        geo_meta = _extract_geo_metadata(source_obj)
         net_obj = sample_src.get("network") or {}
         obs_obj = sample_src.get("observer") or {}
         ing_if = ((obs_obj.get("ingress") or {}).get("interface") or {}).get("name")
@@ -2111,47 +2220,23 @@ def normalize_open_wan_port_sessions_response(
         pf_ip = pf_obj.get("ip") or {}
         pf_tcp = pf_obj.get("tcp") or {}
 
-        asn_val = int(as_obj["number"]) if as_obj.get("number") is not None else None
-        org_val = ((as_obj.get("organization") or {}).get("name")) or None
-        city_val = geo_obj.get("city_name") or None
-        region_val = geo_obj.get("region_name") or None
-        region_iso_val = geo_obj.get("region_iso_code") or None
-        country_val = geo_obj.get("country_name") or None
-        country_iso_val = geo_obj.get("country_iso_code") or None
-        continent_val = geo_obj.get("continent_name") or None
-        lat_val = (
-            round(float(loc_obj["lat"]), 4)
-            if isinstance(loc_obj, dict) and loc_obj.get("lat") is not None
-            else None
-        )
-        lon_val = (
-            round(float(loc_obj["lon"]), 4)
-            if isinstance(loc_obj, dict) and loc_obj.get("lon") is not None
-            else None
-        )
-        loc_label = format_geo_location_label(
-            city_name=city_val,
-            region_name=region_val,
-            country_name=country_val,
-            country_iso_code=country_iso_val,
-        )
         ttl_val = int(pf_ip["ttl"]) if pf_ip.get("ttl") is not None else None
         tcp_flags_val = str(pf_tcp["flags"]) if pf_tcp.get("flags") else None
 
         external_ips.append(
             {
                 "source_ip": src_ip,
-                "asn": asn_val,
-                "organization": str(org_val) if org_val else None,
-                "city_name": str(city_val) if city_val else None,
-                "region_name": str(region_val) if region_val else None,
-                "region_iso_code": str(region_iso_val) if region_iso_val else None,
-                "country_name": str(country_val) if country_val else None,
-                "country_iso_code": str(country_iso_val) if country_iso_val else None,
-                "continent_name": str(continent_val) if continent_val else None,
-                "location_label": loc_label,
-                "latitude": lat_val,
-                "longitude": lon_val,
+                "asn": geo_meta["asn"],
+                "organization": geo_meta["organization"],
+                "city_name": geo_meta["city_name"],
+                "region_name": geo_meta["region_name"],
+                "region_iso_code": geo_meta["region_iso_code"],
+                "country_name": geo_meta["country_name"],
+                "country_iso_code": geo_meta["country_iso_code"],
+                "continent_name": geo_meta["continent_name"],
+                "location_label": geo_meta["location_label"],
+                "latitude": geo_meta["latitude"],
+                "longitude": geo_meta["longitude"],
                 "passed_packets": pkt_cnt,
                 "bytes": byte_cnt,
                 "first_seen_at": ip_first_str,
@@ -2177,8 +2262,7 @@ def normalize_open_wan_port_sessions_response(
     for hit in hits_list:
         src = _extract_hit_fields(hit)
         s_obj = src.get("source") or {}
-        s_as = s_obj.get("as") or {}
-        s_geo = s_obj.get("geo") or {}
+        geo_meta = _extract_geo_metadata(s_obj)
         n_obj = src.get("network") or {}
         o_obj = src.get("observer") or {}
         r_obj = src.get("rule") or {}
@@ -2186,13 +2270,6 @@ def normalize_open_wan_port_sessions_response(
         p_ip = p_obj.get("ip") or {}
         p_tcp = p_obj.get("tcp") or {}
         ing_name = ((o_obj.get("ingress") or {}).get("interface") or {}).get("name")
-        org_name = ((s_as.get("organization") or {}).get("name")) or None
-        loc_str = format_geo_location_label(
-            city_name=s_geo.get("city_name"),
-            region_name=s_geo.get("region_name"),
-            country_name=s_geo.get("country_name"),
-            country_iso_code=s_geo.get("country_iso_code"),
-        )
         recent_events.append(
             {
                 "timestamp": str(src.get("@timestamp") or ""),
@@ -2200,16 +2277,12 @@ def normalize_open_wan_port_sessions_response(
                 "source_port": (
                     int(s_obj["port"]) if s_obj.get("port") is not None else None
                 ),
-                "asn": (
-                    int(s_as["number"]) if s_as.get("number") is not None else None
-                ),
-                "organization": str(org_name) if org_name else None,
-                "location_label": loc_str,
-                "country_iso_code": (
-                    str(s_geo["country_iso_code"])
-                    if s_geo.get("country_iso_code")
-                    else None
-                ),
+                "asn": geo_meta["asn"],
+                "organization": geo_meta["organization"],
+                "location_label": geo_meta["location_label"],
+                "country_iso_code": geo_meta["country_iso_code"],
+                "latitude": geo_meta["latitude"],
+                "longitude": geo_meta["longitude"],
                 "protocol": str(n_obj.get("transport") or protocol),
                 "bytes": int(n_obj.get("bytes") or 0),
                 "tcp_flags": str(p_tcp["flags"]) if p_tcp.get("flags") else None,
@@ -2229,6 +2302,7 @@ def normalize_open_wan_port_sessions_response(
             "total_bytes": total_bytes,
             "unique_external_ips": unique_ips,
             "top_country": top_country,
+            "country_breakdown": country_breakdown,
             "first_seen_at": first_seen_at,
             "last_seen_at": last_seen_at,
         },

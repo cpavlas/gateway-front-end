@@ -113,6 +113,20 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
     )
   }, [allDevices, memberSearch])
 
+  const currentlyAssignedDevices = useMemo(() => {
+    const deviceMap = new Map<number, DeviceItem>()
+    for (const member of editingGroup?.members ?? []) {
+      deviceMap.set(member.id, member)
+    }
+    for (const dev of allDevices) {
+      deviceMap.set(dev.id, dev)
+    }
+    return selectedDeviceIds
+      .map((id) => deviceMap.get(id))
+      .filter((dev): dev is DeviceItem => dev !== undefined)
+      .sort((a, b) => a.effective_name.localeCompare(b.effective_name))
+  }, [allDevices, editingGroup, selectedDeviceIds])
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const cleanedName = name.trim()
@@ -355,6 +369,64 @@ export const GroupFormModal: React.FC<GroupFormModalProps> = ({
                 <span className="text-xs text-slate-400">min / day</span>
               </div>
             </div>
+          </div>
+
+          {/* Current Group Members Summary Card (FB-P19-008) */}
+          <div
+            data-testid="group-current-members-card"
+            className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 space-y-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
+                Current Group Members ({currentlyAssignedDevices.length})
+              </span>
+              {selectedDeviceIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeviceIds([])}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+                >
+                  Remove All
+                </button>
+              )}
+            </div>
+            {currentlyAssignedDevices.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                No devices currently assigned to this group. Select devices below.
+              </p>
+            ) : (
+              <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                {currentlyAssignedDevices.map((dev) => (
+                  <span
+                    key={dev.id}
+                    data-testid={`group-current-member-chip-${dev.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-2.5 py-1 text-xs text-slate-100"
+                  >
+                    <span className="font-medium truncate max-w-[160px]">
+                      {dev.effective_name}
+                    </span>
+                    {dev.ipv4_address && (
+                      <span className="font-mono text-[10px] text-slate-400">
+                        {dev.ipv4_address}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`group-remove-member-${dev.id}`}
+                      aria-label={`Remove ${dev.effective_name} from group`}
+                      onClick={() =>
+                        setSelectedDeviceIds((prev) =>
+                          prev.filter((id) => id !== dev.id),
+                        )
+                      }
+                      className="rounded p-0.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300 cursor-pointer"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Member Devices Assignment */}

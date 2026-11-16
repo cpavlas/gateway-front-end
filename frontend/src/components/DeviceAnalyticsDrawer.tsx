@@ -9,6 +9,7 @@ import {
   Globe,
   HardDrive,
   Lock,
+  Maximize2,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -27,6 +28,7 @@ import {
   type TimeWindow,
   type TimerStartPayload,
 } from '../api/client'
+import { AppUsageDetailModal } from './AppUsageDetailModal'
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
 import { TelemetryLoadingShell } from './TelemetryLoadingShell'
@@ -55,6 +57,7 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
   const queryClient = useQueryClient()
   const [windowKey, setWindowKey] = useState<TimeWindow>(initialWindow)
   const [domainSearch, setDomainSearch] = useState('')
+  const [selectedAppModalItem, setSelectedAppModalItem] = useState<AppUsageItem | null>(null)
   const [actionBanner, setActionBanner] = useState<string | null>(null)
   const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
@@ -538,12 +541,23 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                                   ? 'text-pink-400'
                                   : app.app_key === 'discord'
                                     ? 'text-indigo-400'
-                                    : 'text-emerald-400'
+                                    : app.app_key === 'facebook_threads'
+                                      ? 'text-blue-400'
+                                      : 'text-emerald-400'
                     return (
                       <div
                         key={app.app_key}
                         data-testid={`drawer-app-card-${app.app_key}`}
-                        className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedAppModalItem(app)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedAppModalItem(app)
+                          }
+                        }}
+                        className="flex cursor-pointer flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 transition-colors hover:border-indigo-500/50"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -552,9 +566,12 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                               aria-hidden="true"
                             />
                             <div>
-                              <span className="text-sm font-bold text-slate-100">
-                                {app.display_name}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-bold text-slate-100">
+                                  {app.display_name}
+                                </span>
+                                <Maximize2 className="h-3 w-3 text-slate-500" aria-hidden="true" />
+                              </div>
                               <p className="text-[11px] text-slate-400">
                                 {(app.dns_queries ?? 0).toLocaleString()} DNS queries •{' '}
                                 {formatBytes(app.bytes ?? 0)}
@@ -626,11 +643,12 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
                               type="button"
                               data-testid="drawer-app-youtube-toggle"
                               disabled={youtubeMutation.isPending || !device.ipv4_address}
-                              onClick={() =>
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 youtubeMutation.mutate(
                                   device.is_youtube_blocked ? 'unblock' : 'block',
                                 )
-                              }
+                              }}
                               className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
                                 device.is_youtube_blocked
                                   ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
@@ -916,6 +934,12 @@ export const DeviceAnalyticsDrawer: React.FC<DeviceAnalyticsDrawerProps> = ({
           )}
         </div>
       </div>
+
+      <AppUsageDetailModal
+        item={selectedAppModalItem}
+        windowKey={windowKey}
+        onClose={() => setSelectedAppModalItem(null)}
+      />
     </div>
   )
 }

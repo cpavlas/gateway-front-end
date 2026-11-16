@@ -7,6 +7,7 @@ import {
   Clock,
   Globe,
   HardDrive,
+  Maximize2,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -21,9 +22,11 @@ import {
   formatBlockedPercentage,
   formatBytes,
   formatClock24h,
+  type AppUsageItem,
   type TimeWindow,
   type TimerStartPayload,
 } from '../api/client'
+import { AppUsageDetailModal } from './AppUsageDetailModal'
 import { AutoRefreshSelector, useAutoRefresh } from './AutoRefreshSelector'
 import { getGroupBadgeClasses } from './GroupFormModal'
 import { HourlyProfileBarChart, TimelineBarChart } from './TelemetryBarChart'
@@ -55,6 +58,7 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
   const queryClient = useQueryClient()
   const [windowKey, setWindowKey] = useState<TimeWindow>(initialWindow)
   const [domainSearch, setDomainSearch] = useState('')
+  const [selectedAppModalItem, setSelectedAppModalItem] = useState<AppUsageItem | null>(null)
   const [actionBanner, setActionBanner] = useState<string | null>(null)
   const { intervalOption, setIntervalOption, refetchInterval } = useAutoRefresh('30s')
 
@@ -558,12 +562,23 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                                   ? 'text-pink-400'
                                   : app.app_key === 'discord'
                                     ? 'text-indigo-400'
-                                    : 'text-emerald-400'
+                                    : app.app_key === 'facebook_threads'
+                                      ? 'text-blue-400'
+                                      : 'text-emerald-400'
                     return (
                       <div
                         key={app.app_key}
+                        role="button"
+                        tabIndex={0}
                         data-testid={`group-drawer-app-card-${app.app_key}`}
-                        className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5"
+                        onClick={() => setSelectedAppModalItem(app)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedAppModalItem(app)
+                          }
+                        }}
+                        className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 transition hover:border-indigo-500/40 cursor-pointer"
                       >
                         <div>
                           <div className="flex items-start justify-between gap-2">
@@ -583,12 +598,15 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                               </div>
                             </div>
                             <div className="text-right">
-                              <span
-                                data-testid={`group-drawer-app-minutes-${app.app_key}`}
-                                className="text-base font-bold text-indigo-300 font-mono"
-                              >
-                                {formatActiveMinutes(app.active_minutes)}
-                              </span>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span
+                                  data-testid={`group-drawer-app-minutes-${app.app_key}`}
+                                  className="text-base font-bold text-indigo-300 font-mono"
+                                >
+                                  {formatActiveMinutes(app.active_minutes)}
+                                </span>
+                                <Maximize2 className="h-3 w-3 text-slate-500" aria-hidden="true" />
+                              </div>
                               <p className="text-[10px] text-slate-400">Active time ({windowKey})</p>
                             </div>
                           </div>
@@ -674,11 +692,12 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
                               type="button"
                               data-testid="group-drawer-app-youtube-toggle"
                               disabled={youtubeMutation.isPending}
-                              onClick={() =>
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 youtubeMutation.mutate(
                                   group.youtube_status === 'blocked' ? 'unblock' : 'block',
                                 )
-                              }
+                              }}
                               className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer disabled:opacity-50 ${
                                 group.youtube_status === 'blocked'
                                   ? 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
@@ -952,6 +971,16 @@ export const GroupAnalyticsDrawer: React.FC<GroupAnalyticsDrawerProps> = ({
           )}
         </div>
       </div>
+
+      <AppUsageDetailModal
+        item={selectedAppModalItem}
+        windowKey={windowKey}
+        onClose={() => setSelectedAppModalItem(null)}
+        onSelectDevice={(id) => {
+          onClose()
+          onSelectDeviceId?.(id)
+        }}
+      />
     </div>
   )
 }

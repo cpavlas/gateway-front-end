@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -136,7 +136,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
     queryKey: isViewingArchived ? ['devices', 'archived'] : ['devices'],
     queryFn: () =>
       isViewingArchived ? apiClient.getDevices({ status: 'archived' }) : apiClient.getDevices(),
-    refetchInterval,
+    refetchInterval: isViewingArchived ? refetchInterval : false,
     placeholderData: (previousData) => previousData,
   })
 
@@ -167,6 +167,18 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
       })
     },
   })
+
+  useEffect(() => {
+    if (isViewingArchived || typeof refetchInterval !== 'number' || refetchInterval <= 0) {
+      return undefined
+    }
+    const timer = window.setInterval(() => {
+      if (!syncMutation.isPending) {
+        syncMutation.mutate()
+      }
+    }, refetchInterval)
+    return () => window.clearInterval(timer)
+  }, [isViewingArchived, refetchInterval, syncMutation])
 
   const renameMutation = useMutation({
     mutationFn: ({ id, display_name }: { id: number; display_name: string | null }) =>
@@ -845,12 +857,12 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             onClick={() =>
                               setSelectedGroupId((prev) => (prev === grp.id ? null : grp.id))
                             }
-                            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer ${isFilterSelected
+                            className={`inline-flex h-9 w-9 min-h-9 min-w-9 p-2 items-center justify-center rounded-lg border transition cursor-pointer ${isFilterSelected
                               ? 'border-indigo-400 bg-indigo-500/25 text-indigo-100 shadow-xs'
                               : 'border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
                               }`}
                           >
-                            <Filter className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            <Filter className="h-4 w-4 shrink-0" aria-hidden="true" />
                           </button>
 
                           <button
@@ -859,9 +871,9 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                             aria-label="Analytics"
                             title={`Analytics for ${grp.name}`}
                             onClick={() => setSelectedAnalyticsGroupId(grp.id)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
+                            className="inline-flex h-9 w-9 min-h-9 min-w-9 p-2 items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 cursor-pointer"
                           >
-                            <BarChart3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            <BarChart3 className="h-4 w-4 shrink-0" aria-hidden="true" />
                           </button>
                         </div>
 
@@ -887,13 +899,13 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                   action: grp.youtube_status === 'blocked' ? 'unblock' : 'block',
                                 })
                               }
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-60 ${grp.youtube_status === 'blocked'
+                              className={`inline-flex h-9 w-9 min-h-9 min-w-9 p-2 items-center justify-center rounded-lg border transition cursor-pointer disabled:opacity-60 ${grp.youtube_status === 'blocked'
                                 ? 'border-slate-800 bg-slate-950/60 text-slate-500 opacity-60 hover:opacity-90 hover:border-slate-700'
                                 : 'border-red-500/50 bg-red-500/15 text-red-500 shadow-xs hover:bg-red-500/25 hover:border-red-500/70'
                                 }`}
                             >
                               <YouTubeLogoIcon
-                                className="h-3.5 w-3.5"
+                                className="h-4 w-4"
                                 testId={`group-yt-icon-${grp.id}`}
                               />
                             </button>
@@ -921,9 +933,9 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                 onClick={() =>
                                   groupAccessMutation.mutate({ group: grp, action: 'unblock' })
                                 }
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
+                                className="inline-flex h-9 w-9 min-h-9 min-w-9 p-2 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25 disabled:opacity-60 cursor-pointer"
                               >
-                                <ShieldAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+                                <ShieldAlert className="h-4 w-4 text-rose-400" aria-hidden="true" />
                               </button>
                             ) : (
                               <button
@@ -935,9 +947,9 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
                                 onClick={() =>
                                   groupAccessMutation.mutate({ group: grp, action: 'block' })
                                 }
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
+                                className="inline-flex h-9 w-9 min-h-9 min-w-9 p-2 items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60 cursor-pointer"
                               >
-                                <Globe className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                                <Globe className="h-4 w-4 text-emerald-400" aria-hidden="true" />
                               </button>
                             )}
                           </div>

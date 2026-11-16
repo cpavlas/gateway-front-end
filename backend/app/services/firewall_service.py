@@ -6,6 +6,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -14,13 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.elasticsearch import (
     ElasticsearchQueryError,
     ElasticsearchServiceClient,
+    is_private_lan_ip,
     resolve_time_window,
     sanitize_firewall_search,
     validate_ipv4_address,
 )
-from app.clients.opnsense import OPNsenseClient
-from app.config import Settings
-from app.models import Device
+from app.clients.opnsense import (
+    WELL_KNOWN_PORT_DESCRIPTIONS,
+    OPNsenseClient,
+    OPNsenseClientError,
+)
+from app.config import Settings, apply_runtime_overrides
+from app.models import AuditLog, Device
 from app.services.analytics_service import (
     TimelineBucketItem,
     get_analytics_cache,
@@ -33,6 +39,7 @@ from app.services.audit_and_backup_service import (
 
 _LAST_GOOD_WINDOW_AGGS: dict[str, dict[str, Any]] = {}
 _LAST_KNOWN_NAT_MAPPINGS: dict[tuple[str, int, str], int] = {}
+_LAST_KNOWN_NAT_DESCRIPTIONS: dict[tuple[str, int, str], str] = {}
 
 
 class FirewallOverviewSummary(BaseModel):
@@ -67,7 +74,16 @@ class FirewallExternalScannerItem(BaseModel):
     """External non-RFC1918 WAN source IP blocked at the perimeter."""
 
     source_ip: str
+    asn: int | None = None
     organization: str | None = None
+    city_name: str | None = None
+    region_name: str | None = None
+    country_name: str | None = None
+    country_iso_code: str | None = None
+    location_label: str = "Unknown Location"
+    latitude: float | None = None
+    longitude: float | None = None
+    is_wan_blocked: bool = False
     blocked_packets: int = 0
     bytes: int = 0
     target_ports: list[int] = Field(default_factory=list)
@@ -83,6 +99,7 @@ class FirewallOpenWanPortItem(BaseModel):
     external_port: int = 0
     destination_port: int
     port_mapping: str = ""
+    rule_description: str = ""
     protocol: str
     passed_packets: int = 0
     bytes: int = 0
@@ -125,6 +142,24 @@ class FirewallOverviewResponse(BaseModel):
     recent_events: list[FirewallLogEventItem]
 
 
+def _resolve_wan_port_description(
+    dest_ip: str,
+    dest_port: int,
+    ext_port: int,
+    proto: str,
+    nat_desc_map: dict[tuple[str, int, str], str],
+) -> str:
+    """Resolve friendly OPNsense D-NAT rule description or well-known service (`FB-P19-001`)."""
+    explicit = nat_desc_map.get((dest_ip, dest_port, proto))
+    if explicit:
+        return explicit
+    return (
+        WELL_KNOWN_PORT_DESCRIPTIONS.get(dest_port)
+        or WELL_KNOWN_PORT_DESCRIPTIONS.get(ext_port)
+        or ""
+    )
+
+
 def build_firewall_overview_response(
     es_data: dict[str, Any] | None,
     sqlite_devices: list[Device],
@@ -134,6 +169,8 @@ def build_firewall_overview_response(
     es_reachable: bool,
     warning: str | None = None,
     nat_port_mappings: dict[tuple[str, int, str], int] | None = None,
+    nat_descriptions: dict[tuple[str, int, str], str] | None = None,
+    wan_blocked_ips: set[str] | None = None,
 ) -> FirewallOverviewResponse:
     """Pure synchronous helper joining Elasticsearch `filterlog` telemetry
     with SQLite `Device` rows and OPNsense Destination NAT (`external_port:destination_port`).
@@ -158,6 +195,8 @@ def build_firewall_overview_response(
     }
     protected_ips = settings.protected_ip_set
     nat_map = nat_port_mappings or {}
+    nat_desc_map = nat_descriptions or {}
+    wan_blocked_set = wan_blocked_ips or set()
 
     def _resolve_device_name(ip_str: str) -> tuple[Device | None, str]:
         dev = by_ip.get(ip_str)
@@ -210,7 +249,12 @@ def build_firewall_overview_response(
         )
 
     external_scanners = [
-        FirewallExternalScannerItem(**s)
+        FirewallExternalScannerItem(
+            **{
+                **s,
+                "is_wan_blocked": str(s.get("source_ip") or "").strip() in wan_blocked_set,
+            }
+        )
         for s in (es_data.get("external_scanners") or [])
     ]
 
@@ -272,6 +316,9 @@ def build_firewall_overview_response(
             if ext_port > 0:
                 claimed_external_ports.add((ext_port, proto))
         dev, eff_name = _resolve_device_name(dest_ip)
+        rule_desc = _resolve_wan_port_description(
+            dest_ip, dest_port, ext_port, proto, nat_desc_map
+        )
         open_wan_ports.append(
             FirewallOpenWanPortItem(
                 device_id=dev.id if dev is not None else None,
@@ -280,6 +327,7 @@ def build_firewall_overview_response(
                 external_port=ext_port,
                 destination_port=dest_port,
                 port_mapping=f"{ext_port}:{dest_port}",
+                rule_description=rule_desc,
                 protocol=proto,
                 passed_packets=int(wp.get("passed_packets") or 0),
                 bytes=int(wp.get("bytes") or 0),
@@ -329,33 +377,81 @@ def build_firewall_overview_response(
     )
 
 
+async def _get_nat_details(
+    settings: Settings,
+    *,
+    refresh: bool = False,
+) -> tuple[dict[tuple[str, int, str], int], dict[tuple[str, int, str], str]]:
+    """Return cached or live OPNsense Destination NAT port mappings and rule descriptions."""
+    cache = get_analytics_cache()
+    nat_cache_key = "firewall:nat_port_mappings"
+    if not refresh:
+        cached_nat = cache.get(nat_cache_key)
+        if isinstance(cached_nat, dict):
+            return dict(_LAST_KNOWN_NAT_MAPPINGS), dict(_LAST_KNOWN_NAT_DESCRIPTIONS)
+    raw_key = settings.opnsense_api_key.get_secret_value().strip()
+    raw_sec = settings.opnsense_api_secret.get_secret_value().strip()
+    is_live_opnsense = (
+        bool(raw_key)
+        and raw_key != "changeme"  # noqa: S105
+        and bool(raw_sec)
+        and raw_sec != "changeme"  # noqa: S105
+        and settings.app_env != "testing"
+    )
+    if is_live_opnsense:
+        try:
+            opn_client = OPNsenseClient(apply_runtime_overrides(settings))
+            live_mappings, live_descs = await opn_client.get_destination_nat_details()
+            if live_mappings:
+                _LAST_KNOWN_NAT_MAPPINGS.update(live_mappings)
+            if live_descs:
+                _LAST_KNOWN_NAT_DESCRIPTIONS.update(live_descs)
+        except Exception:  # noqa: S110
+            pass
+    cache.set(nat_cache_key, {"loaded": True})
+    return dict(_LAST_KNOWN_NAT_MAPPINGS), dict(_LAST_KNOWN_NAT_DESCRIPTIONS)
+
+
 async def _get_nat_port_mappings(
     settings: Settings,
     *,
     refresh: bool = False,
 ) -> dict[tuple[str, int, str], int]:
     """Return cached or live OPNsense Destination NAT port mappings."""
+    mappings, _ = await _get_nat_details(settings, refresh=refresh)
+    return mappings
+
+
+async def _get_cached_wan_blocked_ips(
+    settings: Settings,
+    *,
+    refresh: bool = False,
+) -> set[str]:
+    """Return the cached set of external WAN IPs currently blocked in OPNsense."""
     cache = get_analytics_cache()
-    nat_cache_key = "firewall:nat_port_mappings"
+    cache_key = "firewall:wan_blocked_ips"
     if not refresh:
-        cached_nat = cache.get(nat_cache_key)
-        if isinstance(cached_nat, dict):
-            return dict(_LAST_KNOWN_NAT_MAPPINGS)
-    if (
-        settings.opnsense_api_key
-        and settings.opnsense_api_key != "changeme"
-        and settings.opnsense_api_secret
-        and settings.opnsense_api_secret != "changeme"  # noqa: S105
-    ):
+        cached = cache.get(cache_key)
+        if isinstance(cached, list):
+            return {str(ip).strip() for ip in cached if str(ip).strip()}
+    raw_key = settings.opnsense_api_key.get_secret_value().strip()
+    raw_sec = settings.opnsense_api_secret.get_secret_value().strip()
+    ips: list[str] = []
+    is_live_opnsense = (
+        bool(raw_key)
+        and raw_key != "changeme"  # noqa: S105
+        and bool(raw_sec)
+        and raw_sec != "changeme"  # noqa: S105
+        and settings.app_env != "testing"
+    )
+    if is_live_opnsense:
         try:
-            opn_client = OPNsenseClient(settings)
-            live_mappings = await opn_client.get_destination_nat_mappings()
-            if live_mappings:
-                _LAST_KNOWN_NAT_MAPPINGS.update(live_mappings)
+            opn_client = OPNsenseClient(apply_runtime_overrides(settings))
+            ips = await opn_client.list_wan_blocked_ips()
         except Exception:  # noqa: S110
-            pass
-    cache.set(nat_cache_key, {"loaded": True})
-    return dict(_LAST_KNOWN_NAT_MAPPINGS)
+            ips = []
+    cache.set(cache_key, ips, ttl_seconds=60.0)
+    return {str(ip).strip() for ip in ips if str(ip).strip()}
 
 
 async def get_firewall_overview_analytics(
@@ -368,6 +464,7 @@ async def get_firewall_overview_analytics(
     direction: str | None = None,
     protocol: str | None = None,
     search: str | None = None,
+    recent_limit: int = 100,
     refresh: bool = False,
     record_perf: bool = True,
 ) -> FirewallOverviewResponse:
@@ -385,6 +482,7 @@ async def get_firewall_overview_analytics(
     clean_action = (action or "all").strip().lower()
     clean_dir = (direction or "all").strip().lower()
     clean_proto = (protocol or "all").strip().lower()
+    safe_limit = max(10, min(int(recent_limit or 100), 250))
     has_active_filter = (
         clean_action != "all"
         or clean_dir != "all"
@@ -395,11 +493,12 @@ async def get_firewall_overview_analytics(
     cache = get_analytics_cache()
     window_cache_key = f"firewall_window:{win_key}"
     cache_key = (
-        f"firewall:{win_key}:{clean_action}:{clean_dir}:{clean_proto}:{clean_search}"
+        f"firewall:{win_key}:{clean_action}:{clean_dir}:{clean_proto}:{clean_search}:{safe_limit}"
     )
 
     sqlite_devices = list((await db.execute(select(Device))).scalars().all())
-    nat_mappings = await _get_nat_port_mappings(settings, refresh=refresh)
+    nat_mappings, nat_descriptions = await _get_nat_details(settings, refresh=refresh)
+    wan_blocked_set = await _get_cached_wan_blocked_ips(settings, refresh=refresh)
 
     # Lock window-level aggregations (`summary`, `timeline`, `noisy_lan_sources`,
     # `external_scanners`, `open_wan_ports`) so changing Searchable Log Explorer filters
@@ -423,6 +522,8 @@ async def get_firewall_overview_analytics(
                 window=win_key,
                 es_reachable=True,
                 nat_port_mappings=nat_mappings,
+                nat_descriptions=nat_descriptions,
+                wan_blocked_ips=wan_blocked_set,
             )
             if record_perf and not has_active_filter:
                 elapsed_ms = (time.perf_counter() - start_t) * 1000.0
@@ -438,13 +539,23 @@ async def get_firewall_overview_analytics(
             return resp
 
     try:
-        es_data = await es_client.fetch_firewall_overview(
-            window=win_key,
-            action=clean_action if clean_action != "all" else None,
-            direction=clean_dir if clean_dir != "all" else None,
-            protocol=clean_proto if clean_proto != "all" else None,
-            search=clean_search or None,
-        )
+        try:
+            es_data = await es_client.fetch_firewall_overview(
+                window=win_key,
+                action=clean_action if clean_action != "all" else None,
+                direction=clean_dir if clean_dir != "all" else None,
+                protocol=clean_proto if clean_proto != "all" else None,
+                search=clean_search or None,
+                recent_limit=safe_limit,
+            )
+        except TypeError:
+            es_data = await es_client.fetch_firewall_overview(
+                window=win_key,
+                action=clean_action if clean_action != "all" else None,
+                direction=clean_dir if clean_dir != "all" else None,
+                protocol=clean_proto if clean_proto != "all" else None,
+                search=clean_search or None,
+            )
         ttl = resolve_telemetry_cache_ttl(win_key)
         if window_aggs is None:
             window_aggs = {
@@ -470,6 +581,8 @@ async def get_firewall_overview_analytics(
             window=win_key,
             es_reachable=True,
             nat_port_mappings=nat_mappings,
+            nat_descriptions=nat_descriptions,
+            wan_blocked_ips=wan_blocked_set,
         )
         if record_perf and not has_active_filter:
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
@@ -498,6 +611,8 @@ async def get_firewall_overview_analytics(
             es_reachable=False,
             warning=f"Elasticsearch telemetry temporarily unavailable ({exc}).",
             nat_port_mappings=nat_mappings,
+            nat_descriptions=nat_descriptions,
+            wan_blocked_ips=wan_blocked_set,
         )
 
 
@@ -508,6 +623,7 @@ class FirewallOpenPortSessionsSummary(BaseModel):
     total_bytes: int = 0
     unique_external_ips: int = 0
     top_country: str | None = None
+    country_breakdown: list[dict[str, Any]] = Field(default_factory=list)
     first_seen_at: str | None = None
     last_seen_at: str | None = None
 
@@ -527,6 +643,7 @@ class FirewallConnectedExternalIpItem(BaseModel):
     location_label: str = "Unknown Location"
     latitude: float | None = None
     longitude: float | None = None
+    is_wan_blocked: bool = False
     passed_packets: int = 0
     bytes: int = 0
     first_seen_at: str | None = None
@@ -552,6 +669,8 @@ class FirewallOpenPortSessionEventItem(BaseModel):
     organization: str | None = None
     location_label: str = "Unknown Location"
     country_iso_code: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     protocol: str = "tcp"
     bytes: int = 0
     tcp_flags: str | None = None
@@ -590,6 +709,7 @@ def build_open_wan_port_sessions_response(
     window: str = "24h",
     es_reachable: bool = True,
     warning: str | None = None,
+    wan_blocked_ips: set[str] | None = None,
 ) -> FirewallOpenPortSessionsResponse:
     """Pure synchronous helper assembling `FirewallOpenPortSessionsResponse` (`FB-P13-002`)."""
     generated_at = datetime.now(UTC).isoformat()
@@ -635,11 +755,19 @@ def build_open_wan_port_sessions_response(
         total_bytes=int(raw_sum.get("total_bytes") or 0),
         unique_external_ips=int(raw_sum.get("unique_external_ips") or 0),
         top_country=raw_sum.get("top_country"),
+        country_breakdown=list(raw_sum.get("country_breakdown") or []),
         first_seen_at=raw_sum.get("first_seen_at"),
         last_seen_at=raw_sum.get("last_seen_at"),
     )
+    wan_blocked_set = wan_blocked_ips or set()
     external_ips = [
-        FirewallConnectedExternalIpItem(**item)
+        FirewallConnectedExternalIpItem(
+            **{
+                **item,
+                "is_wan_blocked": str(item.get("source_ip") or "").strip()
+                in wan_blocked_set,
+            }
+        )
         for item in (es_data.get("external_ips") or [])
     ]
     recent_events = [
@@ -676,6 +804,7 @@ async def get_open_wan_port_sessions(
     window: str = "24h",
     search: str | None = None,
     refresh: bool = False,
+    settings: Settings | None = None,
 ) -> FirewallOpenPortSessionsResponse:
     """Fetch connected external WAN IP details for an open WAN port (`FB-P13-002`)."""
     start_t = time.perf_counter()
@@ -696,6 +825,11 @@ async def get_open_wan_port_sessions(
     )
 
     sqlite_devices = list((await db.execute(select(Device))).scalars().all())
+    wan_blocked_set = (
+        await _get_cached_wan_blocked_ips(settings, refresh=refresh)
+        if settings is not None
+        else set()
+    )
 
     if not refresh:
         cached_es = cache.get(cache_key)
@@ -709,6 +843,7 @@ async def get_open_wan_port_sessions(
                 protocol=clean_proto,
                 window=win_key,
                 es_reachable=True,
+                wan_blocked_ips=wan_blocked_set,
             )
             if not clean_search:
                 elapsed_ms = (time.perf_counter() - start_t) * 1000.0
@@ -742,6 +877,7 @@ async def get_open_wan_port_sessions(
             protocol=clean_proto,
             window=win_key,
             es_reachable=True,
+            wan_blocked_ips=wan_blocked_set,
         )
         if not clean_search:
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
@@ -772,5 +908,210 @@ async def get_open_wan_port_sessions(
             window=win_key,
             es_reachable=False,
             warning=f"Elasticsearch telemetry temporarily unavailable ({exc}).",
+            wan_blocked_ips=wan_blocked_set,
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 19: External WAN IP Blocklist (`FB-P19-002`)
+# ---------------------------------------------------------------------------
+
+
+class WanBlockedIpListResponse(BaseModel):
+    """Response model for `GET /api/v1/firewall/wan-blocks`."""
+
+    alias_name: str
+    ips: list[str]
+    total_count: int
+
+
+class WanBlockedIpCreateRequest(BaseModel):
+    """Request payload for `POST /api/v1/firewall/wan-blocks`."""
+
+    ip_address: str = Field(..., min_length=7, max_length=64)
+    reason: str = Field(default="", max_length=255)
+
+
+class WanBlockedIpMutationResponse(BaseModel):
+    """Mutation response for external WAN IP block/unblock."""
+
+    alias_name: str
+    ip_address: str
+    blocked: bool
+    ips: list[str]
+    opnsense_synced: bool = False
+    warning: str | None = None
+
+
+def validate_public_wan_ipv4(
+    raw_ip: str, protected_ips: frozenset[str]
+) -> str:
+    """Validate that `raw_ip` is a public routable WAN IPv4 address (never LAN/protected)."""
+    valid_ip = validate_ipv4_address(raw_ip)
+    if is_private_lan_ip(valid_ip):
+        raise ValueError(
+            f"Refusing to add private/RFC1918 LAN IP '{valid_ip}' to external WAN blocklist."
+        )
+    if valid_ip in protected_ips:
+        raise ValueError(
+            f"Refusing to add protected IP '{valid_ip}' to external WAN blocklist."
+        )
+    return valid_ip
+
+
+async def list_wan_blocked_ips(
+    settings: Settings,
+    opnsense: OPNsenseClient,
+) -> WanBlockedIpListResponse:
+    """List external WAN IPs currently blocked in OPNsense `gateway_wan_blocked_ips`."""
+    alias_name = getattr(settings, "opnsense_wan_block_alias", "gateway_wan_blocked_ips")
+    try:
+        ips = await opnsense.list_wan_blocked_ips()
+    except (OPNsenseClientError, httpx.HTTPError):
+        ips = []
+    cache = get_analytics_cache()
+    cache.set("firewall:wan_blocked_ips", ips, ttl_seconds=60.0)
+    return WanBlockedIpListResponse(
+        alias_name=alias_name,
+        ips=ips,
+        total_count=len(ips),
+    )
+
+
+def build_wan_block_audit_and_response(
+    alias_name: str,
+    valid_ip: str,
+    action: str,
+    actor: str,
+    details: str,
+    blocked: bool,
+    ips: list[str],
+    opnsense_synced: bool,
+    warning: str | None,
+) -> tuple[AuditLog, WanBlockedIpMutationResponse]:
+    """Assemble audit entry and mutation payload for WAN IP block/unblock (`FB-P19-002`)."""
+    audit_entry = AuditLog(
+        actor=actor,
+        action=action,
+        audit_label="POLICY_CHANGE",
+        target=valid_ip,
+        status="success" if opnsense_synced else "warning",
+        details=details,
+    )
+    response = WanBlockedIpMutationResponse(
+        alias_name=alias_name,
+        ip_address=valid_ip,
+        blocked=blocked,
+        ips=ips,
+        opnsense_synced=opnsense_synced,
+        warning=warning,
+    )
+    return audit_entry, response
+
+
+async def block_external_wan_ip(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    payload: WanBlockedIpCreateRequest,
+    *,
+    actor: str,
+) -> WanBlockedIpMutationResponse:
+    """Add an external WAN IP to `gateway_wan_blocked_ips`, sever states, and audit log."""
+    try:
+        valid_ip = validate_public_wan_ipv4(
+            payload.ip_address, settings.protected_ip_set
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    alias_name = getattr(settings, "opnsense_wan_block_alias", "gateway_wan_blocked_ips")
+    warning: str | None = None
+    opnsense_synced = False
+    ips: list[str] = []
+    try:
+        ips = await opnsense.add_ip_to_wan_block_alias(valid_ip)
+        opnsense_synced = True
+    except (OPNsenseClientError, httpx.HTTPError) as exc:
+        warning = f"OPNsense WAN blocklist alias sync failed: {exc}"
+        await record_upstream_error_audit_log(
+            db,
+            service="opnsense",
+            operation=f"wan_block:{valid_ip}",
+            error_message=str(exc),
+        )
+
+    cache = get_analytics_cache()
+    if opnsense_synced:
+        cache.set("firewall:wan_blocked_ips", ips, ttl_seconds=60.0)
+    reason_suffix = f" ({payload.reason.strip()})" if payload.reason.strip() else ""
+    audit_entry, response = build_wan_block_audit_and_response(
+        alias_name=alias_name,
+        valid_ip=valid_ip,
+        action="firewall.wan_block",
+        actor=actor,
+        details=f"Added external WAN IP {valid_ip} to {alias_name}{reason_suffix}.",
+        blocked=opnsense_synced,
+        ips=ips,
+        opnsense_synced=opnsense_synced,
+        warning=warning,
+    )
+    db.add(audit_entry)
+    await db.commit()
+    return response
+
+
+async def unblock_external_wan_ip(
+    db: AsyncSession,
+    opnsense: OPNsenseClient,
+    settings: Settings,
+    ip_address: str,
+    *,
+    actor: str,
+) -> WanBlockedIpMutationResponse:
+    """Remove an external WAN IP from `gateway_wan_blocked_ips` and record an audit log."""
+    try:
+        valid_ip = validate_ipv4_address(ip_address)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    alias_name = getattr(settings, "opnsense_wan_block_alias", "gateway_wan_blocked_ips")
+    warning: str | None = None
+    opnsense_synced = False
+    ips: list[str] = []
+    try:
+        ips = await opnsense.remove_ip_from_wan_block_alias(valid_ip)
+        opnsense_synced = True
+    except (OPNsenseClientError, httpx.HTTPError) as exc:
+        warning = f"OPNsense WAN blocklist unblock failed: {exc}"
+        await record_upstream_error_audit_log(
+            db,
+            service="opnsense",
+            operation=f"wan_unblock:{valid_ip}",
+            error_message=str(exc),
+        )
+
+    cache = get_analytics_cache()
+    if opnsense_synced:
+        cache.set("firewall:wan_blocked_ips", ips, ttl_seconds=60.0)
+    audit_entry, response = build_wan_block_audit_and_response(
+        alias_name=alias_name,
+        valid_ip=valid_ip,
+        action="firewall.wan_unblock",
+        actor=actor,
+        details=f"Removed external WAN IP {valid_ip} from {alias_name}.",
+        blocked=False,
+        ips=ips,
+        opnsense_synced=opnsense_synced,
+        warning=warning,
+    )
+    db.add(audit_entry)
+    await db.commit()
+    return response
 

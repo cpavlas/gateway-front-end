@@ -15,6 +15,18 @@ DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/gateway.db"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 
+ALL_TELEMETRY_APP_KEYS: tuple[str, ...] = (
+    "youtube",
+    "plex",
+    "netflix",
+    "disney_plus",
+    "twitch",
+    "tiktok",
+    "discord",
+    "facebook_threads",
+    "gaming",
+)
+
 PLACEHOLDER_ADMIN_PASSWORDS = frozenset(
     {
         "",
@@ -85,6 +97,9 @@ class Settings(BaseSettings):
     opnsense_youtube_domains_alias: str = Field(
         default="gateway_youtube_domains", min_length=1
     )
+    opnsense_wan_block_alias: str = Field(
+        default="gateway_wan_blocked_ips", min_length=1
+    )
     opnsense_protected_ips: str = DEFAULT_GATEWAY_IP
 
     # 3. Elasticsearch 9.4.3 Integration (Elastic pfSense Integration 1.25.4)
@@ -100,6 +115,9 @@ class Settings(BaseSettings):
     plex_api_token: SecretStr = Field(default=SecretStr(""))
     plex_verify_ssl: bool = False
     plex_timeout_seconds: float = Field(default=8.0, gt=0.5, le=60.0)
+
+    # 5. Application Telemetry Visibility (`FB-P18-008`)
+    enabled_telemetry_apps: str = "youtube,plex"
 
     @field_validator("app_secret_key")
     @classmethod
@@ -209,6 +227,18 @@ class Settings(BaseSettings):
         """Return list of configured Elasticsearch index/data-stream patterns."""
         patterns = [p.strip() for p in self.elasticsearch_index_patterns.split(",") if p.strip()]
         return patterns or ["logs-pfsense.log*"]
+
+    @property
+    def enabled_telemetry_app_list(self) -> list[str]:
+        """Return ordered list of enabled application telemetry keys (`FB-P18-008`)."""
+        allowed = set(ALL_TELEMETRY_APP_KEYS)
+        items = [
+            item.strip().lower()
+            for item in (self.enabled_telemetry_apps or "").split(",")
+            if item.strip().lower() in allowed
+        ]
+        deduped = list(dict.fromkeys(items))
+        return deduped or ["youtube", "plex"]
 
 
 @lru_cache(maxsize=1)

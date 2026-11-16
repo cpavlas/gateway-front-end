@@ -132,7 +132,7 @@ def test_elasticsearch_youtube_and_plex_usage_aggregation_and_extraction(
     }
 
     extracted = _extract_app_usage(fake_aggs)
-    assert len(extracted) == 8
+    assert len(extracted) == 9
     yt, plex = extracted[0], extracted[1]
     assert yt["app_key"] == "youtube"
     assert yt["display_name"] == "YouTube"
