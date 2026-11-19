@@ -696,5 +696,10 @@ Following the completion of `v1.2.1` and a comprehensive interactive Tab-by-Tab 
      - **`FB-P18-012`:** Compute and display the average node ping time in `OK (XX.X ms)` inside the `Test All Connections` modal when a service has multiple configured nodes (e.g., 3 Elasticsearch nodes).
      - **`FB-P19-007` + `FB-P19-008`:** Unify Device Group card action buttons (`Filter`, `Analytics`, `YouTube`, `Timer`, `Internet`) to uniform `h-9 w-9` sizing (`DevicesPage.tsx`) and add a **Current Group Members** card with 1-click member removal inside `GroupFormModal.tsx`.
 
+### Phase 19.1 (`v1.3.1` — COMPLETE): 30-Day Analytics `too_many_buckets_exception` Resolution (`BUG-P19-004`)
+- **Deliverables:**
+  1. **Window-Adaptive App Telemetry Slot Resolution (`elasticsearch.py`):** Added `_resolve_app_usage_slot_config(window)` scaling `app_usage` histogram buckets (`5m` / `140` noise threshold for `today`/`1h`/`24h`, `15m` / `47` for `7d`, `30m` / `24` for `30d`) and scaling `_extract_app_usage()` minutes & noise filters consistently without modifying Elasticsearch cluster `search.max_buckets`.
+  2. **`breadth_first` Pruning & Enabled-App Scoping (`elasticsearch.py`, `analytics_service.py`, `group_service.py`):** Added `collect_mode: "breadth_first"`, capped `by_device.devices` `size` to `10`, omitted redundant top-level `active_slots` when device buckets compute unioned slots, and propagated `enabled_apps=settings.enabled_telemetry_app_list` across Overview, Device, and Group analytics queries.
+
 
 

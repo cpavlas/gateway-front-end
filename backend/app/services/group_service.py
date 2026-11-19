@@ -1424,11 +1424,19 @@ async def get_group_analytics(
             return cached.model_copy(update={"group": grp_resp})
 
     try:
-        es_data = await es_client.fetch_group_analytics(
-            ipv4_addresses=tracked_ips,
-            window=win_key,
-            domain_search=clean_search,
-        )
+        try:
+            es_data = await es_client.fetch_group_analytics(
+                ipv4_addresses=tracked_ips,
+                window=win_key,
+                domain_search=clean_search,
+                enabled_apps=settings.enabled_telemetry_app_list,
+            )
+        except TypeError:
+            es_data = await es_client.fetch_group_analytics(
+                ipv4_addresses=tracked_ips,
+                window=win_key,
+                domain_search=clean_search,
+            )
     except ElasticsearchQueryError as exc:
         await record_upstream_error_audit_log(
             db,

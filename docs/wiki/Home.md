@@ -1,8 +1,8 @@
-# Gateway Control — User Manual & Wiki (`v1.3.0`)
+# Gateway Control — User Manual & Wiki (`v1.3.1`)
 
 > **Quick Navigation:** [Project Home](../../README.md) · **Wiki Home** · [01. Setup & OPNsense](01-Installation-and-OPNsense-Setup.md) · [02. Devices & Quotas](02-Devices-Groups-and-YouTube-Quotas.md) · [03. Timers & Schedules](03-Timers-and-Recurring-Schedules.md) · [04. Analytics & Blocking](04-Analytics-App-Telemetry-and-Domain-ASN-Blocking.md) · [05. Firewall & WAN Blocking](05-Firewall-Inspector-GeoIP-and-WAN-Blocking.md) · [06. System & Admin](06-System-Administration-HA-and-Troubleshooting.md)
 
-Welcome to the official User Manual for the **Gateway Access Control & Analytics Portal (`v1.3.0`)** — a self-hosted, single-container portal (`http://localhost:8080`) unifying LAN internet/application policy enforcement via **OPNsense (`26.7.7-amd64`)**, high-speed network telemetry from **Elasticsearch (`9.4.3`)**, and Tautulli-style playback visibility from **Plex Media Server**.
+Welcome to the official User Manual for the **Gateway Access Control & Analytics Portal (`v1.3.1`)** — a self-hosted, single-container portal (`http://localhost:8080`) unifying LAN internet/application policy enforcement via **OPNsense (`26.7.7-amd64`)**, high-speed network telemetry from **Elasticsearch (`9.4.3`)**, and Tautulli-style playback visibility from **Plex Media Server**.
 
 ---
 

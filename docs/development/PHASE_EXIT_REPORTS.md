@@ -699,6 +699,24 @@ At the completion of every phase (before Git check-in and unlocking the next pha
 - **Release Sign-Off (`v1.3.0`):**
   - All **8 verification sections (`Section A` through `Section H`)** in `docs/development/Validation/PHASE19-Verify.md` passed user live validation (`[pass]`) with no open feedback prior to merging `phase19` into `main` and tagging final release **`v1.3.0`**.
 
+---
+
+## Phase 19.1 Exit Analysis & Unplanned-Information Retrospective (`v1.3.1` — 2026-11-19)
+
+### 1. Patch Deliverables & Quality Gate Summary (`BUG-P19-004`)
+- **Deliverables Completed (Option C — Non-Cluster-Setting Resolution):**
+  1. Added `_resolve_app_usage_slot_config(window)` in `backend/app/clients/elasticsearch.py` scaling `app_usage` histogram interval and noise thresholds by window (`5m`/`140` for `today`/`1h`/`24h`, `15m`/`47` for `7d`, `30m`/`24` for `30d`), and updated `_extract_app_usage()` to compute active minutes and noise filtering dynamically per window.
+  2. Added `collect_mode: "breadth_first"` on `by_device.devices`, capped `size` from `15` to `10`, omitted redundant top-level `active_slots` by default (`include_top_level_slots=False`), and scoped `filters_map` to `enabled_apps` across `fetch_network_overview()`, `fetch_device_analytics()`, `fetch_group_analytics()`, `analytics_service.py`, and `group_service.py`.
+  3. Bumped semantic version to `1.3.1` across `backend/app/__init__.py`, `backend/pyproject.toml`, and `frontend/package.json`.
+- **Final Automated & Live Verification Metrics (`v1.3.1`):**
+  - **Backend (`pytest`, `ruff`, `mypy`):** `158 / 158` passed (`1` warning in discovery test) in `25.77s` (`85%` total coverage across `7,357` statements; `elasticsearch.py` `92%`, `analytics_service.py` `86%`), `0` ruff errors, `0` mypy issues.
+  - **Frontend (`vitest`, `tsc && vite build`):** `45 / 45` passed across `11` test files in `23.54s` (`91.12%` statement/line coverage), `0` TypeScript/bundle errors (`4.56s` Vite build).
+  - **Live Container Validation:** `gateway-front-end:latest` (`v1.3.1`) verified `Up ... (healthy)` on `:8080`, live `7d` overview (`6,765,680` events, `1,279.3 ms`), live `30d` overview (`26,793,427` events, `967.7 ms`), and live `30d` worst-case all **9** apps enabled (`26,793,427` events, `608.2 ms`, zero `too_many_buckets_exception` errors) without changing Elasticsearch `search.max_buckets`.
+
+### 2. Unplanned Information Audit & Feed-Forward (`v1.3.1`)
+- **Finding (`BUG-P19-004`):** Expanding `_APP_USAGE_CATALOG` from 2 apps to 9 apps multiplied two nested `fixed_interval: "5m"` `date_histogram` aggregations (`8,640` slots per series over `30d`) across 9 filter buckets × per-device `terms` (`depth_first` default), exceeding Elasticsearch's `65,536` `search.max_buckets` limit on `30d` queries while `build_open_wan_port_sessions_query()` had already adopted `15m`/`30m` adaptive slots in Phase 14. Aligning `app_usage` slot granularity, `breadth_first` pruning, and `enabled_apps` scoping eliminated both the bucket explosion and redundant work while keeping all query tuning application-side.
+- **Release Sign-Off (`v1.3.1`):** Live UI verification of `30d` Analytics at `http://localhost:8080` passed user review prior to committing `v1.3.1`, merging `--no-ff` to `main`, and tagging release **`v1.3.1`**.
+
 
 
 

@@ -946,3 +946,181 @@ async def test_telemetry_apps_endpoints_and_analytics_override_sync(
     assert put_back.status_code == 200
     ov3 = await async_client.get("/api/v1/analytics/overview?window=today")
     assert [a["app_key"] for a in ov3.json()["application_usage"]] == ["youtube", "plex"]
+
+
+def test_phase19_1_bug_p19_004_adaptive_app_usage_slots_and_enabled_scope() -> None:
+    """Verify BUG-P19-004 Option C: adaptive slot interval, breadth_first & enabled_apps scope."""
+    from app.clients.elasticsearch import (
+        _resolve_app_usage_slot_config,
+        build_device_analytics_query,
+        build_network_overview_query,
+    )
+
+    assert _resolve_app_usage_slot_config("today") == ("5m", 5, 140)
+    assert _resolve_app_usage_slot_config("1h") == ("5m", 5, 140)
+    assert _resolve_app_usage_slot_config("24h") == ("5m", 5, 140)
+    assert _resolve_app_usage_slot_config("7d") == ("15m", 15, 47)
+    assert _resolve_app_usage_slot_config("30d") == ("30m", 30, 24)
+
+    q_30d = build_network_overview_query(
+        window="30d",
+        tz_name="America/Los_Angeles",
+        enabled_apps=["youtube", "plex"],
+    )
+    app_agg = q_30d["aggs"]["app_usage"]
+    assert set(app_agg["filters"]["filters"].keys()) == {"youtube", "plex"}
+    assert "active_slots" not in app_agg["aggs"]
+    dev_terms = app_agg["aggs"]["by_device"]["aggs"]["devices"]["terms"]
+    assert dev_terms["collect_mode"] == "breadth_first"
+    assert dev_terms["size"] == 10
+    dev_slots = app_agg["aggs"]["by_device"]["aggs"]["devices"]["aggs"]["active_slots"]
+    assert dev_slots["date_histogram"]["fixed_interval"] == "30m"
+
+    q_7d_dev = build_device_analytics_query(
+        "192.168.1.50",
+        window="7d",
+        enabled_apps=["youtube"],
+    )
+    dev_app_agg = q_7d_dev["aggs"]["app_usage"]
+    assert set(dev_app_agg["filters"]["filters"].keys()) == {"youtube"}
+    assert (
+        dev_app_agg["aggs"]["by_device"]["aggs"]["devices"]["aggs"]["active_slots"][
+            "date_histogram"
+        ]["fixed_interval"]
+        == "15m"
+    )
+
+    sample_aggs = {
+        "app_usage": {
+            "buckets": {
+                "youtube": {
+                    "doc_count": 20,
+                    "by_device": {
+                        "devices": {
+                            "buckets": [
+                                {
+                                    "key": "192.168.1.60",
+                                    "doc_count": 20,
+                                    "bytes": {"value": 1024},
+                                    "dns_queries": {"doc_count": 10},
+                                    "active_slots": {
+                                        "buckets": [
+                                            {"key_as_string": "s1", "doc_count": 8},
+                                            {"key_as_string": "s2", "doc_count": 12},
+                                        ]
+                                    },
+                                }
+                            ]
+                        }
+                    },
+                }
+            }
+        }
+    }
+    res_30d = _extract_app_usage(sample_aggs, window="30d")
+    yt_30d = next(a for a in res_30d if a["app_key"] == "youtube")
+    assert yt_30d["active_minutes"] == 60
+    assert yt_30d["top_devices"][0]["active_minutes"] == 60
+
+    res_7d = _extract_app_usage(sample_aggs, window="7d")
+    yt_7d = next(a for a in res_7d if a["app_key"] == "youtube")
+    assert yt_7d["active_minutes"] == 30
+
+    # Top-level active_slots option uses the scaled slot_interval too
+    top_slots_agg = _build_app_usage_agg(
+        "UTC",
+        window="30d",
+        enabled_apps=["youtube"],
+        include_top_level_slots=True,
+    )
+    assert top_slots_agg["aggs"]["active_slots"]["date_histogram"]["fixed_interval"] == "30m"
+
+
+@pytest.mark.asyncio
+async def test_phase19_1_es_client_enabled_apps_and_legacy_fallback(
+    test_settings: Settings,
+    initialized_db: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify Option C `enabled_apps` propagation and legacy ES mock signature fallback."""
+    from app.services.analytics_service import (
+        get_device_analytics,
+        get_network_overview_analytics,
+    )
+
+    get_analytics_cache().clear()
+    svc = ElasticsearchServiceClient(test_settings)
+    captured_bodies: list[dict[str, Any]] = []
+
+    class _MockEsClient:
+        async def search(self, *, body: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+            captured_bodies.append(body)
+            return {"hits": {"total": {"value": 5}}, "aggregations": {}}
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(svc, "create_es_client", lambda: _MockEsClient())
+    await svc.fetch_network_overview(window="30d", enabled_apps=["youtube"])
+    await svc.fetch_device_analytics("192.168.1.50", window="30d", enabled_apps=["plex"])
+    await svc.fetch_group_analytics(["192.168.1.50"], window="30d", enabled_apps=["youtube"])
+    assert set(captured_bodies[0]["aggs"]["app_usage"]["filters"]["filters"].keys()) == {"youtube"}
+    assert set(captured_bodies[1]["aggs"]["app_usage"]["filters"]["filters"].keys()) == {"plex"}
+    assert set(captured_bodies[3]["aggs"]["app_usage"]["filters"]["filters"].keys()) == {"youtube"}
+
+    # Verify TypeError fallback when unit mocks omit `enabled_apps` / `excluded_ips`
+    session_factory = get_session_factory(initialized_db)
+    async with session_factory() as session:
+        dev = Device(mac_address="aa:bb:cc:dd:ee:91", ipv4_address="192.168.1.191")
+        session.add(dev)
+        await session.commit()
+        await session.refresh(dev)
+        dev_id = dev.id
+
+        class _LegacyEs:
+            async def fetch_network_overview(
+                self,
+                window: str = "24h",
+                top_n: int = 12,
+            ) -> dict[str, Any]:
+                return {
+                    "window": window,
+                    "summary": {},
+                    "timeline": [],
+                    "top_devices": [],
+                    "top_domains": [],
+                    "top_registered_domains": [],
+                    "top_organizations": [],
+                    "application_usage": [],
+                }
+
+            async def fetch_device_analytics(
+                self,
+                ipv4_address: str,
+                window: str = "24h",
+                domain_search: str | None = None,
+            ) -> dict[str, Any]:
+                return {
+                    "window": window,
+                    "summary": {},
+                    "timeline": [],
+                    "hourly_access_profile": [],
+                    "top_domains": [],
+                    "top_registered_domains": [],
+                    "top_organizations": [],
+                    "recent_queries": [],
+                    "application_usage": [],
+                }
+
+        monkeypatch.setattr(
+            "app.services.analytics_service.fetch_plex_telemetry_for_analytics",
+            AsyncMock(return_value=None),
+        )
+        ov = await get_network_overview_analytics(
+            session, test_settings, _LegacyEs(), window="30d", refresh=True, record_perf=False  # type: ignore[arg-type]
+        )
+        dv = await get_device_analytics(
+            session, test_settings, _LegacyEs(), dev_id, window="30d", refresh=True  # type: ignore[arg-type]
+        )
+        assert ov.window == "30d"
+        assert dv.window == "30d"
