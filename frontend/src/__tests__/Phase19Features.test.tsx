@@ -4,7 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import {
+  ApiError,
   apiClient,
+  buildGoogleMapsUrl,
+  formatActiveMinutes,
+  formatBlockedPercentage,
+  formatBytes,
+  formatClock24h,
+  formatRemainingDuration,
   type AllConnectivityTestResponse,
   type AppUsageItem,
   type DeviceAnalyticsResponse,
@@ -18,6 +25,9 @@ import {
   type SystemHealthResponse,
 } from '../api/client'
 import { AuthProvider } from '../context/AuthContext'
+import { DeviceAnalyticsDrawer } from '../components/DeviceAnalyticsDrawer'
+import { GroupAnalyticsDrawer } from '../components/GroupAnalyticsDrawer'
+import { TimerPopoverMenu } from '../components/TimerPopoverMenu'
 import { AnalyticsPage } from '../pages/AnalyticsPage'
 import { DevicesPage } from '../pages/DevicesPage'
 import { FirewallPage } from '../pages/FirewallPage'
@@ -1196,5 +1206,411 @@ describe('Phase 19 Frontend Features (v1.3.0 Final Release)', () => {
         expect.objectContaining({ device_ids: [] }),
       )
     })
+  })
+
+  it('Exercises GroupFormModal member search, Select All, quota presets, Remove All, and Delete', async () => {
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    const deleteGroupSpy = vi
+      .spyOn(apiClient, 'deleteGroup')
+      .mockResolvedValue(undefined)
+
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <DevicesPage />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(await screen.findByTestId('group-edit-btn-10'))
+    const modal = await screen.findByTestId('group-form-modal')
+
+    const quotaSelect = within(modal).getByTestId('group-daily-youtube-limit-select')
+    await user.selectOptions(quotaSelect, 'none')
+    expect(within(modal).getByTestId('group-daily-youtube-limit-input')).toHaveValue(null)
+    await user.selectOptions(quotaSelect, '90')
+    expect(within(modal).getByTestId('group-daily-youtube-limit-input')).toHaveValue(90)
+
+    const filterInput = within(modal).getByLabelText('Filter member devices')
+    await user.type(filterInput, 'NoSuchDeviceXYZ')
+    expect(within(modal).getByText('No devices match your filter.')).toBeInTheDocument()
+    await user.clear(filterInput)
+
+    await user.click(within(modal).getByText('Remove All'))
+    expect(within(modal).getByTestId('group-current-members-card')).toHaveTextContent(
+      'Current Group Members (0)',
+    )
+    await user.click(within(modal).getByText('Select All Shown'))
+    expect(within(modal).getByTestId('group-current-members-card')).toHaveTextContent(
+      'Current Group Members (1)',
+    )
+    await user.click(within(modal).getByText('Clear All'))
+    expect(within(modal).getByTestId('group-current-members-card')).toHaveTextContent(
+      'Current Group Members (0)',
+    )
+
+    const optionCheckbox = within(within(modal).getByTestId('group-member-option-1')).getByRole(
+      'checkbox',
+    )
+    await user.click(optionCheckbox)
+    expect(within(modal).getByTestId('group-current-members-card')).toHaveTextContent(
+      'Current Group Members (1)',
+    )
+
+    await user.click(within(modal).getByTestId('delete-group-btn'))
+    await waitFor(() => {
+      expect(deleteGroupSpy).toHaveBeenCalledWith(10)
+    })
+  })
+
+  it('Exercises GroupAnalyticsDrawer controls, member breakdown, recent DNS search, and TimerPopoverMenu', async () => {
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    const onSelectDevice = vi.fn()
+    const onClose = vi.fn()
+    const futureExpiry = new Date(Date.now() + 20 * 60 * 1000).toISOString()
+
+    const richGroup: GroupItem = {
+      ...GROUP_ITEM,
+      active_override: {
+        id: 77,
+        target_type: 'group',
+        device_id: null,
+        group_id: 10,
+        target_name: 'Living Room',
+        mode: 'bonus',
+        duration_minutes: 30,
+        expires_at: futureExpiry,
+        remaining_seconds: 1200,
+        reason: 'Homework bonus',
+        is_active: true,
+        created_by: 'admin',
+        created_at: '2026-11-15T11:40:00Z',
+      },
+    }
+
+    const richGroupAnalytics: GroupAnalyticsResponse = {
+      ...GROUP_ANALYTICS,
+      group: richGroup,
+      member_breakdown: [
+        {
+          device_id: 1,
+          effective_name: 'Living Room TV',
+          ipv4_address: '192.168.1.50',
+          mac_address: 'aa:bb:cc:19:00:01',
+          vendor: 'LG Electronics',
+          is_online: true,
+          is_blocked: false,
+          is_protected: false,
+          total_events: 1500,
+          bytes: 2218721280,
+          dns_query_count: 900,
+          allowed_packet_count: 550,
+          blocked_packet_count: 50,
+        },
+      ],
+      timeline: NETWORK_OVERVIEW.timeline,
+      hourly_access_profile: [
+        { hour: 11, label: '11:00', total_events: 100, dns_queries: 60, bytes: 1024000, active_hours_count: 1 },
+      ],
+      top_domains: [{ domain: 'www.youtube.com', query_count: 150 }],
+      top_organizations: [{ organization: 'Google LLC', asn: 15169, packet_count: 300, bytes: 5000000 }],
+      recent_queries: [
+        {
+          timestamp: '2026-11-15T12:00:00Z',
+          source_ip: '192.168.1.50',
+          device_name: 'Living Room TV',
+          domain: 'www.youtube.com',
+          registered_domain: 'youtube.com',
+          record_type: 'A',
+        },
+      ],
+    }
+
+    const getGroupSpy = vi
+      .spyOn(apiClient, 'getGroupAnalytics')
+      .mockResolvedValue(richGroupAnalytics)
+    const blockYtSpy = vi
+      .spyOn(apiClient, 'blockGroupYoutube')
+      .mockResolvedValue({
+        group: { ...richGroup, youtube_status: 'blocked' },
+        action: 'youtube_block',
+        affected_device_ids: [1],
+        affected_ips: ['192.168.1.50'],
+        skipped_protected_names: [],
+        skipped_no_ip_names: [],
+        states_killed_ips: ['192.168.1.50'],
+        warnings: [],
+      })
+    const blockGroupSpy = vi
+      .spyOn(apiClient, 'blockGroup')
+      .mockResolvedValue({
+        group: { ...richGroup, access_status: 'blocked' },
+        action: 'block',
+        affected_device_ids: [1],
+        affected_ips: ['192.168.1.50'],
+        skipped_protected_names: [],
+        skipped_no_ip_names: [],
+        states_killed_ips: ['192.168.1.50'],
+        warnings: ['Router sync OK'],
+      })
+    const startTimerSpy = vi.fn()
+    const cancelTimerSpy = vi.fn()
+
+    render(
+      <QueryClientProvider client={qc}>
+        <GroupAnalyticsDrawer
+          groupId={10}
+          onClose={onClose}
+          onSelectDeviceId={onSelectDevice}
+        />
+        <TimerPopoverMenu
+          targetType="device"
+          targetId={1}
+          targetName="Living Room TV"
+          activeOverride={richGroup.active_override}
+          onStartTimer={startTimerSpy}
+          onCancelTimer={cancelTimerSpy}
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByTestId('group-member-breakdown-1')).toBeInTheDocument()
+    expect(screen.getByText('Google LLC')).toBeInTheDocument()
+    expect(screen.getAllByText('www.youtube.com').length).toBeGreaterThanOrEqual(1)
+
+    await user.click(screen.getByTestId('group-drawer-window-7d'))
+    await user.click(screen.getByTestId('group-drawer-refresh-btn'))
+    await waitFor(() => {
+      expect(getGroupSpy).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ window: '7d', refresh: true }),
+      )
+    })
+
+    await user.type(screen.getByLabelText('Filter group recent domains'), 'youtube')
+    await waitFor(() => {
+      expect(getGroupSpy).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ domain_search: 'youtube' }),
+      )
+    })
+
+    await user.click(screen.getByTestId('group-drawer-app-youtube-toggle'))
+    await waitFor(() => expect(blockYtSpy).toHaveBeenCalledWith(10))
+
+    await user.click(screen.getByTestId('group-drawer-access-toggle'))
+    await waitFor(() => expect(blockGroupSpy).toHaveBeenCalledWith(10))
+
+    const youtubeCard = screen.getByTestId('group-drawer-app-card-youtube')
+    youtubeCard.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByTestId('app-usage-detail-modal')).toBeInTheDocument()
+    await user.click(screen.getByTestId('close-app-usage-modal-btn'))
+
+    // Member click propagates device selection
+    await user.click(within(screen.getByTestId('group-member-breakdown-1')).getByRole('button'))
+    expect(onSelectDevice).toHaveBeenCalledWith(1)
+
+    // TimerPopoverMenu custom duration + active override cancel + Escape close
+    await user.click(screen.getByTestId('open-timer-menu-device-1'))
+    const timerPopover = await screen.findByTestId('timer-popover-device-1')
+    const minsInput = within(timerPopover).getByTestId('custom-timer-minutes-device-1')
+    await user.clear(minsInput)
+    await user.type(minsInput, '25')
+    await user.click(within(timerPopover).getByTestId('custom-timer-pause-device-1'))
+    expect(startTimerSpy).toHaveBeenCalledWith({ mode: 'pause', duration_minutes: 25 })
+
+    await user.click(screen.getByTestId('open-timer-menu-device-1'))
+    await user.click(await screen.findByTestId('modal-cancel-timer-device-1'))
+    expect(cancelTimerSpy).toHaveBeenCalledWith(77)
+
+    await user.click(screen.getByTestId('open-timer-menu-device-1'))
+    expect(await screen.findByTestId('timer-popover-device-1')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId('timer-popover-device-1')).not.toBeInTheDocument()
+  })
+
+  it('Exercises AnalyticsPage app visibility modal and DeviceAnalyticsDrawer keyboard/refresh flows', async () => {
+    const user = userEvent.setup()
+    const qc = createTestQueryClient()
+    const getDeviceSpy = vi
+      .spyOn(apiClient, 'getDeviceAnalytics')
+      .mockResolvedValue(DEVICE_ANALYTICS)
+    const updateAppsSpy = vi
+      .spyOn(apiClient, 'updateEnabledTelemetryApps')
+      .mockResolvedValue({
+        enabled_telemetry_apps: ['youtube', 'plex', 'facebook_threads', 'twitch'],
+        available_telemetry_apps: [
+          'youtube',
+          'plex',
+          'netflix',
+          'disney_plus',
+          'twitch',
+          'tiktok',
+          'discord',
+          'facebook_threads',
+          'gaming',
+        ],
+        source: 'ui_override',
+      })
+
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <AnalyticsPage />
+          <DeviceAnalyticsDrawer deviceId={1} onClose={() => {}} />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    // AnalyticsPage configure telemetry apps modal
+    await user.click(await screen.findByTestId('open-telemetry-apps-modal-btn'))
+    const appsModal = await screen.findByTestId('telemetry-apps-modal')
+    await user.click(within(appsModal).getByTestId('telemetry-apps-checkbox-twitch'))
+    await user.click(within(appsModal).getByTestId('telemetry-apps-save-btn'))
+    await waitFor(() => {
+      expect(updateAppsSpy).toHaveBeenCalledWith([
+        'youtube',
+        'plex',
+        'facebook_threads',
+        'twitch',
+      ])
+    })
+
+    await user.click(screen.getByTestId('open-telemetry-apps-modal-btn'))
+    await user.click(await screen.findByTestId('telemetry-apps-cancel-btn'))
+    expect(screen.queryByTestId('telemetry-apps-modal')).not.toBeInTheDocument()
+
+    // DeviceAnalyticsDrawer window change + refresh + keyboard Enter on app card
+    await user.click(await screen.findByTestId('drawer-window-7d'))
+    await user.click(screen.getByTestId('drawer-refresh-btn'))
+    await waitFor(() => {
+      expect(getDeviceSpy).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ window: '7d', refresh: true }),
+      )
+    })
+
+    const drawerYtCard = await screen.findByTestId('drawer-app-card-youtube')
+    drawerYtCard.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByTestId('app-usage-detail-modal')).toBeInTheDocument()
+  })
+
+  it('Exercises apiClient fetch wrappers, query builders, 204/error handling, and formatting helpers', async () => {
+    expect(buildGoogleMapsUrl(47.6, -122.3, null)).toContain('47.6,-122.3')
+    expect(buildGoogleMapsUrl(null, null, 'Unknown Location')).toBeNull()
+    expect(buildGoogleMapsUrl(null, null, 'Seattle, WA')).toContain('Seattle')
+    expect(formatActiveMinutes(0)).toBe('0m')
+    expect(formatActiveMinutes(60)).toBe('1h')
+    expect(formatActiveMinutes(95)).toBe('1h 35m')
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBlockedPercentage(0, 0)).toBe('0.0%')
+    expect(formatRemainingDuration(0)).toBe('0m left')
+    expect(formatRemainingDuration(7200)).toBe('2h left')
+    expect(formatClock24h(null)).toBe('')
+    expect(formatClock24h('not-a-date')).toBe('not-a-date')
+
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/err-json')) {
+        return new Response(JSON.stringify({ detail: 'Bad request detail' }), { status: 400 })
+      }
+      if (url.includes('/204')) {
+        return new Response(null, { status: 204 })
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await apiClient.getCurrentUser()
+      await apiClient.getSetupStatus()
+      await apiClient.blockDevice(1)
+      await apiClient.unblockDevice(1)
+      await apiClient.blockDeviceYoutube(1)
+      await apiClient.unblockDeviceYoutube(1)
+      await apiClient.archiveDevice(1)
+      await apiClient.restoreDevice(1)
+      await apiClient.getGroups()
+      await apiClient.blockGroup(10)
+      await apiClient.unblockGroup(10)
+      await apiClient.blockGroupYoutube(10)
+      await apiClient.unblockGroupYoutube(10)
+      await apiClient.getGroupAnalytics(10, {
+        window: '30d',
+        domain_search: 'youtube',
+        refresh: true,
+      })
+      await apiClient.getActiveTimers()
+      await apiClient.startDeviceTimer(1, { mode: 'pause', duration_minutes: 30 })
+      await apiClient.startGroupTimer(10, { mode: 'bonus', preset: '20m' })
+      await apiClient.cancelTimer(77, true)
+      await apiClient.getSchedules()
+      await apiClient.toggleSchedule(1, true)
+      await apiClient.reconcileSchedules()
+      await apiClient.getAuditLogs({
+        action: 'login',
+        audit_label: 'MANUAL',
+        search: 'admin',
+        offset: 10,
+        limit: 25,
+      })
+      await apiClient.pruneAuditLogs({ retention_days: 7, audit_label: 'MANUAL' })
+      await apiClient.getUsers()
+      await apiClient.getIntegrationSettings()
+      await apiClient.resetIntegrationSettings()
+      await apiClient.getEnabledTelemetryApps()
+      await apiClient.updateEnabledTelemetryApps(['youtube', 'plex'])
+      await apiClient.testOpnsenseConnectivity()
+      await apiClient.testAllConnectivity({})
+      await apiClient.exportConfigBackup()
+      await apiClient.getNetworkOverview({ window: '30d', refresh: true })
+      await apiClient.getBlockedTargets()
+      await apiClient.toggleBlockedTarget(5)
+      await apiClient.getTargetAttribution('domain', 'youtube.com', '7d')
+      await apiClient.getDeviceAnalytics(1, {
+        window: '7d',
+        domain_search: 'plex',
+        refresh: true,
+      })
+      await apiClient.getFirewallOverview({
+        window: '24h',
+        action: 'block',
+        direction: 'in',
+        protocol: 'tcp',
+        search: '203.0',
+        limit: 50,
+        refresh: true,
+      })
+      await apiClient.getWanBlockedIps()
+      await apiClient.blockExternalWanIp({ ip_address: '203.0.113.50', reason: 'Scanner' })
+      await apiClient.unblockExternalWanIp('203.0.113.50')
+      await apiClient.getFirewallOpenPortSessions({
+        destination_ip: '192.168.1.50',
+        destination_port: 32400,
+        external_port: 32400,
+        protocol: 'tcp',
+        window: '7d',
+        search: '198.51',
+        refresh: true,
+      })
+
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+      expect(await apiClient.deleteDevice(1)).toBeUndefined()
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: 'Denied' }), { status: 403 }),
+      )
+      await expect(apiClient.deleteGroup(10)).rejects.toThrow(ApiError)
+
+      fetchMock.mockResolvedValueOnce(new Response('Server error', { status: 500 }))
+      await expect(apiClient.deleteSchedule(1)).rejects.toThrow('Request failed with status 500')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

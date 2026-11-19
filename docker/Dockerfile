@@ -3,6 +3,8 @@
 # ==============================================================================
 FROM node:22-alpine AS frontend-builder
 
+RUN apk update && apk upgrade --no-cache
+
 WORKDIR /build/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -23,7 +25,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATABASE_URL=sqlite+aiosqlite:////app/data/gateway.db \
     PYTHONPATH=/app/backend
 
-RUN groupadd --gid 10001 gateway \
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 gateway \
     && useradd --uid 10001 --gid gateway --shell /usr/sbin/nologin --create-home gateway \
     && mkdir -p /app/data /app/backend /app/frontend/dist \
     && chown -R gateway:gateway /app
@@ -35,8 +40,9 @@ COPY --chown=gateway:gateway backend/alembic.ini ./alembic.ini
 COPY --chown=gateway:gateway backend/alembic ./alembic
 COPY --chown=gateway:gateway backend/app ./app
 
-RUN pip install --upgrade pip \
-    && pip install .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir --upgrade . \
+    && rm -rf /usr/local/lib/python3.12/ensurepip/_bundled /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json
 
 COPY --from=frontend-builder --chown=gateway:gateway /build/frontend/dist /app/frontend/dist
 
