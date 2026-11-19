@@ -1,4 +1,4 @@
-# Gateway Access Control & Analytics Portal (`v1.3.0`)
+# Gateway Access Control & Analytics Portal (`v1.3.1`)
 
 Self-hosted, single-container Dockerized web application (`http://localhost:8080`) for managing LAN device internet, application, quota, and schedule policies via **OPNsense (`26.7.7-amd64`)**, visualizing real-time network & security telemetry from **Elasticsearch (`9.4.3` — `logs-pfsense.log*` / Elastic `pfSense` Integration `1.25.4`)**, and tracking live media playback via **Plex Media Server**.
 
@@ -7,7 +7,7 @@ Self-hosted, single-container Dockerized web application (`http://localhost:8080
 
 ---
 
-## System Architecture (`v1.3.0`)
+## System Architecture (`v1.3.1`)
 
 ```mermaid
 flowchart LR
@@ -102,7 +102,7 @@ See [`docs/API_KEYS_SETUP.md`](docs/API_KEYS_SETUP.md) for the complete OPNsense
   npm test
   npm run build
   ```
-- **`v1.3.0` Release Quality Gates Verified:** `156 / 156` backend tests (`85%` coverage, `0` ruff/mypy issues) and `45 / 45` frontend tests across `11` suites (`91.12%` coverage, `0` TypeScript/Vite build errors).
+- **`v1.3.1` Release Quality Gates Verified:** `158 / 158` backend tests (`85%` coverage, `0` ruff/mypy issues) and `45 / 45` frontend tests across `11` suites (`91.12%` coverage, `0` TypeScript/Vite build errors).
 
 ---
 
@@ -112,7 +112,7 @@ See [`docs/API_KEYS_SETUP.md`](docs/API_KEYS_SETUP.md) for the complete OPNsense
 | :--- | :--- |
 | [**`docs/wiki/Home.md`**](docs/wiki/Home.md) | Complete Multi-Page User Manual & Operational Wiki (`01` through `06`). |
 | [`docs/API_KEYS_SETUP.md`](docs/API_KEYS_SETUP.md) | Least-privilege OPNsense ACLs (`svc_gateway_ui`), aliases, LAN/WAN firewall rules, Elasticsearch API key & Plex setup. |
-| [`PLAN.md`](PLAN.md) | Master architecture & execution roadmap across `v1.0.x` (Phases 1–7), `v1.1.0` (Phases 8–11), `v1.2.x` (Phases 12–15.1), and `v1.3.0` (Phases 16–19). |
+| [`PLAN.md`](PLAN.md) | Master architecture & execution roadmap across `v1.0.x` (Phases 1–7), `v1.1.0` (Phases 8–11), `v1.2.x` (Phases 12–15.1), and `v1.3.x` (Phases 16–19.1). |
 | [`docs/development/FEATURE_BACKLOG.md`](docs/development/FEATURE_BACKLOG.md) | Complete backlog of implemented and evaluated user requests (`FB-P4-*` through `FB-P19-*`). |
 | [`docs/development/TEST_AND_BUG_LOG.md`](docs/development/TEST_AND_BUG_LOG.md) | Cumulative test & bug resolution ledger (`BUG-P1-*` through `BUG-P19-*`). |
 | [`docs/development/PHASE_EXIT_REPORTS.md`](docs/development/PHASE_EXIT_REPORTS.md) | End-of-phase retrospectives, metrics, and unplanned-information audits across Phases 1–19. |

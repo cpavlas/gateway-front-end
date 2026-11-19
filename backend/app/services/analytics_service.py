@@ -779,9 +779,17 @@ async def get_network_overview_analytics(
                 window=win_key,
                 top_n=12,
                 excluded_ips=protected_db_ips,
+                enabled_apps=settings.enabled_telemetry_app_list,
             )
         except TypeError:
-            es_data = await es_client.fetch_network_overview(window=win_key, top_n=12)
+            try:
+                es_data = await es_client.fetch_network_overview(
+                    window=win_key,
+                    top_n=12,
+                    excluded_ips=protected_db_ips,
+                )
+            except TypeError:
+                es_data = await es_client.fetch_network_overview(window=win_key, top_n=12)
     except ElasticsearchQueryError as exc:
         await record_upstream_error_audit_log(
             db,
@@ -889,11 +897,19 @@ async def get_device_analytics(
             return cached.model_copy(update={"device": dev_resp})
 
     try:
-        es_data = await es_client.fetch_device_analytics(
-            ipv4_address=dev.ipv4_address,
-            window=win_key,
-            domain_search=clean_search,
-        )
+        try:
+            es_data = await es_client.fetch_device_analytics(
+                ipv4_address=dev.ipv4_address,
+                window=win_key,
+                domain_search=clean_search,
+                enabled_apps=settings.enabled_telemetry_app_list,
+            )
+        except TypeError:
+            es_data = await es_client.fetch_device_analytics(
+                ipv4_address=dev.ipv4_address,
+                window=win_key,
+                domain_search=clean_search,
+            )
     except ElasticsearchQueryError as exc:
         await record_upstream_error_audit_log(
             db,

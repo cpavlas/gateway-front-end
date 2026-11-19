@@ -261,11 +261,27 @@ def _extract_asn_number(org_bucket: dict[str, Any]) -> int | None:
     return None
 
 
+def _resolve_app_usage_slot_config(window: str = "24h") -> tuple[str, int, int]:
+    """Return `(slot_interval, slot_minutes, noise_slot_threshold)` per window (`BUG-P19-004`)."""
+    win = (window or "24h").strip().lower()
+    if win == "30d":
+        return ("30m", 30, 24)
+    if win == "7d":
+        return ("15m", 15, 47)
+    return ("5m", 5, 140)
+
+
 def _build_app_usage_agg(
     safe_tz: str,
     excluded_ips: list[str] | None = None,
+    *,
+    window: str = "24h",
+    enabled_apps: list[str] | None = None,
+    include_top_level_slots: bool = False,
+    device_bucket_size: int = 10,
 ) -> dict[str, Any]:
     """Build Elasticsearch filters aggregation for YouTube, Plex, and streaming/gaming apps."""
+    slot_interval, _, _ = _resolve_app_usage_slot_config(window)
     common_must_not: list[dict[str, Any]] = [
         {"term": {"event.action": "block"}},
     ]
@@ -353,62 +369,78 @@ def _build_app_usage_agg(
                 }
             }
 
-    return {
-        "filters": {"filters": filters_map},
+    if enabled_apps:
+        enabled_set = {str(a).strip().lower() for a in enabled_apps if str(a).strip()}
+        filtered_map = {k: v for k, v in filters_map.items() if k in enabled_set}
+        if filtered_map:
+            filters_map = filtered_map
+
+    sub_aggs: dict[str, Any] = {}
+    if include_top_level_slots:
+        sub_aggs["active_slots"] = {
+            "date_histogram": {
+                "field": "@timestamp",
+                "fixed_interval": slot_interval,
+                "min_doc_count": 1,
+            }
+        }
+    sub_aggs["bytes"] = {"sum": {"field": "network.bytes"}}
+    sub_aggs["dns_queries"] = {"filter": {"term": {"event.provider": "unbound"}}}
+    sub_aggs["last_active"] = {"max": {"field": "@timestamp"}}
+    sub_aggs["by_device"] = {
+        "filter": {"terms": {"source.ip": RFC1918_CIDRS}},
         "aggs": {
-            "active_slots": {
-                "date_histogram": {
-                    "field": "@timestamp",
-                    "fixed_interval": "5m",
-                    "min_doc_count": 1,
-                }
-            },
-            "bytes": {"sum": {"field": "network.bytes"}},
-            "dns_queries": {"filter": {"term": {"event.provider": "unbound"}}},
-            "last_active": {"max": {"field": "@timestamp"}},
-            "by_device": {
-                "filter": {"terms": {"source.ip": RFC1918_CIDRS}},
-                "aggs": {
-                    "devices": {
-                        "terms": {"field": "source.ip", "size": 15},
-                        "aggs": {
-                            "active_slots": {
-                                "date_histogram": {
-                                    "field": "@timestamp",
-                                    "fixed_interval": "5m",
-                                    "min_doc_count": 1,
-                                }
-                            },
-                            "port_32400": {
-                                "filter": {"term": {"destination.port": 32400}}
-                            },
-                            "server_registrations": {
-                                "filter": {
-                                    "term": {"dns.question.name": "servers.plex.tv"}
-                                }
-                            },
-                            "playback_signals": {
-                                "filter": {
-                                    "terms": {
-                                        "dns.question.name": _PLEX_PLAYBACK_SIGNAL_DOMAINS
-                                    }
-                                }
-                            },
-                            "bytes": {"sum": {"field": "network.bytes"}},
-                            "dns_queries": {
-                                "filter": {"term": {"event.provider": "unbound"}}
-                            },
-                            "last_active": {"max": {"field": "@timestamp"}},
-                        },
-                    }
+            "devices": {
+                "terms": {
+                    "field": "source.ip",
+                    "size": max(1, int(device_bucket_size)),
+                    "collect_mode": "breadth_first",
                 },
-            },
+                "aggs": {
+                    "active_slots": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "fixed_interval": slot_interval,
+                            "min_doc_count": 1,
+                        }
+                    },
+                    "port_32400": {
+                        "filter": {"term": {"destination.port": 32400}}
+                    },
+                    "server_registrations": {
+                        "filter": {
+                            "term": {"dns.question.name": "servers.plex.tv"}
+                        }
+                    },
+                    "playback_signals": {
+                        "filter": {
+                            "terms": {
+                                "dns.question.name": _PLEX_PLAYBACK_SIGNAL_DOMAINS
+                            }
+                        }
+                    },
+                    "bytes": {"sum": {"field": "network.bytes"}},
+                    "dns_queries": {
+                        "filter": {"term": {"event.provider": "unbound"}}
+                    },
+                    "last_active": {"max": {"field": "@timestamp"}},
+                },
+            }
         },
     }
 
+    return {
+        "filters": {"filters": filters_map},
+        "aggs": sub_aggs,
+    }
 
-def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract multi-app 5-minute active usage (`youtube`, `plex`, `netflix`, etc.)."""
+
+def _extract_app_usage(
+    aggs: dict[str, Any],
+    window: str = "24h",
+) -> list[dict[str, Any]]:
+    """Extract multi-app active usage (`youtube`, `plex`, `netflix`, etc.)."""
+    _, slot_minutes, noise_slot_threshold = _resolve_app_usage_slot_config(window)
     buckets = ((aggs.get("app_usage") or {}).get("buckets")) or {}
     items: list[dict[str, Any]] = []
     for app_key, display_name in _APP_USAGE_CATALOG:
@@ -460,7 +492,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                 if app_key == "plex" and (
                     dev_server_reg > 0
                     or (
-                        dev_active_slots >= 140
+                        dev_active_slots >= noise_slot_threshold
                         and dev_port_32400 == 0
                         and dev_bytes == 0
                         and (dev_playback_sig * 20 < dev_events)
@@ -469,7 +501,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                     continue
                 if (
                     app_key == "youtube"
-                    and dev_active_slots >= 140
+                    and dev_active_slots >= noise_slot_threshold
                     and dev_bytes == 0
                     and ip_str.endswith(".1")
                 ):
@@ -484,7 +516,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                     )
                     active_slot_keys.add(slot_key)
 
-                dev_active_minutes = dev_active_slots * 5
+                dev_active_minutes = dev_active_slots * slot_minutes
                 top_devices.append(
                     {
                         "ipv4_address": ip_str,
@@ -504,7 +536,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                 ),
                 reverse=True,
             )
-            active_minutes = len(active_slot_keys) * 5
+            active_minutes = len(active_slot_keys) * slot_minutes
         else:
             slot_buckets = ((b.get("active_slots") or {}).get("buckets")) or []
             active_slots = sum(
@@ -512,7 +544,7 @@ def _extract_app_usage(aggs: dict[str, Any]) -> list[dict[str, Any]]:
                 for sb in slot_buckets
                 if int(sb.get("doc_count") or 0) >= min_slot_docs
             )
-            active_minutes = active_slots * 5
+            active_minutes = active_slots * slot_minutes
 
         items.append(
             {
@@ -534,9 +566,10 @@ def build_network_overview_query(
     tz_name: str = "UTC",
     top_n: int = 10,
     excluded_ips: list[str] | None = None,
+    enabled_apps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Construct the Elasticsearch aggregation DSL for network-wide traffic and DNS overview."""
-    _, es_gte, interval = resolve_time_window(window)
+    win_key, es_gte, interval = resolve_time_window(window)
     safe_tz = (tz_name or "UTC").strip() or "UTC"
     capped_top_n = max(1, min(int(top_n), 50))
 
@@ -546,7 +579,12 @@ def build_network_overview_query(
         "query": _build_timestamp_range_filter(es_gte, safe_tz, round_to_minute=True),
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
-            "app_usage": _build_app_usage_agg(safe_tz, excluded_ips=excluded_ips),
+            "app_usage": _build_app_usage_agg(
+                safe_tz,
+                excluded_ips=excluded_ips,
+                window=win_key,
+                enabled_apps=enabled_apps,
+            ),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "timeline": {
@@ -734,7 +772,7 @@ def normalize_network_overview_response(
         "top_domains": top_domains,
         "top_registered_domains": top_registered_domains,
         "top_organizations": top_organizations,
-        "application_usage": _extract_app_usage(aggs),
+        "application_usage": _extract_app_usage(aggs, window=window),
     }
 
 
@@ -743,10 +781,11 @@ def build_device_analytics_query(
     window: str = "24h",
     tz_name: str = "UTC",
     top_n: int = 15,
+    enabled_apps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Construct the Elasticsearch aggregation DSL for a single device's usage & access time."""
     clean_ip = validate_ipv4_address(ipv4_address)
-    _, es_gte, interval = resolve_time_window(window)
+    win_key, es_gte, interval = resolve_time_window(window)
     safe_tz = (tz_name or "UTC").strip() or "UTC"
     capped_top_n = max(1, min(int(top_n), 50))
 
@@ -772,7 +811,11 @@ def build_device_analytics_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
-            "app_usage": _build_app_usage_agg(safe_tz),
+            "app_usage": _build_app_usage_agg(
+                safe_tz,
+                window=win_key,
+                enabled_apps=enabled_apps,
+            ),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "first_activity": {"min": {"field": "@timestamp"}},
@@ -1031,7 +1074,7 @@ def normalize_device_analytics_response(
         "top_domains": top_domains,
         "top_registered_domains": top_registered_domains,
         "top_organizations": top_organizations,
-        "application_usage": _extract_app_usage(aggs),
+        "application_usage": _extract_app_usage(aggs, window=window),
         "recent_queries": recent_queries,
     }
 
@@ -1041,10 +1084,11 @@ def build_group_analytics_query(
     window: str = "24h",
     tz_name: str = "UTC",
     top_n: int = 15,
+    enabled_apps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Construct the multi-IP Elasticsearch aggregation DSL for a device group/profile."""
     clean_ips = validate_ipv4_list(ipv4_addresses)
-    _, es_gte, interval = resolve_time_window(window)
+    win_key, es_gte, interval = resolve_time_window(window)
     safe_tz = (tz_name or "UTC").strip() or "UTC"
     capped_top_n = max(1, min(int(top_n), 50))
     member_bucket_size = max(25, len(clean_ips) * 2)
@@ -1071,7 +1115,11 @@ def build_group_analytics_query(
         },
         "aggs": {
             "total_bytes": {"sum": {"field": "network.bytes"}},
-            "app_usage": _build_app_usage_agg(safe_tz),
+            "app_usage": _build_app_usage_agg(
+                safe_tz,
+                window=win_key,
+                enabled_apps=enabled_apps,
+            ),
             "by_provider": {"terms": {"field": "event.provider", "size": 10}},
             "by_action": {"terms": {"field": "event.action", "size": 10}},
             "first_activity": {"min": {"field": "@timestamp"}},
@@ -2481,17 +2529,24 @@ class ElasticsearchServiceClient:
         window: str = "24h",
         top_n: int = 10,
         excluded_ips: list[str] | None = None,
+        enabled_apps: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute network-wide traffic and DNS aggregation query against logs-pfsense.log*."""
         win_key, _, _ = resolve_time_window(window)
         merged_excluded = sorted(
             set(self._settings.protected_ip_set).union(excluded_ips or [])
         )
+        effective_apps = (
+            enabled_apps
+            if enabled_apps is not None
+            else self._settings.enabled_telemetry_app_list
+        )
         body = build_network_overview_query(
             window=win_key,
             tz_name=self._tz,
             top_n=top_n,
             excluded_ips=merged_excluded,
+            enabled_apps=effective_apps,
         )
         target_pattern = ",".join(self._index_patterns)
         client = self.create_es_client()
@@ -2625,14 +2680,21 @@ class ElasticsearchServiceClient:
         domain_search: str | None = None,
         top_n: int = 15,
         recent_limit: int = 40,
+        enabled_apps: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute per-device usage, 24h access profile, and DNS domain queries."""
         win_key, _, _ = resolve_time_window(window)
+        effective_apps = (
+            enabled_apps
+            if enabled_apps is not None
+            else self._settings.enabled_telemetry_app_list
+        )
         aggs_body = build_device_analytics_query(
             ipv4_address=ipv4_address,
             window=win_key,
             tz_name=self._tz,
             top_n=top_n,
+            enabled_apps=effective_apps,
         )
         recent_body = build_device_recent_domains_query(
             ipv4_address=ipv4_address,
@@ -2675,15 +2737,22 @@ class ElasticsearchServiceClient:
         domain_search: str | None = None,
         top_n: int = 15,
         recent_limit: int = 40,
+        enabled_apps: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute multi-IP group usage, 24h access profile, member breakdown, and DNS queries."""
         win_key, _, _ = resolve_time_window(window)
         clean_ips = validate_ipv4_list(ipv4_addresses)
+        effective_apps = (
+            enabled_apps
+            if enabled_apps is not None
+            else self._settings.enabled_telemetry_app_list
+        )
         aggs_body = build_group_analytics_query(
             ipv4_addresses=clean_ips,
             window=win_key,
             tz_name=self._tz,
             top_n=top_n,
+            enabled_apps=effective_apps,
         )
         recent_body = build_group_recent_domains_query(
             ipv4_addresses=clean_ips,
